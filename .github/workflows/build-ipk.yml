@@ -7,7 +7,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write  # Required for release upload
+  contents: write  # Required for GitHub Releases
 
 jobs:
   build:
@@ -19,32 +19,26 @@ jobs:
             profile: generic
             sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
           - arch: ipq40xx
-            profile: default
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq40xx/openwrt-sdk-23.05.3-ipq40xx_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            profile: generic
+            sdk_url: https://downloads.openwrt.org/releases/23.05.2/targets/ipq40xx/generic/openwrt-sdk-23.05.2-ipq40xx-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
           - arch: ipq806x
-            profile: default
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq806x/openwrt-sdk-23.05.3-ipq806x_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            profile: generic
+            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq806x/generic/openwrt-sdk-23.05.3-ipq806x-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
           - arch: ramips
             profile: mt76x8
             sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ramips/mt76x8/openwrt-sdk-23.05.3-ramips-mt76x8_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-          - arch: mediatek
-            profile: filogic
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/mediatek/filogic/openwrt-sdk-23.05.3-mediatek-filogic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
           - arch: x86
             profile: 64
             sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-          - arch: mvebu
-            profile: cortexa9
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/mvebu/cortexa9/openwrt-sdk-23.05.3-mvebu-cortexa9_gcc-12.3.0_musl.Linux-x86_64.tar.xz
 
     steps:
-      - name: Skip non-tag builds for non-ath79
+      - name: Skip non-ath79 if not tagged
         if: matrix.arch != 'ath79' && !startsWith(github.ref, 'refs/tags/')
         run: |
-          echo "⏭️ Skipping ${{ matrix.arch }} build (not a release tag)"
+          echo "⏭️ Skipping non-ath79 architecture for non-tag push"
           exit 0
 
-      - name: Checkout source
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Download SDK for ${{ matrix.arch }}
@@ -53,24 +47,29 @@ jobs:
           tar -xf sdk.tar.xz
           mv openwrt-sdk-* sdk
 
-      - name: Inject SIPserverV5 package
+      - name: Inject your Phonebook package
         run: |
           mkdir -p sdk/package/SIPserverV5
           cp -r Phonebook/* sdk/package/SIPserverV5/
 
-      - name: Build .ipk for ${{ matrix.arch }}
+      - name: Build .ipk
         run: |
           cd sdk
           make defconfig
           make package/SIPserverV5/compile V=s -j$(nproc)
 
-      - name: Upload .ipk as artifact
+      - name: Show output structure
+        run: |
+          echo "📦 .ipk files created:"
+          find sdk/bin/packages/ -name '*.ipk' || echo "❌ No .ipk file found"
+
+      - name: Upload .ipk as GitHub artifact
         uses: actions/upload-artifact@v4
         with:
           name: SIPserverV5-${{ matrix.arch }}
           path: sdk/bin/packages/*/*/*.ipk
 
-      - name: Upload to GitHub Release (on tag)
+      - name: Upload .ipk to GitHub Release (only on tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
@@ -78,5 +77,5 @@ jobs:
           name: "SIPserverV5 ${{ github.ref_name }}"
           tag_name: ${{ github.ref_name }}
           body: |
-            Multi-architecture release of SIPserverV5.
-            Includes: ath79, ipq40xx, ipq806x, ramips/mt76x8, mediatek/filogic, x86_64, mvebu.
+            OpenWRT .ipk packages for SIPserverV5
+            Architectures: ath79, ipq40xx, ipq806x, ramips/mt76x8, x86_64
