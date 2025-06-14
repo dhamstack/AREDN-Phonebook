@@ -1,11 +1,11 @@
+#define MODULE_NAME "FETCHER" // Define MODULE_NAME at the top of the file
+
 #include "phonebook_fetcher.h"
 #include "../common.h" // This includes necessary system headers and core types
 #include "../config_loader/config_loader.h" // For g_pb_interval_seconds, g_phonebook_servers_list, g_num_phonebook_servers
 #include "../user_manager/user_manager.h"
 #include "../file_utils/file_utils.h"
 #include "../csv_processor/csv_processor.h"
-
-#define MODULE_NAME "FETCHER"
 
 // Note: Global extern declarations moved to common.h
 // extern int g_pb_interval_seconds; // Declared in common.h
@@ -63,7 +63,7 @@ static bool initial_population_done = false;
 void *phonebook_fetcher_thread(void *arg) {
     (void)arg;
     LOG_INFO("Phonebook fetcher started. Entering main loop.");
-    while (keep_running) { // keep_running from common.h
+    while (1) { // Changed from while (keep_running) to while (1)
         LOG_INFO("Starting new fetcher cycle.");
         char new_csv_hash[HASH_LENGTH + 1]; // HASH_LENGTH from common.h
         char last_good_csv_hash[HASH_LENGTH + 1];
@@ -155,7 +155,7 @@ void *phonebook_fetcher_thread(void *arg) {
         end_fetcher_cycle:;
         LOG_INFO("Sleeping %d seconds...", g_pb_interval_seconds); // Use global g_pb_interval_seconds
         for (int i = 0; i < g_pb_interval_seconds; i++) {
-            if (!keep_running) break;
+            // if (!keep_running) break; // REMOVED
             sleep(1); // sleep from common.h
         }
     }

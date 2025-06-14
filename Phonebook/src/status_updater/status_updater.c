@@ -57,7 +57,7 @@ void *status_updater_thread(void *arg) {
 
     struct timespec ts;
 
-    while (keep_running) {
+    while (1) { // Changed from while (keep_running) to while (1)
         pthread_mutex_lock(&updater_trigger_mutex);
         clock_gettime(CLOCK_REALTIME, &ts);
         ts.tv_sec += g_status_update_interval_seconds;
@@ -65,9 +65,9 @@ void *status_updater_thread(void *arg) {
         int wait_status = pthread_cond_timedwait(&updater_trigger_cond, &updater_trigger_mutex, &ts);
         pthread_mutex_unlock(&updater_trigger_mutex);
 
-        if (!keep_running) {
-            break;
-        }
+        // if (!keep_running) { // REMOVED
+        //     break;
+        // }
 
         LOG_INFO("Starting new update cycle.");
 

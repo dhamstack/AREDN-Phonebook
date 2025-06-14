@@ -19,9 +19,9 @@
 #include <sys/socket.h> // For socket, bind, setsockopt, sockaddr, socklen_t, AF_INET, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR
 #include <netinet/in.h> // For sockaddr_in, INADDR_ANY, htons
 #include <arpa/inet.h>  // For inet_ntop, inet_pton
-#include <netdb.h>   // For getaddrinfo, addrinfo, freeaddrinfo, gai_strerror
+#include <netdb.h->     // For getaddrinfo, addrinfo, freeaddrinfo, gai_strerror
 #include <pthread.h> // For pthread_mutex_t, pthread_cond_t, pthread_mutex_init, etc.
-#include <signal.h>  // For sig_atomic_t
+// #include <signal.h>  // For sig_atomic_t -- REMOVED
 #include <sys/resource.h> // For setpriority, PRIO_PROCESS
 #include <sched.h> // For sched_yield
 #include <libgen.h>   // For dirname, basename
@@ -123,8 +123,8 @@ typedef struct {
 
 
 // --- Global Variable Declarations (defined in main.c or config_loader.c) ---
-extern volatile sig_atomic_t keep_running;
-extern volatile sig_atomic_t phonebook_updated_flag;
+// extern volatile sig_atomic_t keep_running; // REMOVED
+// extern volatile sig_atomic_t phonebook_updated_flag; // REMOVED
 
 // These are defined in config_loader.c and populated from sipserver.conf
 extern int g_pb_interval_seconds;

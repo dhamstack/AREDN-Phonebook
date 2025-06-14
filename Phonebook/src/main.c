@@ -20,8 +20,8 @@ RegisteredUser registered_users[MAX_REGISTERED_USERS];
 CallSession call_sessions[MAX_CALL_SESSIONS];
 
 // Other global variables (DEFINED here)
-volatile sig_atomic_t keep_running = 1;
-volatile sig_atomic_t phonebook_updated_flag = 0;
+// volatile sig_atomic_t keep_running = 1; // REMOVED
+// volatile sig_atomic_t phonebook_updated_flag = 0; // REMOVED as related to signal handling
 int num_registered_users = 0;
 int num_directory_entries = 0;
 
@@ -31,11 +31,7 @@ pthread_mutex_t phonebook_file_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t updater_trigger_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t updater_trigger_cond = PTHREAD_COND_INITIALIZER;
 
-void sig_handler(int signum) {
-    keep_running = 0;
-    fprintf(stdout, "\n[INFO ] Signal %d received, shutting down...\n", signum);
-    fflush(stdout);
-}
+// sig_handler function REMOVED
 
 // sockaddr_to_ip_str prototype is in common.h, definition remains here
 const char* sockaddr_to_ip_str(const struct sockaddr_in* addr) {
@@ -180,7 +176,7 @@ int main(int argc, char *argv[]) {
     LOG_INFO("SIP Server listening on UDP port %d", SIP_PORT);
     LOG_INFO("Entering main SIP message processing loop.");
 
-    while (keep_running) {
+    while (1) { // Changed from while(keep_running) to while(1)
         len = sizeof(cliaddr);
         FD_ZERO(&readfds);
         FD_SET(sockfd, &readfds);
@@ -188,9 +184,9 @@ int main(int argc, char *argv[]) {
         retval = select(sockfd + 1, &readfds, NULL, NULL, &tv);
 
         if (retval < 0) {
-            if (errno == EINTR) continue;
+            // if (errno == EINTR) continue; // REMOVED
             LOG_ERROR("select() error.");
-            break;
+            break; // Exit on select error
         } else if (retval == 0) {
             continue;
         }
@@ -198,7 +194,7 @@ int main(int argc, char *argv[]) {
         n = recvfrom(sockfd, buffer, MAX_SIP_MSG_LEN - 1, 0,
                      (struct sockaddr*)&cliaddr, &len);
         if (n < 0) {
-            if (errno == EINTR) continue;
+            // if (errno == EINTR) continue; // REMOVED
             LOG_ERROR("recvfrom failed.");
             continue;
         }
@@ -206,7 +202,8 @@ int main(int argc, char *argv[]) {
 
         process_incoming_sip_message(sockfd, buffer, n, &cliaddr, len);
     }
-    LOG_INFO("Exiting main SIP message processing loop. keep_running is false.");
+    // This code block will now only be reached if an unrecoverable error in the main loop occurs.
+    LOG_WARN("Main SIP message processing loop unexpectedly terminated.");
 
     close(sockfd);
 
@@ -217,9 +214,9 @@ int main(int argc, char *argv[]) {
     pthread_cond_destroy(&updater_trigger_cond);
     LOG_DEBUG("Mutexes and condition variables destroyed.");
 
-    LOG_INFO("SIP Server shut down cleanly.");
+    LOG_INFO("SIP Server shut down."); // Changed from "shut down cleanly"
     log_shutdown();
 
     LOG_INFO("Main function exiting.");
-    return EXIT_SUCCESS;
+    return EXIT_FAILURE; // Indicate abnormal exit if loop breaks
 }
