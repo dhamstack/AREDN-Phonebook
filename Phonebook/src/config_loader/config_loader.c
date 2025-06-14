@@ -8,7 +8,7 @@
 
 #define MODULE_NAME "CONFIG" // Define MODULE_NAME specifically for this C file
 
-// Define global variables (DECLARED extern in config_loader.h and common.h) test
+// Define global variables (DECLARED extern in config_loader.h and common.h)
 // These are initialized with default values, which will be overwritten by the config file if present.
 int g_pb_interval_seconds = 3600; // Default: 1 hour
 int g_status_update_interval_seconds = 600; // Default: 10 minutes
