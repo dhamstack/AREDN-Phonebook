@@ -1,4 +1,4 @@
-name: Build OpenWRT .ipk Packages
+name: Build OpenWRT Binaries & Packages
 
 on:
   push:
@@ -10,7 +10,39 @@ permissions:
   contents: write
 
 jobs:
-  build:
+
+  build-makefile-ipq40xx:
+    name: Build C Program with Toolchain (ipq40xx/mikrotik)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download and extract toolchain
+        run: |
+          TOOLCHAIN_URL="https://downloads.openwrt.org/releases/23.05.3/targets/ipq40xx/mikrotik/openwrt-toolchain-23.05.3-ipq40xx-mikrotik_gcc-12.3.0_musl_eabi.Linux-x86_64.tar.xz"
+          wget "$TOOLCHAIN_URL" -O toolchain.tar.xz
+          tar -xf toolchain.tar.xz
+          mv openwrt-toolchain-* toolchain
+
+      - name: Configure toolchain environment
+        run: |
+          echo "STAGING_DIR=$PWD/toolchain/staging_dir" >> $GITHUB_ENV
+          echo "$PWD/toolchain/staging_dir/toolchain-*/bin" >> $GITHUB_PATH
+
+      - name: Build C Program
+        run: |
+          make CC=mipsel-openwrt-linux-gcc
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipq40xx-binary
+          path: ./your-output-binary-name
+
+  build-ipk:
+    name: Build OpenWRT .ipk
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -18,9 +50,6 @@ jobs:
           - arch: ath79
             profile: generic
             sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-          - arch: ipq40xx
-            profile: generic
-            sdk_url: https://downloads.openwrt.org/releases/23.05.2/targets/ipq40xx/generic/openwrt-sdk-23.05.2-ipq40xx-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
           - arch: ipq806x
             profile: generic
             sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq806x/generic/openwrt-sdk-23.05.3-ipq806x-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
@@ -30,20 +59,20 @@ jobs:
           - arch: x86
             profile: 64
             sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+          - arch: ipq40xx
+            profile: generic
+            sdk_url: https://downloads.openwrt.org/releases/23.05.2/targets/ipq40xx/generic/openwrt-sdk-23.05.2-ipq40xx-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
 
     steps:
       - name: Skip non-ath79 if not tagged
         if: matrix.arch != 'ath79' && !startsWith(github.ref, 'refs/tags/')
-        run: |
-          echo "⏭️ Skipping ${{ matrix.arch }} (not a tagged release)"
-          exit 0
+        run: echo "⏭️ Skipping ${{ matrix.arch }} (not a tagged build)" && exit 0
 
-      - name: Checkout source code
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Download SDK
         run: |
-          echo "📥 Downloading SDK: ${{ matrix.sdk_url }}"
           wget "${{ matrix.sdk_url }}" -O sdk.tar.xz
           tar -xf sdk.tar.xz
           mv openwrt-sdk-* sdk
@@ -59,18 +88,17 @@ jobs:
           make defconfig
           make package/SIPserverV5/compile V=s -j$(nproc)
 
-      - name: Show output structure
+      - name: Show .ipk output
         run: |
-          echo "📦 .ipk files created:"
           find sdk/bin/packages/ -name '*.ipk' || echo "❌ No .ipk file found"
 
-      - name: Upload .ipk as artifact
+      - name: Upload .ipk
         uses: actions/upload-artifact@v4
         with:
           name: SIPserverV5-${{ matrix.arch }}
           path: sdk/bin/packages/*/*/*.ipk
 
-      - name: Upload to GitHub Release
+      - name: Upload .ipk to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
@@ -78,9 +106,9 @@ jobs:
           name: "SIPserverV5 ${{ github.ref_name }}"
           tag_name: ${{ github.ref_name }}
           body: |
-            This release contains .ipk packages for the following architectures:
+            Release for SIPserverV5 — includes:
             - ath79
-            - ipq40xx (SDK 23.05.2)
             - ipq806x
+            - ipq40xx
             - ramips/mt76x8
             - x86_64
