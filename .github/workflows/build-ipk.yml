@@ -47,16 +47,19 @@ jobs:
           make defconfig
           make package/SIPserverV5/compile V=s -j$(nproc)
 
-      - name: List built files (debug)
-        run: find sdk/bin/packages/ -name '*.ipk'
+      - name: Show last lines of build log on failure
+        if: failure()
+        run: |
+          echo "⛔ Build failed. Showing last 200 lines of log:"
+          find sdk/build_dir/ -name '*.log' -exec tail -n 200 {} \; || echo "No log found"
 
-      - name: Upload .ipk as artifact
+      - name: Upload .ipk as artifact (zip download)
         uses: actions/upload-artifact@v4
         with:
           name: SIPserverV5-${{ matrix.target.arch }}
           path: sdk/bin/packages/*/*/*.ipk
 
-      - name: Upload to GitHub Release (for version tags)
+      - name: Upload .ipk to GitHub Release (tagged builds only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v1
         with:
