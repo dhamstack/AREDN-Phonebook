@@ -8,56 +8,51 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
     strategy:
       matrix:
-        include:
+        target:
           - arch: ath79
             subtarget: generic
-            run_always: true
+            always: true
           - arch: x86
             subtarget: 64
-            run_always: false
-          - arch: ramips
-            subtarget: mt76x8
-            run_always: false
-      fail-fast: false
-
-    # 🧠 This filters the matrix at runtime:
-    # - Always run ath79
-    # - Only run other targets if this is a tag
-    continue-on-error: false
-    if: |
-      matrix.run_always == true || startsWith(github.ref, 'refs/tags/v')
+            always: false
+    runs-on: ubuntu-latest
 
     steps:
+      - name: Check if this job should run
+        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
+        run: echo "✅ Running build for ${{ matrix.target.arch }}"
+
       - name: Checkout code
+        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
         uses: actions/checkout@v4
 
       - name: Set SDK URL
+        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
         id: sdk
         run: |
-          if [[ "${{ matrix.arch }}" == "ath79" ]]; then
+          if [[ "${{ matrix.target.arch }}" == "ath79" ]]; then
             echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.arch }}" == "x86" ]]; then
+          elif [[ "${{ matrix.target.arch }}" == "x86" ]]; then
             echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.arch }}" == "ramips" ]]; then
-            echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ramips/mt76x8/openwrt-sdk-23.05.3-ramips-mt76x8_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
           fi
 
-      - name: Download and extract OpenWRT SDK
+      - name: Download and extract SDK
+        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
         run: |
           wget "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
           tar -xf sdk.tar.xz
           mv openwrt-sdk-* sdk
 
       - name: Inject package
+        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
         run: |
           mkdir -p sdk/package/SIPserverV5
           cp -r Phonebook/* sdk/package/SIPserverV5/
 
       - name: Build .ipk
+        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
         run: |
           cd sdk
           make defconfig
@@ -69,13 +64,14 @@ jobs:
           echo "⛔ Build failed. Showing last 200 lines of log:"
           find sdk/build_dir/ -name '*.log' -exec tail -n 200 {} \; || echo "No log found"
 
-      - name: Upload .ipk artifact
+      - name: Upload .ipk as artifact
+        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
-          name: SIPserverV5-${{ matrix.arch }}
+          name: SIPserverV5-${{ matrix.target.arch }}
           path: sdk/bin/packages/*/*/*.ipk
 
-      - name: Upload to GitHub Release (tagged builds only)
+      - name: Upload to GitHub Release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v1
         with:
