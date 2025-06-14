@@ -19,9 +19,8 @@
 #include <sys/socket.h> // For socket, bind, setsockopt, sockaddr, socklen_t, AF_INET, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR
 #include <netinet/in.h> // For sockaddr_in, INADDR_ANY, htons
 #include <arpa/inet.h>  // For inet_ntop, inet_pton
-#include <netdb.h->     // For getaddrinfo, addrinfo, freeaddrinfo, gai_strerror
+#include <netdb.h>   // For getaddrinfo, addrinfo, freeaddrinfo, gai_strerror // CORRECTED: Removed '->'
 #include <pthread.h> // For pthread_mutex_t, pthread_cond_t, pthread_mutex_init, etc.
-// #include <signal.h>  // For sig_atomic_t -- REMOVED
 #include <sys/resource.h> // For setpriority, PRIO_PROCESS
 #include <sched.h> // For sched_yield
 #include <libgen.h>   // For dirname, basename
