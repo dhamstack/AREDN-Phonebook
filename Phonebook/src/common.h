@@ -27,7 +27,7 @@
 #include <libgen.h>   // For dirname, basename
 
 
-// --- Application-specific Constants (remain hardcoded as agreed) -----
+// --- Application-specific Constants (remain hardcoded as agreed) -----------------------------------
 #define SIP_SERVER_VERSION "1.0.0"
 #define APP_NAME "sip-server"
 #define SIP_PORT 5060
