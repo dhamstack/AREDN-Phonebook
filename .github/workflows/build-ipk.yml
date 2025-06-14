@@ -52,13 +52,13 @@ jobs:
             sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
           - arch: ipq806x
             profile: generic
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq806x/generic/openwrt-sdk-23.05.3-ipq806x-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq806x/generic/openwrt-sdk-23.05.3-ipq806x-generic_gcc-12.3.0_musl_eabi.Linux-x86_64.tar.xz
           - arch: ramips
             profile: mt76x8
             sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ramips/mt76x8/openwrt-sdk-23.05.3-ramips-mt76x8_gcc-12.3.0_musl.Linux-x86_64.tar.xz
           - arch: x86
             profile: 64
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq806x/generic/openwrt-sdk-23.05.3-ipq806x-generic_gcc-12.3.0_musl_eabi.Linux-x86_64.tar.xz
           - arch: ipq40xx
             profile: generic
             sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq40xx/generic/openwrt-sdk-23.05.3-ipq40xx-generic_gcc-12.3.0_musl_eabi.Linux-x86_64.tar.xz
