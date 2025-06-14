@@ -45,7 +45,7 @@ jobs:
       - name: Show output structure
         run: |
           echo "📦 .ipk files created:"
-          find sdk/bin/packages/ -name '*.ipk' || echo "❌ No .ipk file found"
+          find sdk/bin/packages/ -name '*.ipk' || echo "❌ No .ipk file found "
 
       - name: Upload .ipk as GitHub artifact
         uses: actions/upload-artifact@v4
