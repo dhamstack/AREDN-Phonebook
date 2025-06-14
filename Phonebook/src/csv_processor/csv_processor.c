@@ -204,10 +204,10 @@ static int attempt_download(const char* host, const char* port, const char* path
 
     LOG_DEBUG("Starting HTTP response read loop. Writing to %s.", PB_CSV_PATH);
     while ((len_read = read(sock, buf, sizeof(buf))) > 0) {
-        if (!keep_running) {
-            LOG_WARN("Download interrupted by shutdown signal. Read %zd bytes.", len_read);
-            break;
-        }
+        // if (!keep_running) { // REMOVED
+        //     LOG_WARN("Download interrupted by shutdown signal. Read %zd bytes.", len_read);
+        //     break;
+        // }
         LOG_DEBUG("Received %zd bytes from socket.", len_read);
 
         if (!status_line_read) {
@@ -326,10 +326,10 @@ int csv_processor_convert_csv_to_xml_and_get_path(char *output_path, size_t outp
     int ln = 0;
     LOG_DEBUG("Starting CSV parsing loop. Current line number: %d.", ln);
     while (fgets(line, sizeof(line), csv)) {
-        if (!keep_running) {
-            LOG_WARN("CSV conversion interrupted by shutdown signal.");
-            break;
-        }
+        // if (!keep_running) { // REMOVED
+        //     LOG_WARN("CSV conversion interrupted by shutdown signal.");
+        //     break;
+        // }
         if (ln++ == 0) {
             LOG_DEBUG("Skipping CSV header row (line %d): '%.*s'", ln, (int)strcspn(line, "\r\n"), line);
             continue;
