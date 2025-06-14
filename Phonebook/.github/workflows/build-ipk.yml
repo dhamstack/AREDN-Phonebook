@@ -1,0 +1,61 @@
+name: Build OpenWRT .ipk Package
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        target:
+          - arch: ath79
+            subtarget: generic
+          - arch: x86
+            subtarget: 64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up SDK URL
+        id: sdk
+        run: |
+          if [[ "${{ matrix.target.arch }}" == "ath79" ]]; then
+            echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
+          elif [[ "${{ matrix.target.arch }}" == "x86" ]]; then
+            echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download and extract SDK
+        run: |
+          wget "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
+          tar -xf sdk.tar.xz
+          mv openwrt-sdk-* sdk
+
+      - name: Inject Phonebook package
+        run: |
+          mkdir -p sdk/package/phonebook
+          cp -r Phonebook/* sdk/package/phonebook/
+
+      - name: Build package
+        run: |
+          cd sdk
+          make defconfig
+          make package/phonebook/compile V=s -j$(nproc)
+
+      - name: Upload .ipk as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phonebook-${{ matrix.target.arch }}
+          path: sdk/bin/packages/*/*/*.ipk
+
+      - name: Upload to GitHub Release (only for version tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: sdk/bin/packages/*/*/*.ipk
