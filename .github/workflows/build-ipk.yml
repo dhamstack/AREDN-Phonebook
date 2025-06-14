@@ -1,4 +1,4 @@
-name: Build OpenWRT .ipk Package
+name: Build OpenWRT .ipk (ath79 only)
 
 on:
   push:
@@ -7,52 +7,30 @@ on:
       - 'v*'
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        target:
-          - arch: ath79
-            subtarget: generic
-            always: true
-          - arch: x86
-            subtarget: 64
-            always: false
+  build-ath79:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check if this job should run
-        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
-        run: echo "✅ Running build for ${{ matrix.target.arch }}"
-
       - name: Checkout code
-        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
         uses: actions/checkout@v4
 
-      - name: Set SDK URL
-        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
+      - name: Set SDK URL for ath79
         id: sdk
         run: |
-          if [[ "${{ matrix.target.arch }}" == "ath79" ]]; then
-            echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.target.arch }}" == "x86" ]]; then
-            echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
-          fi
+          echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
 
-      - name: Download and extract SDK
-        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
+      - name: Download and extract OpenWRT SDK
         run: |
           wget "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
           tar -xf sdk.tar.xz
           mv openwrt-sdk-* sdk
 
-      - name: Inject package
-        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
+      - name: Inject your Phonebook package
         run: |
           mkdir -p sdk/package/SIPserverV5
           cp -r Phonebook/* sdk/package/SIPserverV5/
 
       - name: Build .ipk
-        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
         run: |
           cd sdk
           make defconfig
@@ -61,17 +39,21 @@ jobs:
       - name: Show last lines of build log on failure
         if: failure()
         run: |
-          echo "⛔ Build failed. Showing last 200 lines of log:"
-          find sdk/build_dir/ -name '*.log' -exec tail -n 200 {} \; || echo "No log found"
+          echo "⛔ Build failed. Showing last 200 lines of logs:"
+          find sdk/build_dir/ -name '*.log' -exec tail -n 200 {} \; || echo "No build log found"
 
-      - name: Upload .ipk as artifact
-        if: matrix.always == true || startsWith(github.ref, 'refs/tags/v')
+      - name: Show output structure
+        run: |
+          echo "📦 .ipk files created:"
+          find sdk/bin/packages/ -name '*.ipk' || echo "❌ No .ipk file found"
+
+      - name: Upload .ipk as GitHub artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SIPserverV5-${{ matrix.target.arch }}
+          name: SIPserverV5-ath79
           path: sdk/bin/packages/*/*/*.ipk
 
-      - name: Upload to GitHub Release (tags only)
+      - name: Upload to GitHub Release (tagged builds only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v1
         with:
