@@ -1,4 +1,4 @@
-name: Build OpenWRT IPK Package
+name: Build OpenWRT .ipk (ath79 only)
 
 on:
   push:
@@ -7,52 +7,50 @@ on:
       - 'v*'
 
 jobs:
-  build:
+  build-ath79:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - arch: ath79
-            profile: generic
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-          - arch: x86
-            profile: 64
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-
-    # Only run x86 if this is a tag (release)
-    continue-on-error: false
 
     steps:
-      - name: Skip non-release x86 builds
-        if: matrix.arch == 'x86' && github.ref_type != 'tag'
-        run: |
-          echo "❌ Skipping x86 because this is not a release tag."
-          exit 0
-
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set SDK URL for ath79
+        id: sdk
+        run: |
+          echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
+
       - name: Download and extract OpenWRT SDK
         run: |
-          wget "${{ matrix.sdk_url }}" -O sdk.tar.xz
+          wget "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
           tar -xf sdk.tar.xz
           mv openwrt-sdk-* sdk
 
-      - name: Inject SIPserverV5 package
+      - name: Inject your Phonebook package
         run: |
           mkdir -p sdk/package/SIPserverV5
           cp -r Phonebook/* sdk/package/SIPserverV5/
 
-      - name: Build IPK
+      - name: Build .ipk
         run: |
           cd sdk
           make defconfig
           make package/SIPserverV5/compile V=s -j$(nproc)
 
-      - name: Upload .ipk artifact
+      - name: Show last lines of build log on failure
+        if: failure()
+        run: |
+          echo "⛔ Build failed. Showing last 200 lines of logs:"
+          find sdk/build_dir/ -name '*.log' -exec tail -n 200 {} \; || echo "No build log found"
+
+      - name: Show output structure
+        run: |
+          echo "📦 .ipk files created:"
+          find sdk/bin/packages/ -name '*.ipk' || echo "❌ No .ipk file found"
+
+      - name: Upload .ipk as GitHub artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SIPserverV5-${{ matrix.arch }}-${{ github.sha }}
+          name: SIPserverV5-ath79
           path: sdk/bin/packages/*/*/*.ipk
 
       - name: Upload to GitHub Release (tagged builds only)
