@@ -5,7 +5,6 @@ on:
     branches: [main]
     tags:
       - 'v*'
-  pull_request:
 
 jobs:
   build:
@@ -22,7 +21,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up SDK URL
+      - name: Set SDK URL
         id: sdk
         run: |
           if [[ "${{ matrix.target.arch }}" == "ath79" ]]; then
@@ -31,30 +30,33 @@ jobs:
             echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
           fi
 
-      - name: Download and extract SDK
+      - name: Download and extract OpenWRT SDK
         run: |
           wget "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
           tar -xf sdk.tar.xz
           mv openwrt-sdk-* sdk
 
-      - name: Inject Phonebook package
+      - name: Inject your Phonebook package
         run: |
-          mkdir -p sdk/package/phonebook
-          cp -r Phonebook/* sdk/package/phonebook/
+          mkdir -p sdk/package/SIPserverV5
+          cp -r Phonebook/* sdk/package/SIPserverV5/
 
-      - name: Build package
+      - name: Build the .ipk
         run: |
           cd sdk
           make defconfig
-          make package/phonebook/compile V=s -j$(nproc)
+          make package/SIPserverV5/compile V=s -j$(nproc)
+
+      - name: List built files (debug)
+        run: find sdk/bin/packages/ -name '*.ipk'
 
       - name: Upload .ipk as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: phonebook-${{ matrix.target.arch }}
+          name: SIPserverV5-${{ matrix.target.arch }}
           path: sdk/bin/packages/*/*/*.ipk
 
-      - name: Upload to GitHub Release (only for version tags)
+      - name: Upload to GitHub Release (for version tags)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v1
         with:
