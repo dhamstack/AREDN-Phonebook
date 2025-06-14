@@ -61,7 +61,7 @@ jobs:
             sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
           - arch: ipq40xx
             profile: generic
-            sdk_url: https://downloads.openwrt.org/releases/23.05.2/targets/ipq40xx/generic/openwrt-sdk-23.05.2-ipq40xx-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq40xx/generic/openwrt-sdk-23.05.3-ipq40xx-generic_gcc-12.3.0_musl_eabi.Linux-x86_64.tar.xz
 
     steps:
       - name: Skip non-ath79 if not tagged
