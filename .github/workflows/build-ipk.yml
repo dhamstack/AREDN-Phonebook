@@ -7,7 +7,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write  # Required for GitHub Releases
+  contents: write
 
 jobs:
   build:
@@ -35,19 +35,20 @@ jobs:
       - name: Skip non-ath79 if not tagged
         if: matrix.arch != 'ath79' && !startsWith(github.ref, 'refs/tags/')
         run: |
-          echo "⏭️ Skipping non-ath79 architecture for non-tag push"
+          echo "⏭️ Skipping ${{ matrix.arch }} (not a tagged release)"
           exit 0
 
-      - name: Checkout code
+      - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Download SDK for ${{ matrix.arch }}
+      - name: Download SDK
         run: |
+          echo "📥 Downloading SDK: ${{ matrix.sdk_url }}"
           wget "${{ matrix.sdk_url }}" -O sdk.tar.xz
           tar -xf sdk.tar.xz
           mv openwrt-sdk-* sdk
 
-      - name: Inject your Phonebook package
+      - name: Inject Phonebook package
         run: |
           mkdir -p sdk/package/SIPserverV5
           cp -r Phonebook/* sdk/package/SIPserverV5/
@@ -63,13 +64,13 @@ jobs:
           echo "📦 .ipk files created:"
           find sdk/bin/packages/ -name '*.ipk' || echo "❌ No .ipk file found"
 
-      - name: Upload .ipk as GitHub artifact
+      - name: Upload .ipk as artifact
         uses: actions/upload-artifact@v4
         with:
           name: SIPserverV5-${{ matrix.arch }}
           path: sdk/bin/packages/*/*/*.ipk
 
-      - name: Upload .ipk to GitHub Release (only on tag)
+      - name: Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
@@ -77,5 +78,9 @@ jobs:
           name: "SIPserverV5 ${{ github.ref_name }}"
           tag_name: ${{ github.ref_name }}
           body: |
-            OpenWRT .ipk packages for SIPserverV5
-            Architectures: ath79, ipq40xx, ipq806x, ramips/mt76x8, x86_64
+            This release contains .ipk packages for the following architectures:
+            - ath79
+            - ipq40xx (SDK 23.05.2)
+            - ipq806x
+            - ramips/mt76x8
+            - x86_64
