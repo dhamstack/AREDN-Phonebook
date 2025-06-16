@@ -1,114 +1,171 @@
-name: Build OpenWRT Binaries & Packages
+name: Cross-compile C Project for OpenWrt
 
 on:
   push:
-    branches: [main]
-    tags:
-      - 'v*'
-
-permissions:
-  contents: write
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual trigger
 
 jobs:
-
-  build-makefile-ipq40xx:
-    name: Build C Program with Toolchain (ipq40xx/mikrotik)
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest # GitHub-hosted runner is x86_64 Linux
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v4
 
-      - name: Download and extract toolchain
-        run: |
-          TOOLCHAIN_URL="https://downloads.openwrt.org/releases/23.05.3/targets/ipq40xx/mikrotik/openwrt-toolchain-23.05.3-ipq40xx-mikrotik_gcc-12.3.0_musl_eabi.Linux-x86_64.tar.xz"
-          wget "$TOOLCHAIN_URL" -O toolchain.tar.xz
-          tar -xf toolchain.tar.xz
-          mv openwrt-toolchain-* toolchain
+    - name: Define OpenWrt Target Architecture
+      id: set_target # Give this step an ID to access its outputs
+      run: |
+        # --- Configure these variables based on YOUR TARGET OPENWRT DEVICE! ---
+        # Look up your device on https://openwrt.org/toh/start
+        # Example 1: For a common ath79 device (e.g., TP-Link WR841N v13)
+        echo "OPENWRT_TARGET=ath79" >> "$GITHUB_OUTPUT"
+        echo "OPENWRT_SUBTARGET=generic" >> "$GITHUB_OUTPUT"
+        echo "C_PROJECT_DIR=my-c-project" >> "$GITHUB_OUTPUT" # Adjust if your project is in a different directory
 
-      - name: Configure toolchain environment
-        run: |
-          echo "STAGING_DIR=$PWD/toolchain/staging_dir" >> $GITHUB_ENV
-          echo "$PWD/toolchain/staging_dir/toolchain-*/bin" >> $GITHUB_PATH
+        # Example 2: For a 64-bit Intel/AMD x86 system
+        # echo "OPENWRT_TARGET=x86" >> "$GITHUB_OUTPUT"
+        # echo "OPENWRT_SUBTARGET=64" >> "$GITHUB_OUTPUT"
+        # echo "C_PROJECT_DIR=my-c-project" >> "$GITHUB_OUTPUT"
 
-      - name: Build C Program
-        run: |
-          make CC=mipsel-openwrt-linux-gcc
+        # Example 3: For a Mikrotik router with IPQ40xx (as in your previous example)
+        # echo "OPENWRT_TARGET=ipq40xx" >> "$GITHUB_OUTPUT"
+        # echo "OPENWRT_SUBTARGET=mikrotik" >> "$GITHUB_OUTPUT"
+        # echo "C_PROJECT_DIR=my-c-project" >> "$GITHUB_OUTPUT"
 
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: ipq40xx-binary
-          path: ./your-output-binary-name
+        # Example 4: For Raspberry Pi 4 (bcm2711)
+        # echo "OPENWRT_TARGET=bcm27xx" >> "$GITHUB_OUTPUT"
+        # echo "OPENWRT_SUBTARGET=bcm2711" >> "$GITHUB_OUTPUT"
+        # echo "C_PROJECT_DIR=my-c-project" >> "$GITHUB_OUTPUT"
 
-  build-ipk:
-    name: Build OpenWRT .ipk
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - arch: ath79
-            profile: generic
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-          - arch: ipq806x
-            profile: generic
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq806x/generic/openwrt-sdk-23.05.3-ipq806x-generic_gcc-12.3.0_musl_eabi.Linux-x86_64.tar.xz
-          - arch: ramips
-            profile: mt76x8
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ramips/mt76x8/openwrt-sdk-23.05.3-ramips-mt76x8_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-          - arch: x86
-            profile: 64
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq806x/generic/openwrt-sdk-23.05.3-ipq806x-generic_gcc-12.3.0_musl_eabi.Linux-x86_64.tar.xz
-          - arch: ipq40xx
-            profile: generic
-            sdk_url: https://downloads.openwrt.org/releases/23.05.3/targets/ipq40xx/generic/openwrt-sdk-23.05.3-ipq40xx-generic_gcc-12.3.0_musl_eabi.Linux-x86_64.tar.xz
+    - name: Download and Extract OpenWrt SDK
+      # Access variables from the previous step using steps.<id>.outputs.<variable>
+      env:
+        OPENWRT_TARGET: ${{ steps.set_target.outputs.OPENWRT_TARGET }}
+        OPENWRT_SUBTARGET: ${{ steps.set_target.outputs.OPENWRT_SUBTARGET }}
+      run: |
+        SDK_BASE_URL="https://downloads.openwrt.org/snapshots/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/"
 
-    steps:
-      - name: Skip non-ath79 if not tagged
-        if: matrix.arch != 'ath79' && !startsWith(github.ref, 'refs/tags/')
-        run: echo "⏭️ Skipping ${{ matrix.arch }} (not a tagged build)" && exit 0
+        echo "Attempting to download SDK from: $SDK_BASE_URL"
 
-      - name: Checkout source
-        uses: actions/checkout@v4
+        # Dynamically find the latest SDK filename for Linux-x86_64 host
+        SDK_ARCH_FILENAME=$(curl -s "$SDK_BASE_URL" | grep -oP 'openwrt-sdk-[^"]*\.Linux-x86_64\.(tar\.xz|tar\.zst)' | head -n 1)
 
-      - name: Download SDK
-        run: |
-          wget "${{ matrix.sdk_url }}" -O sdk.tar.xz
-          tar -xf sdk.tar.xz
-          mv openwrt-sdk-* sdk
+        if [ -z "$SDK_ARCH_FILENAME" ]; then
+          echo "Error: Could not find OpenWrt SDK for target ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}."
+          echo "Please verify the target/subtarget combination exists on the OpenWrt snapshots server."
+          exit 1
+        fi
 
-      - name: Inject Phonebook package
-        run: |
-          mkdir -p sdk/package/SIPserverV5
-          cp -r Phonebook/* sdk/package/SIPserverV5/
+        SDK_URL="${SDK_BASE_URL}${SDK_ARCH_FILENAME}"
+        echo "Found SDK: $SDK_URL"
+        echo "Downloading..."
+        curl -L "$SDK_URL" -o openwrt-sdk.tar.gzst # Using .gzst extension for unified handling
 
-      - name: Build .ipk
-        run: |
-          cd sdk
-          make defconfig
-          make package/SIPserverV5/compile V=s -j$(nproc)
+        echo "Extracting SDK..."
+        tar -xf openwrt-sdk.tar.gzst # -x for extract, -f for file, tar automatically handles .xz, .zst, .gz
+        
+        # Find the extracted SDK directory (its name includes version and target details)
+        SDK_DIR=$(find . -maxdepth 1 -type d -name "openwrt-sdk-*" | head -n 1)
+        if [ -z "$SDK_DIR" ]; then
+            echo "Error: SDK directory not found after extraction."
+            exit 1
+        fi
+        echo "Extracted SDK to: $SDK_DIR"
+        echo "SDK_DIR=$SDK_DIR" >> "$GITHUB_ENV" # Make SDK_DIR available to subsequent steps
 
-      - name: Show .ipk output
-        run: |
-          find sdk/bin/packages/ -name '*.ipk' || echo "❌ No .ipk file found"
+    - name: Configure Cross-Compilation Environment
+      run: |
+        # The toolchain path usually has a structure like:
+        # staging_dir/toolchain-<arch>_<subarch>_gcc-<version>_<libc>/bin
+        # We can derive the toolchain name from the SDK_DIR
+        TOOLCHAIN_NAME=$(basename "${{ env.SDK_DIR }}" | sed 's/^openwrt-sdk-[^-]*-//' | sed 's/\.Linux-x86_64$//')
+        TOOLCHAIN_PATH="${{ env.SDK_DIR }}/staging_dir/toolchain-$TOOLCHAIN_NAME"
 
-      - name: Upload .ipk
-        uses: actions/upload-artifact@v4
-        with:
-          name: SIPserverV5-${{ matrix.arch }}
-          path: sdk/bin/packages/*/*/*.ipk
+        if [ ! -d "$TOOLCHAIN_PATH" ]; then
+          echo "Error: Toolchain directory not found at $TOOLCHAIN_PATH. SDK structure might have changed or derivation failed."
+          exit 1
+        fi
 
-      - name: Upload .ipk to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: sdk/bin/packages/*/*/*.ipk
-          name: "SIPserverV5 ${{ github.ref_name }}"
-          tag_name: ${{ github.ref_name }}
-          body: |
-            Release for SIPserverV5 — includes:
-            - ath79
-            - ipq806x
-            - ipq40xx
-            - ramips/mt76x8
-            - x86_64
+        echo "Configuring PATH with: ${TOOLCHAIN_PATH}/bin"
+        export PATH="${TOOLCHAIN_PATH}/bin:$PATH"
+        export STAGING_DIR="${{ env.SDK_DIR }}/staging_dir"
+
+        # Determine the OpenWrt triplet for the target (e.g., mips-openwrt-linux-musl)
+        # This is usually the prefix of the compiler binaries in the toolchain/bin directory.
+        COMPILER_BIN=$(find "${TOOLCHAIN_PATH}/bin" -maxdepth 1 -type f -name "*-gcc" | head -n 1)
+        if [ -z "$COMPILER_BIN" ]; then
+          echo "Error: Could not find a GCC compiler in the toolchain's bin directory."
+          exit 1
+        fi
+        OPENWRT_TRIPLET=$(basename "$COMPILER_BIN" | sed 's/-gcc$//')
+        echo "Detected OpenWrt Triplet: $OPENWRT_TRIPLET"
+
+        # Set specific compiler variables that your project's Makefile/build system might use
+        export CC="$OPENWRT_TRIPLET-gcc"
+        export CXX="$OPENWRT_TRIPLET-g++"
+        export AR="$OPENWRT_TRIPLET-ar" # Archiver, common for static libs
+        export RANLIB="$OPENWRT_TRIPLET-ranlib" # Ranlib
+
+        # Export these to GITHUB_ENV so they are available in subsequent steps
+        echo "PATH=$PATH" >> "$GITHUB_ENV"
+        echo "STAGING_DIR=$STAGING_DIR" >> "$GITHUB_ENV"
+        echo "CC=$CC" >> "$GITHUB_ENV"
+        echo "CXX=$CXX" >> "$GITHUB_ENV"
+        echo "AR=$AR" >> "$GITHUB_ENV"
+        echo "RANLIB=$RANLIB" >> "$GITHUB_ENV"
+        echo "OPENWRT_TRIPLET=$OPENWRT_TRIPLET" >> "$GITHUB_ENV"
+
+    - name: Build C project
+      # Access variables from previous steps and GITHUB_ENV
+      working-directory: ${{ steps.set_target.outputs.C_PROJECT_DIR }} # Change to your project's directory
+      run: |
+        echo "Building project in ${{ steps.set_target.outputs.C_PROJECT_DIR }} for target ${{ env.OPENWRT_TRIPLET }}"
+        
+        # --- Adjust these commands based on your C project's build system ---
+        # Common options:
+
+        # 1. For a simple Makefile project:
+        # make all # or `make` or `make CC="${{ env.CC }}"` if your Makefile needs explicit CC
+
+        # 2. For a project using GNU Autotools (configure, make):
+        # ./configure --host=${{ env.OPENWRT_TRIPLET }} --prefix=/usr --disable-shared --enable-static
+        # make
+
+        # 3. For a CMake project (requires CMake installed on runner, which it typically is):
+        # mkdir build
+        # cd build
+        # cmake .. \
+        #   -DCMAKE_TOOLCHAIN_FILE=${{ env.SDK_DIR }}/scripts/site/toolchain-cmake/OpenWrt.cmake \
+        #   -DCMAKE_BUILD_TYPE=Release \
+        #   -DCMAKE_INSTALL_PREFIX=/usr
+        # cmake --build . --target all
+
+        # 4. If your project generates an IPK directly (e.g., if it's an OpenWrt package source tree)
+        # make package/your-package-name/compile V=s
+        # make package/your-package-name/install V=s
+        # find bin -name "*.ipk" # Find the generated IPK
+
+        # --- IMPORTANT: Replace the placeholder command below with your actual build command ---
+        echo "Running placeholder build command: make"
+        make # This is a placeholder. Adapt it to your project's needs!
+        # Example: make CC="${{ env.CC }}" CXX="${{ env.CXX }}" # If your Makefile doesn't pick up env vars automatically
+
+    - name: Verify Compiled Output (Optional)
+      run: |
+        echo "Listing compiled output (adjust path to your executable/libraries):"
+        ls -l ${{ steps.set_target.outputs.C_PROJECT_DIR }}/your_executable_name # Replace 'your_executable_name'
+        # You might also want to run `file your_executable_name` to confirm its architecture
+
+    - name: Upload Compiled Artifact (Optional)
+      uses: actions/upload-artifact@v4
+      with:
+        name: compiled-openwrt-binary-${{ steps.set_target.outputs.OPENWRT_TARGET }}-${{ steps.set_target.outputs.OPENWRT_SUBTARGET }}
+        path: |
+          ${{ steps.set_target.outputs.C_PROJECT_DIR }}/your_executable_name # Adjust to the path of your compiled binary
+          # You can add more paths here if you generate multiple files or an IPK
+          # مثلاً: ${{ steps.set_target.outputs.C_PROJECT_DIR }}/bin/*.ipk
