@@ -7,6 +7,11 @@ on:
       - '*.*.*'        # match tags like 1.0.5, 2.3.0, etc.
   pull_request:
 
+permissions:
+  contents: read        # allow checkout & artifacts download
+  packages: write       # if you ever publish to GitHub Packages
+  releases: write       # allow creating/editing GitHub Releases
+
 jobs:
   build:
     strategy:
@@ -58,4 +63,5 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           files: sdk/bin/packages/*/*/*.ipk
