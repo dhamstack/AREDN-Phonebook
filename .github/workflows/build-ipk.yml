@@ -17,143 +17,87 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    # This step should appear at line 20-21 if empty lines are preserved exactly as below.
-    # The error "Nested mappings are not allowed in compact mappings" at column 13 on a - name line
-    # is almost always due to subtle whitespace errors (tabs/spaces) or invisible characters.
-    - name: Debug Repo Contents # Simpler name for this debugging step
+    - name: Debug Repo Contents
       run: |
         echo "Listing contents of the repository root ($GITHUB_WORKSPACE):"
         ls -la "$GITHUB_WORKSPACE"
         echo ""
 
     - name: Define OpenWrt Target Architecture
-      id: set_target # Give this step an ID to access its outputs
+      id: set_target
       run: |
         # --- Configure these variables based on YOUR TARGET OPENWRT DEVICE! ---
-        # Look up your device on https://openwrt.org/toh/start
-        # Example 1: For a common ath79 device (e.g., TP-Link WR841N v13)
         echo "OPENWRT_TARGET=ath79" >> "$GITHUB_OUTPUT"
         echo "OPENWRT_SUBTARGET=generic" >> "$GITHUB_OUTPUT"
-        echo "C_PROJECT_DIR=phonebook" >> "$GITHUB_OUTPUT" # CORRECTED: Project is in the 'phonebook' directory
+        echo "C_PROJECT_DIR=Phonebook" >> "$GITHUB_OUTPUT"   # ← corrected capitalization
 
-        # Example 2: For a 64-bit Intel/AMD x86 system
+        # Example overrides for other targets:
         # echo "OPENWRT_TARGET=x86" >> "$GITHUB_OUTPUT"
         # echo "OPENWRT_SUBTARGET=64" >> "$GITHUB_OUTPUT"
         # echo "C_PROJECT_DIR=my-c-project" >> "$GITHUB_OUTPUT"
 
-        # Example 3: For a Mikrotik router with IPQ40xx (as in your previous example)
-        # echo "OPENWRT_TARGET=ipq40xx" >> "$GITHUB_OUTPUT"
-        # echo "OPENWRT_SUBTARGET=mikrotik" >> "$GITHUB_OUTPUT"
-        # echo "C_PROJECT_DIR=my-c-project" >> "$GITHUB_OUTPUT"
-
-        # Example 4: For Raspberry Pi 4 (bcm2711)
-        # echo "OPENWRT_TARGET=bcm27xx" >> "$GITHUB_OUTPUT"
-        # echo "OPENWRT_SUBTARGET=bcm2711" >> "$GITHUB_OUTPUT"
-        # echo "C_PROJECT_DIR=my-c-project" >> "$GITHUB_OUTPUT"
-
     - name: Download and Extract OpenWrt SDK
-      # Access variables from the previous step using steps.<id>.outputs.<variable>
       env:
         OPENWRT_TARGET: ${{ steps.set_target.outputs.OPENWRT_TARGET }}
         OPENWRT_SUBTARGET: ${{ steps.set_target.outputs.OPENWRT_SUBTARGET }}
       run: |
         SDK_BASE_URL="https://downloads.openwrt.org/snapshots/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/"
-
         echo "Attempting to download SDK from: $SDK_BASE_URL"
-
-        # Dynamically find the latest SDK filename for Linux-x86_64 host
         SDK_ARCH_FILENAME=$(curl -s "$SDK_BASE_URL" | grep -oP 'openwrt-sdk-[^"]*\.Linux-x86_64\.(tar\.xz|tar\.zst)' | head -n 1)
-
         if [ -z "$SDK_ARCH_FILENAME" ]; then
           echo "Error: Could not find OpenWrt SDK for target ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}."
-          echo "Please verify the target/subtarget combination exists on the OpenWrt snapshots server."
           exit 1
         fi
-
         SDK_URL="${SDK_BASE_URL}${SDK_ARCH_FILENAME}"
         echo "Found SDK: $SDK_URL"
-        echo "Downloading..."
-        curl -L "$SDK_URL" -o openwrt-sdk.tar.gzst # Using .gzst extension for unified handling
-
-        echo "Extracting SDK..."
-        tar -xf openwrt-sdk.tar.gzst # -x for extract, -f for file, tar automatically handles .xz, .zst, .gz
-        
-        # Find the extracted SDK directory (its name includes version and target details)
+        curl -L "$SDK_URL" -o openwrt-sdk.tar.gzst
+        tar -xf openwrt-sdk.tar.gzst
         SDK_DIR=$(find . -maxdepth 1 -type d -name "openwrt-sdk-*" | head -n 1)
         if [ -z "$SDK_DIR" ]; then
-            echo "Error: SDK directory not found after extraction."
-            exit 1
+          echo "Error: SDK directory not found after extraction."
+          exit 1
         fi
         echo "Extracted SDK to: $SDK_DIR"
-        echo "SDK_DIR=$SDK_DIR" >> "$GITHUB_ENV" # Make SDK_DIR available to subsequent steps
+        echo "SDK_DIR=$SDK_DIR" >> "$GITHUB_ENV"
 
     - name: Configure Cross-Compilation Environment
       run: |
-        # Instead of deriving, find the actual toolchain directory within staging_dir
         TOOLCHAIN_PATH=$(find "${{ env.SDK_DIR }}/staging_dir" -maxdepth 1 -type d -name "toolchain-*" | head -n 1)
-
         if [ -z "$TOOLCHAIN_PATH" ]; then
-          echo "Error: Toolchain directory not found within ${{ env.SDK_DIR }}/staging_dir. SDK structure might have changed or extraction failed."
+          echo "Error: Toolchain directory not found."
           exit 1
         fi
-
-        echo "Configuring PATH with: ${TOOLCHAIN_PATH}/bin"
         export PATH="${TOOLCHAIN_PATH}/bin:$PATH"
         export STAGING_DIR="${{ env.SDK_DIR }}/staging_dir"
-
-        # Determine the OpenWrt triplet for the target (e.g., mips-openwrt-linux-musl)
-        # This is usually the prefix of the compiler binaries in the toolchain/bin directory.
         COMPILER_BIN=$(find "${TOOLCHAIN_PATH}/bin" -maxdepth 1 -type f -name "*-gcc" | head -n 1)
         if [ -z "$COMPILER_BIN" ]; then
-          echo "Error: Could not find a GCC compiler in the toolchain's bin directory."
+          echo "Error: Could not find GCC in toolchain."
           exit 1
         fi
         OPENWRT_TRIPLET=$(basename "$COMPILER_BIN" | sed 's/-gcc$//')
-        echo "Detected OpenWrt Triplet: $OPENWRT_TRIPLET"
-
-        # Set specific compiler variables that your project's Makefile/build system might use
-        export CC="$OPENWRT_TRIPLET-gcc"
-        export CXX="$OPENWRT_TRIPLET-g++"
-        export AR="$OPENWRT_TRIPLET-ar" # Archiver, common for static libs
-        export RANLIB="$OPENWRT_TRIPLET-ranlib" # Ranlib
-
-        # Export these to GITHUB_ENV so they are available in subsequent steps
-        echo "PATH=$PATH" >> "$GITHUB_ENV"
-        echo "STAGING_DIR=$STAGING_DIR" >> "$GITHUB_ENV"
-        echo "CC=$CC" >> "$GITHUB_ENV"
-        echo "CXX=$CXX" >> "$GITHUB_ENV"
-        echo "AR=$AR" >> "$GITHUB_ENV"
-        echo "RANLIB=$RANLIB" >> "$GITHUB_ENV"
         echo "OPENWRT_TRIPLET=$OPENWRT_TRIPLET" >> "$GITHUB_ENV"
+        echo "CC=${OPENWRT_TRIPLET}-gcc"   >> "$GITHUB_ENV"
+        echo "CXX=${OPENWRT_TRIPLET}-g++"  >> "$GITHUB_ENV"
+        echo "AR=${OPENWRT_TRIPLET}-ar"    >> "$GITHUB_ENV"
+        echo "RANLIB=${OPENWRT_TRIPLET}-ranlib" >> "$GITHUB_ENV"
+        echo "PATH=$PATH"                  >> "$GITHUB_ENV"
+        echo "STAGING_DIR=$STAGING_DIR"    >> "$GITHUB_ENV"
 
     - name: Build C project
-      working-directory: ${{ steps.set_target.outputs.C_PROJECT_DIR }} # Now correctly set to 'phonebook'
+      working-directory: ${{ steps.set_target.outputs.C_PROJECT_DIR }}
       run: |
-        echo "Building project in ${{ steps.set_target.outputs.C_PROJECT_DIR }} for target ${{ env.OPENWRT_TRIPLET }}"
-        
-        echo "Listing contents of working directory before make to debug Makefile presence:"
-        ls -la . # List all files including hidden ones, and show permissions
-        echo ""
-
-        # --- Adjust these commands based on your C project's build system ---
-        # Your project uses a standard Makefile, so `make` should work.
-        # The `make -f Makefile` explicitly tells make where to find the Makefile.
-        
-        echo "Running build command: make -f Makefile"
-        make -f Makefile # Explicitly specify the Makefile
-        
+        echo "Building project in $PWD for target ${{ env.OPENWRT_TRIPLET }}"
+        ls -la .
+        make -f Makefile
 
     - name: Verify Compiled Output (Optional)
       run: |
-        echo "Listing compiled output (adjust path to your executable/libraries):"
-        ls -l ${{ steps.set_target.outputs.C_PROJECT_DIR }}/phonebook # Path relative to the working directory ('phonebook' folder)
-        # You might also emulate `file phonebook` to confirm its architecture, e.g. `readlink -f phonebook | xargs file`
+        echo "Listing compiled output:"
+        ls -l ${{ steps.set_target.outputs.C_PROJECT_DIR }}/phonebook
 
     - name: Upload Compiled Artifact (Optional)
       uses: actions/upload-artifact@v4
       with:
         name: compiled-openwrt-binary-${{ steps.set_target.outputs.OPENWRT_TARGET }}-${{ steps.set_target.outputs.OPENWRT_SUBTARGET }}
         path: |
-          ${{ steps.set_target.outputs.C_PROJECT_DIR }}/phonebook # Path relative to the repository root
-          # You can add more paths here if you generate multiple files or an IPK
-          # مثلاً: ${{ steps.set_target.outputs.C_PROJECT_DIR }}/bin/*.ipk
+          ${{ steps.set_target.outputs.C_PROJECT_DIR }}/phonebook
