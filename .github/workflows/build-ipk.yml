@@ -17,6 +17,12 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
+    - name: Debug: List Repository Root Contents
+      run: |
+        echo "Listing contents of the repository root ($GITHUB_WORKSPACE):"
+        ls -la "$GITHUB_WORKSPACE"
+        echo ""
+
     - name: Define OpenWrt Target Architecture
       id: set_target # Give this step an ID to access its outputs
       run: |
@@ -129,19 +135,10 @@ jobs:
         # --- Adjust these commands based on your C project's build system ---
         # Your project uses a standard Makefile, so `make` should work.
         # The `make -f Makefile` explicitly tells make where to find the Makefile.
-        # If `make` (without -f) works, you can remove `-f Makefile`.
         
         echo "Running build command: make -f Makefile"
         make -f Makefile # Explicitly specify the Makefile
         
-        # If the above still fails with "No makefile found", uncomment the line below
-        # to try the simpler `make` command, though it's less likely to work if `-f` fails.
-        # echo "Retrying with: make"
-        # make
-        
-        # You can also add more debug info here, e.g., to check file type:
-        # file Makefile || echo "Makefile not found or unreadable by 'file' command."
-
 
     - name: Verify Compiled Output (Optional)
       run: |
