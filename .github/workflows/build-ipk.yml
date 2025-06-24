@@ -80,14 +80,11 @@ jobs:
 
     - name: Configure Cross-Compilation Environment
       run: |
-        # The toolchain path usually has a structure like:
-        # staging_dir/toolchain-<arch>_<subarch>_gcc-<version>_<libc>/bin
-        # We can derive the toolchain name from the SDK_DIR
-        TOOLCHAIN_NAME=$(basename "${{ env.SDK_DIR }}" | sed 's/^openwrt-sdk-[^-]*-//' | sed 's/\.Linux-x86_64$//')
-        TOOLCHAIN_PATH="${{ env.SDK_DIR }}/staging_dir/toolchain-$TOOLCHAIN_NAME"
+        # Instead of deriving, find the actual toolchain directory within staging_dir
+        TOOLCHAIN_PATH=$(find "${{ env.SDK_DIR }}/staging_dir" -maxdepth 1 -type d -name "toolchain-*" | head -n 1)
 
-        if [ ! -d "$TOOLCHAIN_PATH" ]; then
-          echo "Error: Toolchain directory not found at $TOOLCHAIN_PATH. SDK structure might have changed or derivation failed."
+        if [ -z "$TOOLCHAIN_PATH" ]; then
+          echo "Error: Toolchain directory not found within ${{ env.SDK_DIR }}/staging_dir. SDK structure might have changed or extraction failed."
           exit 1
         fi
 
