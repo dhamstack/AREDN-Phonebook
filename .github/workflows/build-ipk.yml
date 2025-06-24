@@ -37,42 +37,45 @@ jobs:
             | grep -oP 'openwrt-sdk-[^"]*\.Linux-x86_64\.(tar\.xz|tar\.zst)' \
             | head -n1)
           test -n "$SDK_FILE" || { echo "No SDK found at $SDK_BASE"; exit 1; }
-          echo "Fetching $SDK_FILE…"
           curl -L "${SDK_BASE}${SDK_FILE}" -o sdk.tar.${SDK_FILE##*.}
 
           mkdir sdk
           if [[ "$SDK_FILE" == *.xz ]]; then
             tar -xJf sdk.tar.xz -C sdk --strip-components=1
           else
-            # for .tar.zst
             tar --use-compress-program=unzstd \
                 -xf sdk.tar.zst -C sdk --strip-components=1
           fi
 
-          echo "SDK extracted into $(pwd)/sdk"
           echo "SDK_DIR=$(pwd)/sdk" >> "$GITHUB_ENV"
 
-      - name: Copy & build Phonebook package
+      - name: Copy Phonebook into SDK
         env:
           SDK_DIR:       ${{ env.SDK_DIR }}
           C_PROJECT_DIR: ${{ steps.vars.outputs.C_PROJECT_DIR }}
         run: |
-          set -eux
+          cp -r "$GITHUB_WORKSPACE/$C_PROJECT_DIR" "$SDK_DIR/package/Phonebook"
 
-          # 1) enter SDK
-          cd "$SDK_DIR"
+      - name: Configure Git for feeds
+        # must be inside sdk so that subsequent feeds commands see it
+        working-directory: ${{ env.SDK_DIR }}
+        run: |
+          git config --global http.sslVerify false
+          git config --global http.postBuffer 524288000
+          git config --global http.maxRequestBuffer 524288000
 
-          # 2) inject your package
-          cp -r "$GITHUB_WORKSPACE/$C_PROJECT_DIR" package/Phonebook
-
-          # 3) update+install feeds
+      - name: Update & Install Feeds
+        working-directory: ${{ env.SDK_DIR }}
+        run: |
           ./scripts/feeds update -a
           ./scripts/feeds install Phonebook
 
-          # 4) compile just your package
+      - name: Build Phonebook Package
+        working-directory: ${{ env.SDK_DIR }}
+        run: |
           make package/Phonebook/compile V=s
 
-      - name: Upload .ipk artifact
+      - name: Upload .ipk Artifact
         uses: actions/upload-artifact@v4
         with:
           name: phonebook-${{ steps.vars.outputs.OPENWRT_TARGET }}-${{ steps.vars.outputs.OPENWRT_SUBTARGET }}.ipk
