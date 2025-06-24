@@ -47,10 +47,9 @@ jobs:
           mkdir -p sdk/package/phonebook
           cp -r Phonebook/* sdk/package/phonebook/
 
-          # ensure the 'files' dir exists for extra payload
-          mkdir -p sdk/package/phonebook/files/etc/config
-          # copy sipserver.conf into the package
-          cp sipserver.conf sdk/package/phonebook/files/etc/config/sipserver.conf
+          # copy sipserver.conf from Phonebook/files/etc into the package files tree
+          mkdir -p sdk/package/phonebook/files/etc
+          cp Phonebook/files/etc/sipserver.conf sdk/package/phonebook/files/etc/
 
       - name: Build package
         run: |
