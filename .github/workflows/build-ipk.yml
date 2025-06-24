@@ -8,9 +8,8 @@ on:
   pull_request:
 
 permissions:
-  contents: read        # allow checkout & artifacts download
-  packages: write       # if you ever publish to GitHub Packages
-  releases: write       # allow creating/editing GitHub Releases
+  contents: write     # allow creating/releases via the Releases API
+  packages: write     # (only needed if you ever publish to GitHub Packages)
 
 jobs:
   build:
