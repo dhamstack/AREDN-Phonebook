@@ -1,103 +1,80 @@
-name: Cross-compile C Project for OpenWrt
+name: Cross-compile AREDN Phonebook for OpenWrt
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
-  workflow_dispatch: # Allows manual trigger
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # GitHub-hosted runner is x86_64 Linux
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Debug Repo Contents
-      run: |
-        echo "Listing contents of the repository root ($GITHUB_WORKSPACE):"
-        ls -la "$GITHUB_WORKSPACE"
-        echo ""
+      - name: Debug Repo Contents
+        run: |
+          echo "Repository root ($GITHUB_WORKSPACE):"
+          ls -la "$GITHUB_WORKSPACE"
+          echo ""
 
-    - name: Define OpenWrt Target Architecture
-      id: set_target
-      run: |
-        # --- Configure these variables based on YOUR TARGET OPENWRT DEVICE! ---
-        echo "OPENWRT_TARGET=ath79" >> "$GITHUB_OUTPUT"
-        echo "OPENWRT_SUBTARGET=generic" >> "$GITHUB_OUTPUT"
-        echo "C_PROJECT_DIR=Phonebook" >> "$GITHUB_OUTPUT"   # ← corrected capitalization
+      - name: Define OpenWrt Target Architecture
+        id: set_target
+        run: |
+          # ── adjust for your device ───────────────────────────────────────────
+          echo "OPENWRT_TARGET=ath79"     >> "$GITHUB_OUTPUT"
+          echo "OPENWRT_SUBTARGET=generic" >> "$GITHUB_OUTPUT"
+          echo "C_PROJECT_DIR=Phonebook"  >> "$GITHUB_OUTPUT"   # ← capital “P”
 
-        # Example overrides for other targets:
-        # echo "OPENWRT_TARGET=x86" >> "$GITHUB_OUTPUT"
-        # echo "OPENWRT_SUBTARGET=64" >> "$GITHUB_OUTPUT"
-        # echo "C_PROJECT_DIR=my-c-project" >> "$GITHUB_OUTPUT"
+      - name: Download and Extract OpenWrt SDK
+        env:
+          OPENWRT_TARGET:   ${{ steps.set_target.outputs.OPENWRT_TARGET }}
+          OPENWRT_SUBTARGET: ${{ steps.set_target.outputs.OPENWRT_SUBTARGET }}
+        run: |
+          SDK_BASE="https://downloads.openwrt.org/snapshots/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/"
+          FILE=$(curl -s "$SDK_BASE" \
+            | grep -oP 'openwrt-sdk-[^"]*\.Linux-x86_64\.(tar\.xz|tar\.zst)' \
+            | head -n1)
+          test -n "$FILE" || { echo "SDK not found"; exit 1; }
+          curl -L "${SDK_BASE}${FILE}" -o sdk.tar
+          tar -xf sdk.tar
+          SDK_DIR=$(find . -maxdepth 1 -type d -name "openwrt-sdk-*" | head -n1)
+          echo "SDK_DIR=$SDK_DIR" >> "$GITHUB_ENV"
 
-    - name: Download and Extract OpenWrt SDK
-      env:
-        OPENWRT_TARGET: ${{ steps.set_target.outputs.OPENWRT_TARGET }}
-        OPENWRT_SUBTARGET: ${{ steps.set_target.outputs.OPENWRT_SUBTARGET }}
-      run: |
-        SDK_BASE_URL="https://downloads.openwrt.org/snapshots/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/"
-        echo "Attempting to download SDK from: $SDK_BASE_URL"
-        SDK_ARCH_FILENAME=$(curl -s "$SDK_BASE_URL" | grep -oP 'openwrt-sdk-[^"]*\.Linux-x86_64\.(tar\.xz|tar\.zst)' | head -n 1)
-        if [ -z "$SDK_ARCH_FILENAME" ]; then
-          echo "Error: Could not find OpenWrt SDK for target ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}."
-          exit 1
-        fi
-        SDK_URL="${SDK_BASE_URL}${SDK_ARCH_FILENAME}"
-        echo "Found SDK: $SDK_URL"
-        curl -L "$SDK_URL" -o openwrt-sdk.tar.gzst
-        tar -xf openwrt-sdk.tar.gzst
-        SDK_DIR=$(find . -maxdepth 1 -type d -name "openwrt-sdk-*" | head -n 1)
-        if [ -z "$SDK_DIR" ]; then
-          echo "Error: SDK directory not found after extraction."
-          exit 1
-        fi
-        echo "Extracted SDK to: $SDK_DIR"
-        echo "SDK_DIR=$SDK_DIR" >> "$GITHUB_ENV"
+      - name: Configure Cross-Compilation Environment
+        run: |
+          TOOLCHAIN=$(find "${{ env.SDK_DIR }}/staging_dir" -maxdepth 1 -type d -name "toolchain-*" | head -n1)
+          export PATH="${TOOLCHAIN}/bin:$PATH"
+          CC_BIN=$(find "${TOOLCHAIN}/bin" -name "*-gcc" | head -n1)
+          PREFIX=${CC_BIN%-gcc}
+          for var in CC CXX AR RANLIB; do
+            echo "${var}=${PREFIX}-${var,,}" >> "$GITHUB_ENV"
+          done
+          echo "PATH=$PATH"          >> "$GITHUB_ENV"
+          echo "STAGING_DIR=${{ env.SDK_DIR }}/staging_dir" >> "$GITHUB_ENV"
+          echo "OPENWRT_TRIPLET=$PREFIX" >> "$GITHUB_ENV"
 
-    - name: Configure Cross-Compilation Environment
-      run: |
-        TOOLCHAIN_PATH=$(find "${{ env.SDK_DIR }}/staging_dir" -maxdepth 1 -type d -name "toolchain-*" | head -n 1)
-        if [ -z "$TOOLCHAIN_PATH" ]; then
-          echo "Error: Toolchain directory not found."
-          exit 1
-        fi
-        export PATH="${TOOLCHAIN_PATH}/bin:$PATH"
-        export STAGING_DIR="${{ env.SDK_DIR }}/staging_dir"
-        COMPILER_BIN=$(find "${TOOLCHAIN_PATH}/bin" -maxdepth 1 -type f -name "*-gcc" | head -n 1)
-        if [ -z "$COMPILER_BIN" ]; then
-          echo "Error: Could not find GCC in toolchain."
-          exit 1
-        fi
-        OPENWRT_TRIPLET=$(basename "$COMPILER_BIN" | sed 's/-gcc$//')
-        echo "OPENWRT_TRIPLET=$OPENWRT_TRIPLET" >> "$GITHUB_ENV"
-        echo "CC=${OPENWRT_TRIPLET}-gcc"   >> "$GITHUB_ENV"
-        echo "CXX=${OPENWRT_TRIPLET}-g++"  >> "$GITHUB_ENV"
-        echo "AR=${OPENWRT_TRIPLET}-ar"    >> "$GITHUB_ENV"
-        echo "RANLIB=${OPENWRT_TRIPLET}-ranlib" >> "$GITHUB_ENV"
-        echo "PATH=$PATH"                  >> "$GITHUB_ENV"
-        echo "STAGING_DIR=$STAGING_DIR"    >> "$GITHUB_ENV"
+      - name: Add Phonebook to SDK
+        run: |
+          cp -r "${{ steps.set_target.outputs.C_PROJECT_DIR }}" "${{ env.SDK_DIR }}/package/Phonebook"
 
-    - name: Build C project
-      working-directory: ${{ steps.set_target.outputs.C_PROJECT_DIR }}
-      run: |
-        echo "Building project in $PWD for target ${{ env.OPENWRT_TRIPLET }}"
-        ls -la .
-        make -f Makefile
+      - name: Update Feeds
+        working-directory: ${{ env.SDK_DIR }}
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install Phonebook
 
-    - name: Verify Compiled Output (Optional)
-      run: |
-        echo "Listing compiled output:"
-        ls -l ${{ steps.set_target.outputs.C_PROJECT_DIR }}/phonebook
+      - name: Build Phonebook Package
+        working-directory: ${{ env.SDK_DIR }}
+        run: |
+          make package/Phonebook/compile V=s
 
-    - name: Upload Compiled Artifact (Optional)
-      uses: actions/upload-artifact@v4
-      with:
-        name: compiled-openwrt-binary-${{ steps.set_target.outputs.OPENWRT_TARGET }}-${{ steps.set_target.outputs.OPENWRT_SUBTARGET }}
-        path: |
-          ${{ steps.set_target.outputs.C_PROJECT_DIR }}/phonebook
+      - name: Upload .ipk Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phonebook-ipk-${{ steps.set_target.outputs.OPENWRT_TARGET }}-${{ steps.set_target.outputs.OPENWRT_SUBTARGET }}
+          path: |
+            bin/packages/${{ steps.set_target.outputs.OPENWRT_TARGET }}/${{ steps.set_target.outputs.OPENWRT_SUBTARGET }}/phonebook*.ipk
