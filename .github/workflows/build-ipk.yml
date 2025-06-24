@@ -25,7 +25,7 @@ jobs:
         # Example 1: For a common ath79 device (e.g., TP-Link WR841N v13)
         echo "OPENWRT_TARGET=ath79" >> "$GITHUB_OUTPUT"
         echo "OPENWRT_SUBTARGET=generic" >> "$GITHUB_OUTPUT"
-        echo "C_PROJECT_DIR=." >> "$GITHUB_OUTPUT" # Corrected: Project is in the repository root
+        echo "C_PROJECT_DIR=phonebook" >> "$GITHUB_OUTPUT" # <-- CORRECTED: Project is in the 'phonebook' directory
 
         # Example 2: For a 64-bit Intel/AMD x86 system
         # echo "OPENWRT_TARGET=x86" >> "$GITHUB_OUTPUT"
@@ -118,51 +118,42 @@ jobs:
         echo "OPENWRT_TRIPLET=$OPENWRT_TRIPLET" >> "$GITHUB_ENV"
 
     - name: Build C project
-      # Access variables from previous steps and GITHUB_ENV
-      working-directory: ${{ steps.set_target.outputs.C_PROJECT_DIR }} # Now correctly set to '.'
+      working-directory: ${{ steps.set_target.outputs.C_PROJECT_DIR }} # Now correctly set to 'phonebook'
       run: |
         echo "Building project in ${{ steps.set_target.outputs.C_PROJECT_DIR }} for target ${{ env.OPENWRT_TRIPLET }}"
         
+        echo "Listing contents of working directory before make to debug Makefile presence:"
+        ls -la . # List all files including hidden ones, and show permissions
+        echo ""
+
         # --- Adjust these commands based on your C project's build system ---
-        # Common options:
-
-        # 1. For a simple Makefile project:
-        # make all # or `make` or `make CC="${{ env.CC }}"` if your Makefile needs explicit CC
-
-        # 2. For a project using GNU Autotools (configure, make):
-        # ./configure --host=${{ env.OPENWRT_TRIPLET }} --prefix=/usr --disable-shared --enable-static
+        # Your project uses a standard Makefile, so `make` should work.
+        # The `make -f Makefile` explicitly tells make where to find the Makefile.
+        # If `make` (without -f) works, you can remove `-f Makefile`.
+        
+        echo "Running build command: make -f Makefile"
+        make -f Makefile # Explicitly specify the Makefile
+        
+        # If the above still fails with "No makefile found", uncomment the line below
+        # to try the simpler `make` command, though it's less likely to work if `-f` fails.
+        # echo "Retrying with: make"
         # make
+        
+        # You can also add more debug info here, e.g., to check file type:
+        # file Makefile || echo "Makefile not found or unreadable by 'file' command."
 
-        # 3. For a CMake project (requires CMake installed on runner, which it typically is):
-        # mkdir build
-        # cd build
-        # cmake .. \
-        #   -DCMAKE_TOOLCHAIN_FILE=${{ env.SDK_DIR }}/scripts/site/toolchain-cmake/OpenWrt.cmake \
-        #   -DCMAKE_BUILD_TYPE=Release \
-        #   -DCMAKE_INSTALL_PREFIX=/usr
-        # cmake --build . --target all
-
-        # 4. If your project generates an IPK directly (e.g., if it's an OpenWrt package source tree)
-        # make package/your-package-name/compile V=s
-        # make package/your-package-name/install V=s
-        # find bin -name "*.ipk" # Find the generated IPK
-
-        # --- IMPORTANT: Replace the placeholder command below with your actual build command ---
-        echo "Running placeholder build command: make"
-        make # This is a placeholder. Adapt it to your project's needs!
-        # Example: make CC="${{ env.CC }}" CXX="${{ env.CXX }}" # If your Makefile doesn't pick up env vars automatically
 
     - name: Verify Compiled Output (Optional)
       run: |
         echo "Listing compiled output (adjust path to your executable/libraries):"
-        ls -l ${{ steps.set_target.outputs.C_PROJECT_DIR }}/your_executable_name # Replace 'your_executable_name' with your actual executable name (e.g., 'phonebook')
-        # You might also want to run `file your_executable_name` to confirm its architecture
+        ls -l ${{ steps.set_target.outputs.C_PROJECT_DIR }}/phonebook # Path relative to the working directory ('phonebook' folder)
+        # You might also want to run `file phonebook` to confirm its architecture
 
     - name: Upload Compiled Artifact (Optional)
       uses: actions/upload-artifact@v4
       with:
         name: compiled-openwrt-binary-${{ steps.set_target.outputs.OPENWRT_TARGET }}-${{ steps.set_target.outputs.OPENWRT_SUBTARGET }}
         path: |
-          ${{ steps.set_target.outputs.C_PROJECT_DIR }}/your_executable_name # Adjust to the path of your compiled binary (e.g., './phonebook')
+          ${{ steps.set_target.outputs.C_PROJECT_DIR }}/phonebook # Path relative to the repository root
           # You can add more paths here if you generate multiple files or an IPK
           # مثلاً: ${{ steps.set_target.outputs.C_PROJECT_DIR }}/bin/*.ipk
