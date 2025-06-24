@@ -41,10 +41,16 @@ jobs:
           tar -xf sdk.tar.xz
           mv openwrt-sdk-* sdk
 
-      - name: Inject Phonebook package
+      - name: Inject Phonebook package (with sipserver.conf)
         run: |
+          # copy your package source
           mkdir -p sdk/package/phonebook
           cp -r Phonebook/* sdk/package/phonebook/
+
+          # ensure the 'files' dir exists for extra payload
+          mkdir -p sdk/package/phonebook/files/etc/config
+          # copy sipserver.conf into the package
+          cp sipserver.conf sdk/package/phonebook/files/etc/config/sipserver.conf
 
       - name: Build package
         run: |
