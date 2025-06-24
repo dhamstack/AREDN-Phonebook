@@ -1,83 +1,57 @@
-name: Cross-compile AREDN Phonebook for OpenWrt
+name: Build OpenWRT .ipk Package
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+    tags:
+      - 'v*'
   pull_request:
-    branches: [ main ]
-  workflow_dispatch:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        target:
+          - arch: ath79
+            subtarget: generic
+          - arch: x86
+            subtarget: 64
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Debug repo contents
+      - name: Set up SDK URL
+        id: sdk
         run: |
-          echo "Workspace root: $GITHUB_WORKSPACE"
-          ls -1a "$GITHUB_WORKSPACE"
-
-      - name: Define targets
-        id: vars
-        run: |
-          echo "OPENWRT_TARGET=ath79"     >> "$GITHUB_OUTPUT"
-          echo "OPENWRT_SUBTARGET=generic" >> "$GITHUB_OUTPUT"
-          echo "C_PROJECT_DIR=Phonebook"  >> "$GITHUB_OUTPUT"   # capital “P”
-
-      - name: Download & extract OpenWrt SDK
-        env:
-          OPENWRT_TARGET:   ${{ steps.vars.outputs.OPENWRT_TARGET }}
-          OPENWRT_SUBTARGET: ${{ steps.vars.outputs.OPENWRT_SUBTARGET }}
-        run: |
-          SDK_BASE="https://downloads.openwrt.org/snapshots/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/"
-          SDK_FILE=$(curl -s "$SDK_BASE" \
-            | grep -oP 'openwrt-sdk-[^"]*\.Linux-x86_64\.(tar\.xz|tar\.zst)' \
-            | head -n1)
-          test -n "$SDK_FILE" || { echo "No SDK found at $SDK_BASE"; exit 1; }
-          curl -L "${SDK_BASE}${SDK_FILE}" -o sdk.tar.${SDK_FILE##*.}
-
-          mkdir sdk
-          if [[ "$SDK_FILE" == *.xz ]]; then
-            tar -xJf sdk.tar.xz -C sdk --strip-components=1
-          else
-            tar --use-compress-program=unzstd \
-                -xf sdk.tar.zst -C sdk --strip-components=1
+          if [[ "${{ matrix.target.arch }}" == "ath79" ]]; then
+            echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
+          elif [[ "${{ matrix.target.arch }}" == "x86" ]]; then
+            echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
           fi
-
-          echo "SDK_DIR=$(pwd)/sdk" >> "$GITHUB_ENV"
-
-      - name: Copy Phonebook into SDK
-        env:
-          SDK_DIR:       ${{ env.SDK_DIR }}
-          C_PROJECT_DIR: ${{ steps.vars.outputs.C_PROJECT_DIR }}
+      - name: Download and extract SDK
         run: |
-          cp -r "$GITHUB_WORKSPACE/$C_PROJECT_DIR" "$SDK_DIR/package/Phonebook"
-
-      - name: Configure Git for feeds
-        # must be inside sdk so that subsequent feeds commands see it
-        working-directory: ${{ env.SDK_DIR }}
+          wget "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
+          tar -xf sdk.tar.xz
+          mv openwrt-sdk-* sdk
+      - name: Inject Phonebook package
         run: |
-          git config --global http.sslVerify false
-          git config --global http.postBuffer 524288000
-          git config --global http.maxRequestBuffer 524288000
-
-      - name: Update & Install Feeds
-        working-directory: ${{ env.SDK_DIR }}
+          mkdir -p sdk/package/phonebook
+          cp -r Phonebook/* sdk/package/phonebook/
+      - name: Build package
         run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install Phonebook
-
-      - name: Build Phonebook Package
-        working-directory: ${{ env.SDK_DIR }}
-        run: |
-          make package/Phonebook/compile V=s
-
-      - name: Upload .ipk Artifact
+          cd sdk
+          make defconfig
+          make package/phonebook/compile V=s -j$(nproc)
+      - name: Upload .ipk as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: phonebook-${{ steps.vars.outputs.OPENWRT_TARGET }}-${{ steps.vars.outputs.OPENWRT_SUBTARGET }}.ipk
-          path: |
-            ${{ env.SDK_DIR }}/bin/packages/${{ steps.vars.outputs.OPENWRT_TARGET }}/${{ steps.vars.outputs.OPENWRT_SUBTARGET }}/phonebook*.ipk
+          name: phonebook-${{ matrix.target.arch }}
+          path: sdk/bin/packages/*/*/*.ipk
+
+      - name: Upload to GitHub Release (only for version tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: sdk/bin/packages/*/*/*.ipk
