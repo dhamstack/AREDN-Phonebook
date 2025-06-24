@@ -17,7 +17,8 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Debug: List Repository Root Contents
+    # This is line 20 in the complete file when counting strictly
+    - name: Debug: List Repository Root Contents 
       run: |
         echo "Listing contents of the repository root ($GITHUB_WORKSPACE):"
         ls -la "$GITHUB_WORKSPACE"
@@ -31,7 +32,7 @@ jobs:
         # Example 1: For a common ath79 device (e.g., TP-Link WR841N v13)
         echo "OPENWRT_TARGET=ath79" >> "$GITHUB_OUTPUT"
         echo "OPENWRT_SUBTARGET=generic" >> "$GITHUB_OUTPUT"
-        echo "C_PROJECT_DIR=phonebook" >> "$GITHUB_OUTPUT" # <-- CORRECTED: Project is in the 'phonebook' directory
+        echo "C_PROJECT_DIR=phonebook" >> "$GITHUB_OUTPUT" # CORRECTED: Project is in the 'phonebook' directory
 
         # Example 2: For a 64-bit Intel/AMD x86 system
         # echo "OPENWRT_TARGET=x86" >> "$GITHUB_OUTPUT"
@@ -144,7 +145,7 @@ jobs:
       run: |
         echo "Listing compiled output (adjust path to your executable/libraries):"
         ls -l ${{ steps.set_target.outputs.C_PROJECT_DIR }}/phonebook # Path relative to the working directory ('phonebook' folder)
-        # You might also want to run `file phonebook` to confirm its architecture
+        # You might also emulate `file phonebook` to confirm its architecture, e.g. `readlink -f phonebook | xargs file`
 
     - name: Upload Compiled Artifact (Optional)
       uses: actions/upload-artifact@v4
