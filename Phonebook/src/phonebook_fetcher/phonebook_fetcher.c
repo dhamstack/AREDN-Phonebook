@@ -133,12 +133,12 @@ void *phonebook_fetcher_thread(void *arg) {
             } else {
             }
 
-            if (access(PB_CSV_PATH, F_OK) == 0) {
+            /*if (access(PB_CSV_PATH, F_OK) == 0) {
                 LOG_INFO("Deleting processed CSV file: %s", PB_CSV_PATH);
                 if (remove(PB_CSV_PATH) != 0) {
                     LOG_WARN("Failed to delete processed CSV file %s. Error: %s", PB_CSV_PATH, strerror(errno));
                 }
-            }
+            }*/
 
         } else {
             LOG_INFO("XML conversion failed.");
