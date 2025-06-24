@@ -1,18 +1,19 @@
 name: Build OpenWRT .ipk Package
 
 on:
+  # when you push a tag like "v1.2.3" (or "1.2.3")
   push:
-    branches: [main]
     tags:
-      - '*.*.*'        # match tags like 1.0.5, 2.3.0, etc.
+      - '*.*.*'
   pull_request:
 
 permissions:
-  contents: write     # allow creating/releases via the Releases API
-  packages: write     # (only needed if you ever publish to GitHub Packages)
+  contents: write   # needed to create releases
+  packages: write
 
 jobs:
   build:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         target:
@@ -20,7 +21,6 @@ jobs:
             subtarget: generic
           - arch: x86
             subtarget: 64
-    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -31,7 +31,7 @@ jobs:
         run: |
           if [[ "${{ matrix.target.arch }}" == "ath79" ]]; then
             echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.target.arch }}" == "x86" ]]; then
+          else
             echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
           fi
 
@@ -41,13 +41,10 @@ jobs:
           tar -xf sdk.tar.xz
           mv openwrt-sdk-* sdk
 
-      - name: Inject Phonebook package (with sipserver.conf)
+      - name: Inject Phonebook package
         run: |
-          # copy your package source
           mkdir -p sdk/package/phonebook
           cp -r Phonebook/* sdk/package/phonebook/
-
-          # copy sipserver.conf from Phonebook/files/etc into the package files tree
           mkdir -p sdk/package/phonebook/files/etc
           cp Phonebook/files/etc/sipserver.conf sdk/package/phonebook/files/etc/
 
@@ -57,15 +54,25 @@ jobs:
           make defconfig
           make package/phonebook/compile V=s -j$(nproc)
 
-      - name: Upload .ipk as artifact
-        uses: actions/upload-artifact@v4
+      # 1) Create (or get) the GitHub Release for this tag
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: phonebook-${{ matrix.target.arch }}
-          path: sdk/bin/packages/*/*/*.ipk
+          tag_name: ${{ github.ref_name }}
+          release_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
 
-      - name: Upload to GitHub Release (only for version tags)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+      # 2) Upload only the .ipk files as release assets
+      - name: Upload .ipk to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: sdk/bin/packages/*/*/*.ipk
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: sdk/bin/packages/*/*/*.ipk
+          asset_name: phonebook-${{ matrix.target.arch }}.ipk
+          asset_content_type: application/octet-stream
