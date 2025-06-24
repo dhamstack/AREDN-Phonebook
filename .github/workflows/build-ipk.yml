@@ -17,8 +17,10 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    # This is line 20 in the complete file when counting strictly
-    - name: Debug: List Repository Root Contents 
+    # This step should appear at line 20-21 if empty lines are preserved exactly as below.
+    # The error "Nested mappings are not allowed in compact mappings" at column 13 on a - name line
+    # is almost always due to subtle whitespace errors (tabs/spaces) or invisible characters.
+    - name: Debug Repo Contents # Simpler name for this debugging step
       run: |
         echo "Listing contents of the repository root ($GITHUB_WORKSPACE):"
         ls -la "$GITHUB_WORKSPACE"
