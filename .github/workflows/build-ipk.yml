@@ -25,7 +25,7 @@ jobs:
         # Example 1: For a common ath79 device (e.g., TP-Link WR841N v13)
         echo "OPENWRT_TARGET=ath79" >> "$GITHUB_OUTPUT"
         echo "OPENWRT_SUBTARGET=generic" >> "$GITHUB_OUTPUT"
-        echo "C_PROJECT_DIR=my-c-project" >> "$GITHUB_OUTPUT" # Adjust if your project is in a different directory
+        echo "C_PROJECT_DIR=." >> "$GITHUB_OUTPUT" # Corrected: Project is in the repository root
 
         # Example 2: For a 64-bit Intel/AMD x86 system
         # echo "OPENWRT_TARGET=x86" >> "$GITHUB_OUTPUT"
@@ -119,7 +119,7 @@ jobs:
 
     - name: Build C project
       # Access variables from previous steps and GITHUB_ENV
-      working-directory: ${{ steps.set_target.outputs.C_PROJECT_DIR }} # Change to your project's directory
+      working-directory: ${{ steps.set_target.outputs.C_PROJECT_DIR }} # Now correctly set to '.'
       run: |
         echo "Building project in ${{ steps.set_target.outputs.C_PROJECT_DIR }} for target ${{ env.OPENWRT_TRIPLET }}"
         
@@ -155,7 +155,7 @@ jobs:
     - name: Verify Compiled Output (Optional)
       run: |
         echo "Listing compiled output (adjust path to your executable/libraries):"
-        ls -l ${{ steps.set_target.outputs.C_PROJECT_DIR }}/your_executable_name # Replace 'your_executable_name'
+        ls -l ${{ steps.set_target.outputs.C_PROJECT_DIR }}/your_executable_name # Replace 'your_executable_name' with your actual executable name (e.g., 'phonebook')
         # You might also want to run `file your_executable_name` to confirm its architecture
 
     - name: Upload Compiled Artifact (Optional)
@@ -163,6 +163,6 @@ jobs:
       with:
         name: compiled-openwrt-binary-${{ steps.set_target.outputs.OPENWRT_TARGET }}-${{ steps.set_target.outputs.OPENWRT_SUBTARGET }}
         path: |
-          ${{ steps.set_target.outputs.C_PROJECT_DIR }}/your_executable_name # Adjust to the path of your compiled binary
+          ${{ steps.set_target.outputs.C_PROJECT_DIR }}/your_executable_name # Adjust to the path of your compiled binary (e.g., './phonebook')
           # You can add more paths here if you generate multiple files or an IPK
           # مثلاً: ${{ steps.set_target.outputs.C_PROJECT_DIR }}/bin/*.ipk
