@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=sipserver
-PKG_VERSION:=1.1.7
+PKG_VERSION:=1.1.9
 PKG_RELEASE:=1
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
@@ -9,17 +9,17 @@ PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 include $(INCLUDE_DIR)/package.mk
 
 define Package/sipserver
-	SECTION:=net
-	CATEGORY:=Network
-	SUBMENU:=Telephony
-	TITLE:=AREDN SIP Server
-	URL:=https://github.com/dhamstack/AREDN-Phonebook
-	DEPENDS:=+libpthread
+  SECTION:=net
+  CATEGORY:=Network
+  SUBMENU:=Telephony
+  TITLE:=AREDN SIP Server
+  URL:=https://github.com/dhamstack/AREDN-Phonebook
+  DEPENDS:=+libpthread
 endef
 
 define Package/sipserver/description
-	AREDN Phonebook SIP Server with passive safety features
-	for Amateur Radio Emergency Data Networks.
+  AREDN Phonebook SIP Server with passive safety features
+  for Amateur Radio Emergency Data Networks.
 endef
 
 define Build/Prepare
@@ -29,14 +29,21 @@ define Build/Prepare
 	$(CP) ./files/etc/sipserver.conf $(PKG_BUILD_DIR)/files/etc/
 endef
 
-TARGET_CFLAGS += -std=gnu99 -Wall -Wextra
-
 define Build/Compile
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
 		-I$(PKG_BUILD_DIR) \
 		-o $(PKG_BUILD_DIR)/sipserver \
-		$(PKG_BUILD_DIR)/*.c \
-		$(PKG_BUILD_DIR)/*/*.c \
+		$(PKG_BUILD_DIR)/main.c \
+		$(PKG_BUILD_DIR)/call-sessions/call_sessions.c \
+		$(PKG_BUILD_DIR)/user_manager/user_manager.c \
+		$(PKG_BUILD_DIR)/phonebook_fetcher/phonebook_fetcher.c \
+		$(PKG_BUILD_DIR)/sip_core/sip_core.c \
+		$(PKG_BUILD_DIR)/status_updater/status_updater.c \
+		$(PKG_BUILD_DIR)/file_utils/file_utils.c \
+		$(PKG_BUILD_DIR)/csv_processor/csv_processor.c \
+		$(PKG_BUILD_DIR)/log_manager/log_manager.c \
+		$(PKG_BUILD_DIR)/config_loader/config_loader.c \
+		$(PKG_BUILD_DIR)/passive_safety/passive_safety.c \
 		-lpthread
 endef
 
