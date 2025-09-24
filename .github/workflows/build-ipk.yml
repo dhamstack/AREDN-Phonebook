@@ -51,27 +51,27 @@ jobs:
 
       - name: Inject SIP Server package
         run: |
-          mkdir -p sdk/package/SIPServer
-          cp -r Phonebook/* sdk/package/SIPServer/
+          mkdir -p sdk/package/sipserver
+          cp -r Phonebook/* sdk/package/sipserver/
 
           # Verify Makefile was copied correctly
-          echo "Verifying Makefile:"
-          if [ -f sdk/package/SIPServer/Makefile ]; then
+          echo "Verifying simplified Makefile:"
+          if [ -f sdk/package/sipserver/Makefile ]; then
             echo "✓ Makefile found"
-            head -10 sdk/package/SIPServer/Makefile
+            head -15 sdk/package/sipserver/Makefile
           else
             echo "✗ Makefile missing!"
-            ls -la sdk/package/SIPServer/
+            ls -la sdk/package/sipserver/
             exit 1
           fi
 
           # Verify all source files are present
           echo "Verifying source structure:"
-          find sdk/package/SIPServer/src -name "*.c" -o -name "*.h" | sort
+          find sdk/package/sipserver/src -name "*.c" -o -name "*.h" | sort
 
-          # Verify Makefile includes all modules
-          echo "Checking Makefile for passive_safety module:"
-          grep -q "passive_safety" sdk/package/SIPServer/Makefile && echo "✓ passive_safety found in Makefile" || echo "✗ passive_safety missing in Makefile"
+          # Check if package is recognized
+          echo "Testing package recognition:"
+          cd sdk && make package/sipserver/info V=s || echo "Package info failed"
 
       - name: Build package
         run: |
@@ -84,14 +84,14 @@ jobs:
 
           # Show our package structure
           echo "Our package structure:"
-          find package/SIPServer -type f | head -20
+          find package/sipserver -type f | head -20
 
           # Show package info
-          echo "Building SIPServer package for ${{ matrix.target.arch }}..."
+          echo "Building sipserver package for ${{ matrix.target.arch }}..."
 
           # Build with streamlined error handling for speed
           echo "Starting compilation..."
-          if ! make package/SIPServer/compile V=s -j$(nproc) 2>&1 | tee build.log; then
+          if ! make package/sipserver/compile V=s -j$(nproc) 2>&1 | tee build.log; then
             echo "BUILD FAILED! Last 100 lines of build log:"
             tail -n 100 build.log
             echo "=== Error Summary ==="
@@ -108,8 +108,8 @@ jobs:
         id: find_ipk
         run: |
           echo "Searching for SIPServer IPK file..."
-          # Look for our SIPServer package specifically, not dependency packages
-          IPK_FILE=$(find sdk/bin -name "*SIPServer*.ipk" -o -name "*sipserver*.ipk" -o -name "*sip-server*.ipk" | head -n 1)
+          # Look for our sipserver package specifically, not dependency packages
+          IPK_FILE=$(find sdk/bin -name "*sipserver*.ipk" -o -name "*sip-server*.ipk" | head -n 1)
 
           if [ -z "$IPK_FILE" ]; then
             echo "SIPServer IPK not found! Checking all IPK files:"
@@ -126,7 +126,7 @@ jobs:
           fi
 
           # Rename IPK file to include architecture
-          ARCH_IPK="SIPServer-${{ matrix.target.arch }}-${{ github.ref_name }}.ipk"
+          ARCH_IPK="sipserver-${{ matrix.target.arch }}-${{ github.ref_name }}.ipk"
           cp "$IPK_FILE" "$ARCH_IPK"
 
           echo "ipk_path=$ARCH_IPK" >> $GITHUB_OUTPUT
@@ -159,7 +159,7 @@ jobs:
             ## Installation
             ```bash
             # Download appropriate IPK for your architecture
-            opkg install SIPServer-*.ipk
+            opkg install sipserver-*.ipk
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
