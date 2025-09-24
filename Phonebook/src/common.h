@@ -138,6 +138,10 @@ extern int num_registered_users; // Count of active dynamic registrations
 extern int num_directory_entries; // Count of entries populated from CSV directory
 extern CallSession call_sessions[MAX_CALL_SESSIONS];
 
+// Thread IDs (defined in main.c, used by passive safety)
+extern pthread_t fetcher_tid;
+extern pthread_t status_updater_tid;
+
 // Mutexes and Condition Variables (defined in main.c)
 extern pthread_mutex_t registered_users_mutex;
 extern pthread_mutex_t phonebook_file_mutex;
