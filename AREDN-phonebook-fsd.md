@@ -474,4 +474,144 @@ Common build issues and solutions:
 
 The automated build system ensures consistent, reproducible packages across all supported AREDN hardware platforms while minimizing manual intervention and potential deployment errors.
 
+## 9. Health Reporting System
+
+### 9.1 Reporting Overview
+
+The AREDN Phonebook SIP Server includes a comprehensive health reporting system designed to provide network-wide visibility and proactive monitoring for emergency communication networks. The system transmits three types of messages to phonebook servers for centralized collection and analysis.
+
+### 9.2 Message Types
+
+#### 9.2.1 ALARM Messages (Immediate Transmission)
+
+Critical issues requiring immediate attention are transmitted instantly to enable rapid response during emergencies.
+
+**Service Critical Alarms:**
+- `service_crashed` - SIP proxy service stopped responding
+- `thread_hung` - Background thread not responding for >30 minutes
+- `memory_critical` - Memory usage exceeds 95%
+- `no_call_sessions` - All call session slots exhausted
+- `config_error` - Configuration file corrupted or invalid
+
+**Network Critical Alarms:**
+- `node_isolated` - Cannot reach any mesh neighbors
+- `phonebook_servers_down` - All phonebook servers unreachable for >1 hour
+- `dns_failure` - DNS resolution completely failed
+
+#### 9.2.2 WARNING Messages (Every 6 Hours)
+
+Non-critical issues that require scheduled attention are reported every 6 hours to prevent alarm fatigue while maintaining operational awareness.
+
+**Service Warnings:**
+- `memory_high` - Memory usage >85% for >1 hour
+- `call_success_low` - Call success rate <70% for >30 minutes
+- `phonebook_stale` - Phonebook not updated for >6 hours
+- `thread_restart` - Background thread was automatically restarted
+- `high_sip_errors` - SIP error rate >10% for >2 hours
+
+**Network Warnings:**
+- `dns_degraded` - DNS resolution success rate <80%
+- `network_slow` - Average response time >5 seconds
+- `network_errors_high` - Network error rate >10%
+- `phonebook_fetch_failed` - Cannot download phonebook updates
+
+#### 9.2.3 TRAFFIC REPORT Messages (Every 6 Hours)
+
+Comprehensive operational statistics for network usage analysis and emergency coordination planning.
+
+**Node Statistics:**
+- `uptime` - Seconds since service start
+- `active_users` - Currently registered SIP users
+- `memory_pct` - Current memory usage percentage
+- `calls_6h` - Total calls initiated in last 6 hours
+- `calls_success_rate` - Percentage of successful calls
+- `avg_call_duration` - Average call length in seconds
+- `sip_errors_6h` - Count of SIP protocol errors
+- `dns_success_rate` - DNS resolution success percentage
+- `avg_response_time_ms` - Network response time in milliseconds
+- `phonebook_age_minutes` - Minutes since last phonebook update
+
+**Call Detail Records (For Network Traffic Analysis):**
+- `call_start` - Timestamp when call began
+- `call_end` - Timestamp when call ended (null if ongoing)
+- `caller_node` - Node hostname where call originated
+- `callee_node` - Node hostname being called
+- `caller_id` - SIP user ID making the call
+- `callee_id` - SIP user ID receiving the call
+- `call_success` - Boolean indicating successful call completion
+- `call_duration` - Call duration in seconds (when call ends)
+- `failure_reason` - Error code if call failed
+
+### 9.3 JSON Message Structure
+
+#### 9.3.1 Alarm Message Format
+```json
+{
+  "type": "alarm",
+  "timestamp": 1737750123,
+  "node": "HB9ABC-mikrotik",
+  "severity": "critical",
+  "alarm_id": "service_crashed",
+  "message": "SIP proxy service stopped responding"
+}
+```
+
+#### 9.3.2 Traffic Report Format
+```json
+{
+  "type": "traffic_report",
+  "timestamp": 1737750123,
+  "node": "HB9ABC-mikrotik",
+  "period_hours": 6,
+  "node_stats": {
+    "uptime": 86400,
+    "active_users": 12,
+    "memory_pct": 45,
+    "calls_6h": 15,
+    "calls_success_rate": 94,
+    "avg_call_duration": 180
+  },
+  "call_records": [
+    {
+      "call_start": 1737750123,
+      "call_end": 1737750303,
+      "caller_node": "HB9ABC-mikrotik",
+      "callee_node": "emergency.local.mesh",
+      "caller_id": "1234",
+      "callee_id": "emergency",
+      "call_success": true,
+      "call_duration": 180
+    }
+  ]
+}
+```
+
+### 9.4 Backend Network Analysis
+
+The centralized backend processes raw node data to provide network-wide insights for emergency coordination:
+
+#### 9.4.1 Traffic Pattern Analysis
+- **Total Network Calls** - Aggregated call volume across all nodes
+- **Peak Concurrent Usage** - Highest simultaneous active calls
+- **Communication Matrix** - Inter-node calling patterns
+- **Busiest Routes** - Most frequent caller/callee pairs
+- **Geographic Hotspots** - Areas with highest call volume
+- **Emergency Service Usage** - Calls to critical services
+
+#### 9.4.2 Network Performance Assessment
+- **Network-Wide Success Rate** - Average success rates across nodes
+- **Network Response Quality** - Aggregated response times
+- **Service Availability** - Percentage of nodes reporting healthy status
+- **Resource Utilization** - Node capacity and performance metrics
+
+#### 9.4.3 Emergency Operations Intelligence
+- **Service Coverage** - Active voice service areas
+- **Communication Efficiency** - Call setup times and reliability
+- **Emergency Readiness** - Availability of critical communication paths
+- **Network Reliability** - Consistency of service across mesh segments
+
+### 9.5 Reporting Infrastructure
+
+The reporting system leverages the existing phonebook server infrastructure to minimize network complexity and maximize reliability. Health reports are transmitted to the same servers used for phonebook distribution, ensuring consistent network paths and simplified configuration management.
+
 This functional specification provides a comprehensive overview of the AREDN Phonebook SIP Server implementation based on the current codebase analysis.

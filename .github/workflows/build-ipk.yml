@@ -49,8 +49,17 @@ jobs:
         run: |
           mkdir -p sdk/package/SIPServer
           cp -r Phonebook/* sdk/package/SIPServer/
-          mkdir -p sdk/package/SIPServer/files/etc
-          cp Phonebook/files/etc/sipserver.conf sdk/package/SIPServer/files/etc/
+
+          # Verify Makefile was copied correctly
+          echo "Verifying Makefile:"
+          if [ -f sdk/package/SIPServer/Makefile ]; then
+            echo "✓ Makefile found"
+            head -10 sdk/package/SIPServer/Makefile
+          else
+            echo "✗ Makefile missing!"
+            ls -la sdk/package/SIPServer/
+            exit 1
+          fi
 
           # Verify all source files are present
           echo "Verifying source structure:"
