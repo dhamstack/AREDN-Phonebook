@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(gh release:*)"
+      "Bash(gh release:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

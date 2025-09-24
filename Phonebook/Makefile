@@ -38,7 +38,8 @@ TARGET_CFLAGS += -I$(PKG_BUILD_DIR) \
 	-I$(PKG_BUILD_DIR)/phonebook_fetcher \
 	-I$(PKG_BUILD_DIR)/sip_core \
 	-I$(PKG_BUILD_DIR)/status_updater \
-	-I$(PKG_BUILD_DIR)/config_loader # Add this line for the new config_loader directory
+	-I$(PKG_BUILD_DIR)/config_loader \
+	-I$(PKG_BUILD_DIR)/passive_safety # Add passive safety module
 
 define Build/Compile
 	# Compiling individual source files into object files
@@ -51,7 +52,8 @@ define Build/Compile
 	$(TARGET_CC) $(TARGET_CFLAGS) -c $(PKG_BUILD_DIR)/file_utils/file_utils.c -o $(PKG_BUILD_DIR)/file_utils.o
 	$(TARGET_CC) $(TARGET_CFLAGS) -c $(PKG_BUILD_DIR)/csv_processor/csv_processor.c -o $(PKG_BUILD_DIR)/csv_processor.o
 	$(TARGET_CC) $(TARGET_CFLAGS) -c $(PKG_BUILD_DIR)/log_manager/log_manager.c -o $(PKG_BUILD_DIR)/log_manager.o
-	$(TARGET_CC) $(TARGET_CFLAGS) -c $(PKG_BUILD_DIR)/config_loader/config_loader.c -o $(PKG_BUILD_DIR)/config_loader.o # Add this line for config_loader.c
+	$(TARGET_CC) $(TARGET_CFLAGS) -c $(PKG_BUILD_DIR)/config_loader/config_loader.c -o $(PKG_BUILD_DIR)/config_loader.o
+	$(TARGET_CC) $(TARGET_CFLAGS) -c $(PKG_BUILD_DIR)/passive_safety/passive_safety.c -o $(PKG_BUILD_DIR)/passive_safety.o # Add passive safety module
 	
 	# This is the final "linking" step to create the executable
 	$(TARGET_CC) $(TARGET_LDFLAGS) -o $(PKG_BUILD_DIR)/sip-proxy \
@@ -65,6 +67,7 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/csv_processor.o \
 		$(PKG_BUILD_DIR)/log_manager.o \
 		$(PKG_BUILD_DIR)/config_loader.o \
+		$(PKG_BUILD_DIR)/passive_safety.o \
 		-lpthread
 endef
 

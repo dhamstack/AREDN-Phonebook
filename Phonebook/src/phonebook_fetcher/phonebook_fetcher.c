@@ -6,6 +6,7 @@
 #include "../user_manager/user_manager.h"
 #include "../file_utils/file_utils.h"
 #include "../csv_processor/csv_processor.h"
+#include "../passive_safety/passive_safety.h" // For heartbeat tracking
 
 // Note: Global extern declarations moved to common.h
 // extern int g_pb_interval_seconds; // Declared in common.h
@@ -32,11 +33,15 @@ int publish_phonebook_xml(const char *source_filepath) {
         return 1;
     }
 
-    if (file_utils_publish_file_to_destination(source_filepath, PB_XML_PUBLIC_PATH) == 0) {
-        LOG_INFO("Phonebook XML successfully published at %s.", PB_XML_PUBLIC_PATH);
+    // Passive Safety: Use safe file operation with automatic rollback
+    safe_phonebook_file_operation(source_filepath, PB_XML_PUBLIC_PATH);
+
+    // Check if the operation succeeded
+    if (access(PB_XML_PUBLIC_PATH, F_OK) == 0) {
+        LOG_INFO("Phonebook XML safely published at %s.", PB_XML_PUBLIC_PATH);
         publish_success = 1;
     } else {
-        LOG_ERROR("Failed to publish XML file from '%s' to '%s'.", source_filepath, PB_XML_PUBLIC_PATH);
+        LOG_ERROR("Safe file operation failed for XML publish");
     }
 
     if (publish_success) {
@@ -64,6 +69,9 @@ void *phonebook_fetcher_thread(void *arg) {
     (void)arg;
     LOG_INFO("Phonebook fetcher started. Entering main loop.");
     while (1) { // Changed from while (keep_running) to while (1)
+        // Passive Safety: Update heartbeat for thread recovery monitoring
+        g_fetcher_last_heartbeat = time(NULL);
+
         LOG_INFO("Starting new fetcher cycle.");
         char new_csv_hash[HASH_LENGTH + 1]; // HASH_LENGTH from common.h
         char last_good_csv_hash[HASH_LENGTH + 1];

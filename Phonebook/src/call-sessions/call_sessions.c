@@ -18,6 +18,7 @@ CallSession* create_call_session() {
         if (!call_sessions[i].in_use) {
             call_sessions[i].in_use = 1;
             call_sessions[i].state = CALL_STATE_FREE;
+            call_sessions[i].creation_time = time(NULL); // For passive cleanup
             memset(call_sessions[i].call_id, 0, sizeof(call_sessions[i].call_id));
             memset(call_sessions[i].cseq, 0, sizeof(call_sessions[i].cseq));
             memset(call_sessions[i].from_tag, 0, sizeof(call_sessions[i].from_tag));

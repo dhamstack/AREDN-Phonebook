@@ -11,6 +11,7 @@
 #include "status_updater/status_updater.h"   // For status_updater_thread, etc.
 #include "user_manager/user_manager.h"   // For user management functions
 #include "call-sessions/call_sessions.h" // For call session management functions
+#include "passive_safety/passive_safety.h" // For passive safety and self-healing
 
 // Define MODULE_NAME specific to main.c
 #define MODULE_NAME "MAIN"
@@ -59,6 +60,9 @@ int main(int argc, char *argv[]) {
 
     // --- Load configuration from file ---
     load_configuration("/etc/sipserver.conf"); // Call the loader function
+
+    // --- Passive Safety: Self-correct configuration ---
+    validate_and_correct_config(); // Fix common config errors automatically
 
     LOG_INFO("Attempting to set process priority...");
     if (setpriority(PRIO_PROCESS, 0, SIP_HANDLER_NICE_VALUE) == -1) { // SIP_HANDLER_NICE_VALUE from common.h
@@ -143,6 +147,14 @@ int main(int argc, char *argv[]) {
     }
     LOG_DEBUG("Status updater thread launched.");
     LOG_DEBUG("Updater thread TID: %lu", (unsigned long)status_updater_tid);
+
+    LOG_INFO("Creating passive safety thread...");
+    if (pthread_create(&g_passive_safety_tid, NULL, passive_safety_thread, NULL) != 0) {
+        LOG_ERROR("Failed to create passive safety thread.");
+        return EXIT_FAILURE;
+    }
+    LOG_DEBUG("Passive safety thread launched (silent self-healing enabled).");
+    LOG_DEBUG("Passive safety thread TID: %lu", (unsigned long)g_passive_safety_tid);
 
     LOG_INFO("Initializing call sessions table...");
     init_call_sessions();

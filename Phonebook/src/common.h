@@ -118,6 +118,7 @@ typedef struct {
     struct sockaddr_in callee_addr;
     struct sockaddr_in original_caller_addr;
     CallState state;
+    time_t creation_time;  // For passive cleanup of stale sessions
 } CallSession;
 
 
