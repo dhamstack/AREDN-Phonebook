@@ -107,10 +107,21 @@ jobs:
       - name: Find IPK file
         id: find_ipk
         run: |
-          IPK_FILE=$(find sdk/bin/packages -name "*.ipk" | head -n 1)
+          echo "Searching for SIPServer IPK file..."
+          # Look for our SIPServer package specifically, not dependency packages
+          IPK_FILE=$(find sdk/bin -name "*SIPServer*.ipk" -o -name "*sipserver*.ipk" -o -name "*sip-server*.ipk" | head -n 1)
+
           if [ -z "$IPK_FILE" ]; then
-            echo "ERROR: No IPK file found!"
-            find sdk/bin -type f -name "*.ipk" || echo "No IPK files anywhere"
+            echo "SIPServer IPK not found! Checking all IPK files:"
+            find sdk/bin -name "*.ipk" -type f
+            echo "Maybe the package name is different. Checking non-library IPKs:"
+            find sdk/bin -name "*.ipk" -not -name "lib*" -type f
+            # Try to find any IPK that's not a standard library
+            IPK_FILE=$(find sdk/bin -name "*.ipk" -not -name "lib*" -type f | head -n 1)
+          fi
+
+          if [ -z "$IPK_FILE" ]; then
+            echo "ERROR: No suitable IPK file found!"
             exit 1
           fi
 
