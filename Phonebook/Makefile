@@ -14,7 +14,6 @@ define Package/sipserver
   SUBMENU:=Telephony
   TITLE:=AREDN SIP Server
   URL:=https://github.com/dhamstack/AREDN-Phonebook
-  DEPENDS:=+libpthread
 endef
 
 define Package/sipserver/description
@@ -31,6 +30,7 @@ endef
 
 define Build/Compile
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
+		-static \
 		-I$(PKG_BUILD_DIR) \
 		-o $(PKG_BUILD_DIR)/sipserver \
 		$(PKG_BUILD_DIR)/main.c \
