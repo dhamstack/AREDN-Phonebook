@@ -19,16 +19,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3
+
       - name: Set up SDK URL
         id: sdk
         run: |
-          echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
+          echo "sdk_url=https://downloads.openwrt.org/releases/23.05.4/targets/ath79/generic/openwrt-sdk-23.05.4-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
 
       - name: Download and extract SDK
         run: |
           wget "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
+          echo "Downloaded SDK, checking file:"
+          ls -la sdk.tar.xz
+          tar -tf sdk.tar.xz | head -10
           tar -xf sdk.tar.xz
+          ls -la
           mv openwrt-sdk-* sdk
+          echo "SDK extracted, checking structure:"
+          ls -la sdk/
 
       - name: Show SDK structure
         run: |
@@ -83,9 +94,19 @@ jobs:
       - name: Test build
         run: |
           cd sdk
-          make defconfig
-          echo "Building test package..."
-          make package/test-sip/compile V=s -j1
+          echo "Running defconfig..."
+          make defconfig 2>&1 || echo "defconfig failed"
+
+          echo "Checking if package is recognized..."
+          make package/test-sip/info V=s || echo "Package info failed"
+
+          echo "Building test package with full verbosity..."
+          make package/test-sip/compile V=99 -j1 2>&1 || {
+            echo "Build failed! Checking logs..."
+            find . -name "*.log" -exec echo "=== {} ===" \; -exec cat {} \;
+            find build_dir -name "*error*" -o -name "*fail*" 2>/dev/null || echo "No error files found"
+            exit 1
+          }
 
           echo "Build completed! Searching for IPK..."
-          find bin -name "*.ipk" -ls
+          find bin -name "*.ipk" -ls || echo "No IPK files found"
