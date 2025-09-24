@@ -1,0 +1,91 @@
+name: Test Build Simple
+
+on:
+  push:
+    tags:
+      - 'test-*.*.*'
+  workflow_dispatch:
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - arch: ath79
+            subtarget: generic
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up SDK URL
+        id: sdk
+        run: |
+          echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
+
+      - name: Download and extract SDK
+        run: |
+          wget "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
+          tar -xf sdk.tar.xz
+          mv openwrt-sdk-* sdk
+
+      - name: Show SDK structure
+        run: |
+          echo "SDK structure:"
+          ls -la sdk/
+          echo "Package directory:"
+          ls -la sdk/package/ | head -10
+
+      - name: Create minimal package
+        run: |
+          mkdir -p sdk/package/test-sip
+
+          # Create minimal Makefile
+          cat > sdk/package/test-sip/Makefile << 'EOF'
+          include $(TOPDIR)/rules.mk
+
+          PKG_NAME:=test-sip
+          PKG_VERSION:=1.0.0
+          PKG_RELEASE:=1
+
+          PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
+
+          include $(INCLUDE_DIR)/package.mk
+
+          define Package/test-sip
+          	SECTION:=net
+          	CATEGORY:=Network
+          	TITLE:=Test SIP Package
+          	DEPENDS:=+libpthread
+          endef
+
+          define Build/Prepare
+          	mkdir -p $(PKG_BUILD_DIR)
+          	echo '#include <stdio.h>' > $(PKG_BUILD_DIR)/main.c
+          	echo 'int main() { printf("Hello from SIP\\n"); return 0; }' >> $(PKG_BUILD_DIR)/main.c
+          endef
+
+          define Build/Compile
+          	$(TARGET_CC) $(TARGET_CFLAGS) -o $(PKG_BUILD_DIR)/test-sip $(PKG_BUILD_DIR)/main.c -lpthread
+          endef
+
+          define Package/test-sip/install
+          	$(INSTALL_DIR) $(1)/usr/bin
+          	$(INSTALL_BIN) $(PKG_BUILD_DIR)/test-sip $(1)/usr/bin/
+          endef
+
+          $(eval $(call BuildPackage,test-sip))
+          EOF
+
+          echo "Created minimal package Makefile"
+
+      - name: Test build
+        run: |
+          cd sdk
+          make defconfig
+          echo "Building test package..."
+          make package/test-sip/compile V=s -j1
+
+          echo "Build completed! Searching for IPK..."
+          find bin -name "*.ipk" -ls
