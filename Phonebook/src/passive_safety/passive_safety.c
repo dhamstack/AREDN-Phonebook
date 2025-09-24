@@ -196,7 +196,6 @@ void passive_thread_recovery_check(void) {
                  now - g_fetcher_last_heartbeat);
 
         // Attempt to cancel and restart the thread
-        extern pthread_t fetcher_tid;
         if (pthread_cancel(fetcher_tid) == 0) {
             // Create new fetcher thread
             extern void *phonebook_fetcher_thread(void *arg);
@@ -215,7 +214,6 @@ void passive_thread_recovery_check(void) {
                  now - g_updater_last_heartbeat);
 
         // Attempt to cancel and restart the thread
-        extern pthread_t status_updater_tid;
         if (pthread_cancel(status_updater_tid) == 0) {
             // Create new status updater thread
             extern void *status_updater_thread(void *arg);

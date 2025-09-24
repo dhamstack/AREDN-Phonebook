@@ -26,6 +26,10 @@ CallSession call_sessions[MAX_CALL_SESSIONS];
 int num_registered_users = 0;
 int num_directory_entries = 0;
 
+// Thread IDs for passive safety monitoring
+pthread_t fetcher_tid = 0;
+pthread_t status_updater_tid = 0;
+
 // Mutexes and Condition Variables (DEFINED here)
 pthread_mutex_t registered_users_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t phonebook_file_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -50,8 +54,6 @@ int main(int argc, char *argv[]) {
     ssize_t n;
     fd_set readfds;
     struct timeval tv;
-    pthread_t fetcher_tid = 0;
-    pthread_t status_updater_tid = 0;
     int reuse_addr = 1;
     int retval;
 
