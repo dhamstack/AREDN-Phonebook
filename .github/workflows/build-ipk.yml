@@ -45,20 +45,20 @@ jobs:
           tar -xf sdk.tar.xz
           mv openwrt-sdk-* sdk
 
-      - name: Inject Phonebook package
+      - name: Inject SIP Server package
         run: |
-          mkdir -p sdk/package/phonebook
-          cp -r Phonebook/* sdk/package/phonebook/
-          mkdir -p sdk/package/phonebook/files/etc
-          cp Phonebook/files/etc/sipserver.conf sdk/package/phonebook/files/etc/
+          mkdir -p sdk/package/SIPserverV5
+          cp -r Phonebook/* sdk/package/SIPserverV5/
+          mkdir -p sdk/package/SIPserverV5/files/etc
+          cp Phonebook/files/etc/sipserver.conf sdk/package/SIPserverV5/files/etc/
 
           # Verify all source files are present
           echo "Verifying source structure:"
-          find sdk/package/phonebook/src -name "*.c" -o -name "*.h" | sort
+          find sdk/package/SIPserverV5/src -name "*.c" -o -name "*.h" | sort
 
           # Verify Makefile includes all modules
           echo "Checking Makefile for passive_safety module:"
-          grep -q "passive_safety" sdk/package/phonebook/Makefile && echo "✓ passive_safety found in Makefile" || echo "✗ passive_safety missing in Makefile"
+          grep -q "passive_safety" sdk/package/SIPserverV5/Makefile && echo "✓ passive_safety found in Makefile" || echo "✗ passive_safety missing in Makefile"
 
       - name: Build package
         run: |
@@ -66,15 +66,15 @@ jobs:
           make defconfig
 
           # Show package info
-          echo "Building phonebook package for ${{ matrix.target.arch }}..."
+          echo "Building SIPserverV5 package for ${{ matrix.target.arch }}..."
 
           # Build with verbose output and error handling
-          if ! make package/phonebook/compile V=s -j$(nproc); then
+          if ! make package/SIPserverV5/compile V=s -j$(nproc); then
             echo "BUILD FAILED! Checking for errors..."
             echo "=== Build Log Tail ==="
             find . -name "*.log" -exec tail -n 50 {} \; || echo "No log files found"
             echo "=== Package Structure ==="
-            find package/phonebook -type f | head -20
+            find package/SIPserverV5 -type f | head -20
             exit 1
           fi
 
@@ -94,7 +94,7 @@ jobs:
           fi
 
           # Rename IPK file to include architecture
-          ARCH_IPK="phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}.ipk"
+          ARCH_IPK="SIPserverV5-${{ matrix.target.arch }}-${{ github.ref_name }}.ipk"
           cp "$IPK_FILE" "$ARCH_IPK"
 
           echo "ipk_path=$ARCH_IPK" >> $GITHUB_OUTPUT
@@ -127,7 +127,7 @@ jobs:
             ## Installation
             ```bash
             # Download appropriate IPK for your architecture
-            opkg install phonebook-*.ipk
+            opkg install SIPserverV5-*.ipk
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
