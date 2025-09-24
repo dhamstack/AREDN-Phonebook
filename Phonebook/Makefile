@@ -1,6 +1,6 @@
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=SIPserverV5
+PKG_NAME:=SIPServer
 PKG_VERSION:=1.0.0
 PKG_RELEASE:=1
 
@@ -11,7 +11,7 @@ PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
 
-define Package/SIPserverV5
+define Package/SIPServer
 	SECTION:=net
 	CATEGORY:=Network
 	SUBMENU:=Telephony
@@ -71,7 +71,7 @@ define Build/Compile
 		-lpthread
 endef
 
-define Package/SIPserverV5/install
+define Package/SIPServer/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/sip-proxy $(1)/usr/bin/
 	$(INSTALL_DIR) $(1)/etc/init.d
@@ -82,4 +82,4 @@ define Package/SIPserverV5/install
 	$(INSTALL_CONF) $(PKG_BUILD_DIR)/files/etc/sipserver.conf $(1)/etc/
 endef
 
-$(eval $(call BuildPackage,SIPserverV5))
+$(eval $(call BuildPackage,SIPServer))
