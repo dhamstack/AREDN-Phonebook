@@ -14,6 +14,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         target:
@@ -41,9 +42,12 @@ jobs:
 
       - name: Download and extract SDK
         run: |
-          wget "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
-          tar -xf sdk.tar.xz
+          echo "Downloading SDK (this may take a few minutes)..."
+          wget --progress=bar:force "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
+          echo "Extracting SDK..."
+          tar -xf sdk.tar.xz --checkpoint=1000 --checkpoint-action=echo
           mv openwrt-sdk-* sdk
+          echo "SDK ready for build"
 
       - name: Inject SIP Server package
         run: |
@@ -85,18 +89,13 @@ jobs:
           # Show package info
           echo "Building SIPServer package for ${{ matrix.target.arch }}..."
 
-          # Build with maximum verbosity and error handling
-          echo "Starting build with verbose output..."
-          if ! make package/SIPServer/compile V=99 -j1 2>&1; then
-            echo "BUILD FAILED! Checking for detailed errors..."
-            echo "=== Full Build Log ==="
-            find . -name "*.log" -exec echo "=== {} ===" \; -exec cat {} \; || echo "No log files found"
-            echo "=== Error Logs ==="
-            find . -name "*error*" -o -name "*fail*" | head -10
-            echo "=== Package Structure ==="
-            find package/SIPServer -type f
-            echo "=== Build Directory ==="
-            ls -la build_dir/
+          # Build with streamlined error handling for speed
+          echo "Starting compilation..."
+          if ! make package/SIPServer/compile V=s -j$(nproc) 2>&1 | tee build.log; then
+            echo "BUILD FAILED! Last 100 lines of build log:"
+            tail -n 100 build.log
+            echo "=== Error Summary ==="
+            grep -i "error\|failed\|undefined" build.log | tail -20 || echo "No specific errors found"
             exit 1
           fi
 
