@@ -65,16 +65,29 @@ jobs:
           cd sdk
           make defconfig
 
+          # Show available packages first
+          echo "Available packages in SDK:"
+          find package -name "Makefile" | head -10
+
+          # Show our package structure
+          echo "Our package structure:"
+          find package/SIPserverV5 -type f | head -20
+
           # Show package info
           echo "Building SIPserverV5 package for ${{ matrix.target.arch }}..."
 
-          # Build with verbose output and error handling
-          if ! make package/SIPserverV5/compile V=s -j$(nproc); then
-            echo "BUILD FAILED! Checking for errors..."
-            echo "=== Build Log Tail ==="
-            find . -name "*.log" -exec tail -n 50 {} \; || echo "No log files found"
+          # Build with maximum verbosity and error handling
+          echo "Starting build with verbose output..."
+          if ! make package/SIPserverV5/compile V=99 -j1 2>&1; then
+            echo "BUILD FAILED! Checking for detailed errors..."
+            echo "=== Full Build Log ==="
+            find . -name "*.log" -exec echo "=== {} ===" \; -exec cat {} \; || echo "No log files found"
+            echo "=== Error Logs ==="
+            find . -name "*error*" -o -name "*fail*" | head -10
             echo "=== Package Structure ==="
-            find package/SIPserverV5 -type f | head -20
+            find package/SIPserverV5 -type f
+            echo "=== Build Directory ==="
+            ls -la build_dir/
             exit 1
           fi
 
