@@ -1,0 +1,90 @@
+name: Minimal C Test
+
+on:
+  push:
+    tags:
+      - 'minimal-*.*.*'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3
+
+      - name: Download SDK
+        run: |
+          wget https://downloads.openwrt.org/releases/23.05.4/targets/ath79/generic/openwrt-sdk-23.05.4-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz -O sdk.tar.xz
+          tar -xf sdk.tar.xz
+          mv openwrt-sdk-* sdk
+
+      - name: Create ultra-minimal test package
+        run: |
+          mkdir -p sdk/package/hello
+
+          # Create minimal main.c
+          cat > main.c << 'EOF'
+          #include <stdio.h>
+          int main() {
+              printf("Hello AREDN!\n");
+              return 0;
+          }
+          EOF
+
+          # Create minimal Makefile
+          cat > sdk/package/hello/Makefile << 'EOF'
+          include $(TOPDIR)/rules.mk
+
+          PKG_NAME:=hello
+          PKG_VERSION:=1.0
+          PKG_RELEASE:=1
+          PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
+
+          include $(INCLUDE_DIR)/package.mk
+
+          define Package/hello
+              SECTION:=utils
+              CATEGORY:=Utilities
+              TITLE:=Hello AREDN
+          endef
+
+          define Build/Prepare
+              mkdir -p $(PKG_BUILD_DIR)
+              cp $(TOPDIR)/../main.c $(PKG_BUILD_DIR)/
+          endef
+
+          define Build/Compile
+              $(TARGET_CC) $(TARGET_CFLAGS) -o $(PKG_BUILD_DIR)/hello $(PKG_BUILD_DIR)/main.c
+          endef
+
+          define Package/hello/install
+              $(INSTALL_DIR) $(1)/usr/bin
+              $(INSTALL_BIN) $(PKG_BUILD_DIR)/hello $(1)/usr/bin/
+          endef
+
+          $(eval $(call BuildPackage,hello))
+          EOF
+
+          echo "Files created:"
+          ls -la main.c
+          ls -la sdk/package/hello/Makefile
+
+      - name: Test minimal build
+        run: |
+          cd sdk
+          make defconfig
+          echo "Testing package recognition:"
+          make package/hello/info V=s
+          echo "Building minimal package:"
+          make package/hello/compile V=99 -j1
+
+          echo "Searching for hello IPK:"
+          find bin -name "*hello*"

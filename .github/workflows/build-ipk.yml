@@ -89,13 +89,21 @@ jobs:
           # Show package info
           echo "Building sipserver package for ${{ matrix.target.arch }}..."
 
-          # Build with streamlined error handling for speed
-          echo "Starting compilation..."
-          if ! make package/sipserver/compile V=s -j$(nproc) 2>&1 | tee build.log; then
-            echo "BUILD FAILED! Last 100 lines of build log:"
-            tail -n 100 build.log
-            echo "=== Error Summary ==="
-            grep -i "error\|failed\|undefined" build.log | tail -20 || echo "No specific errors found"
+          # Build with maximum debugging to see compilation errors
+          echo "Starting compilation with full debugging..."
+          echo "First, let's see if the package is recognized:"
+          make package/sipserver/info V=99 || echo "Package info failed"
+
+          echo "Now attempting compilation with full verbosity:"
+          if ! make package/sipserver/compile V=99 -j1 2>&1 | tee build.log; then
+            echo "BUILD FAILED! Full build log:"
+            cat build.log
+            echo "=== Checking for compilation errors ==="
+            grep -n -A5 -B5 -i "error\|fail\|undefined\|cannot\|missing" build.log || echo "No obvious errors found"
+            echo "=== Checking build directory ==="
+            find build_dir -name "*sipserver*" -o -name "*sip*" 2>/dev/null || echo "No sipserver build dir found"
+            echo "=== Checking if any C files were processed ==="
+            find . -name "*.o" | head -10
             exit 1
           fi
 
