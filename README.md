@@ -1,6 +1,6 @@
 # AREDN Phonebook
 
-AREDN Phonebook is a SIP server that provides directory services for Amateur Radio Emergency Data Network (AREDN) mesh networks. It automatically fetches and maintains a centralized phonebook, making it easy for SIP phones to access directory listings across the mesh network.
+AREDN Phonebook is a SIP server that provides directory services for Amateur Radio Emergency Data Network (AREDN) mesh networks. During normal times, It automatically fetches a phonebook from common servers and maintains a copy on the router, making it easy for SIP phones to access directory listings across the mesh network. The router stores this phonebook so the lates copied version is always available.
 
 ## Features
 
@@ -8,7 +8,7 @@ AREDN Phonebook is a SIP server that provides directory services for Amateur Rad
 - **Emergency Resilience**: Survives power outages with persistent storage
 - **Flash-Friendly**: Minimizes writes to preserve router memory
 - **Plug-and-Play**: Works immediately after installation
-- **Phone Integration**: Provides XML directory for SIP phones
+- **Phone Integration**: Provides XML directory for SIP phones (tested with Yealink)
 - **Passive Safety**: Self-healing with automatic error recovery
 
 ## Installation
@@ -24,27 +24,19 @@ AREDN Phonebook is a SIP server that provides directory services for Amateur Rad
 ### Install via AREDN Web Interface
 
 1. **Access AREDN Node**: Connect to your AREDN node's web interface
+
 2. **Navigate to Administration**: Go to **Administration** → **Package Management**
+
+   ![image-20250925093930979](C:\Users\AndreasSpiess\AppData\Roaming\Typora\typora-user-images\image-20250925093930979.png)
+
 3. **Upload Package**:
    - Click **Choose File** and select your downloaded `.ipk` file
-   - Click **Upload Package**
-4. **Install**: Click **Install** next to the uploaded package
-5. **Reboot**: Reboot your node when prompted
 
-### Install via Command Line (Advanced)
+     ![image-20250925094011144](C:\Users\AndreasSpiess\AppData\Roaming\Typora\typora-user-images\image-20250925094011144.png)
 
-```bash
-# Upload IPK file to router, then:
-opkg install AREDN-Phonebook-*.ipk
+4. **Install**: Click **Fetch and Install**
 
-# Start the service
-/etc/init.d/AREDN-Phonebook start
-
-# Enable auto-start
-/etc/init.d/AREDN-Phonebook enable
-```
-
-## Configuration
+## Configuration (optional, not needed for most users)
 
 The phonebook server automatically configures itself. Default settings:
 
@@ -57,9 +49,9 @@ The phonebook server automatically configures itself. Default settings:
 
 Configure your SIP phone to use the node's directory:
 
-1. **Directory URL**: `http://[your-node-name].local.mesh/arednstack/phonebook_generic_direct.xml`
-2. **SIP Server**: Point to your node's IP address
-3. **Refresh**: Directory updates automatically every 30 minutes
+1. **Directory URL**: `http://localnode.local.mesh/arednstack/phonebook_generic_direct.xml`
+2. **SIP Server**: `localnode.local.mesh`
+3. **Refresh**: Directory updates automatically every xx seconds from router (your Update Time Interval)
 
 ## Troubleshooting
 
@@ -83,7 +75,7 @@ curl http://localhost/arednstack/phonebook_generic_direct.xml
 
 ## Technical Details
 
-- **Emergency Boot**: Loads existing phonebook immediately on startup
+- **Emergency Boot**: Loads the existing phonebook immediately on startup
 - **Persistent Storage**: Survives power cycles using `/www/arednstack/`
 - **Flash Protection**: Only writes when phonebook content changes
 - **Multi-threaded**: Background fetching doesn't affect SIP performance
