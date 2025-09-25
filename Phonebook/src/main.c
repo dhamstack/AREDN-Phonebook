@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
     }
     LOG_DEBUG("Process priority setting attempted.");
 
-    LOG_INFO("SIP Server %s starting...", SIP_SERVER_VERSION); // SIP_SERVER_VERSION from common.h
+    LOG_INFO("AREDN Phonebook %s starting...", AREDN_PHONEBOOK_VERSION); // AREDN_PHONEBOOK_VERSION from common.h
     LOG_INFO("Initializing mutexes and condition variables...");
 
     // Mutex initializations
@@ -187,7 +187,7 @@ int main(int argc, char *argv[]) {
     }
     LOG_INFO("Successfully bound to UDP port %d.", SIP_PORT);
 
-    LOG_INFO("SIP Server listening on UDP port %d", SIP_PORT);
+    LOG_INFO("AREDN Phonebook SIP Server listening on UDP port %d", SIP_PORT);
     LOG_INFO("Entering main SIP message processing loop.");
 
     while (1) { // Changed from while(keep_running) to while(1)
@@ -228,7 +228,7 @@ int main(int argc, char *argv[]) {
     pthread_cond_destroy(&updater_trigger_cond);
     LOG_DEBUG("Mutexes and condition variables destroyed.");
 
-    LOG_INFO("SIP Server shut down."); // Changed from "shut down cleanly"
+    LOG_INFO("AREDN Phonebook shut down."); // Changed from "shut down cleanly"
     log_shutdown();
 
     LOG_INFO("Main function exiting.");
