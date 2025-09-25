@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=AREDN-Phonebook
-PKG_VERSION:=1.4.0
+PKG_VERSION:=1.4.1
 PKG_RELEASE:=1
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
@@ -12,7 +12,7 @@ define Package/AREDN-Phonebook
   SECTION:=net
   CATEGORY:=Network
   SUBMENU:=Telephony
-  TITLE:=AREDN Phonebook SIP Server
+  TITLE:=AREDN Phonebook
   URL:=https://github.com/dhamstack/AREDN-Phonebook
 endef
 
