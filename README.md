@@ -17,9 +17,9 @@ AREDN Phonebook is a SIP server that provides directory services for Amateur Rad
 
 1. Go to the [Releases page](https://github.com/dhamstack/AREDN-Phonebook/releases)
 2. Download the latest `AREDN-Phonebook-x.x.x-x_[architecture].ipk` file for your device:
-   - **ath79**: Most common AREDN routers (e.g., Ubiquiti, MikroTik)
-   - **x86**: PC-based AREDN nodes
-   - **ipq40xx**: Some newer routers
+   - **ath79**: Most common AREDN routers (MikroTik hap lite, small white)
+   - **x86**: PC-based AREDN nodes (e.g. Proxmos)
+   - **ipq40xx**: (Mikrotik hap3, bigger black)
 
 ### Install via AREDN Web Interface
 
