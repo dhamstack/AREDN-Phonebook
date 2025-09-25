@@ -1,22 +1,22 @@
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=sipserver
-PKG_VERSION:=1.3.1
+PKG_NAME:=AREDN-Phonebook
+PKG_VERSION:=1.4.0
 PKG_RELEASE:=1
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
 
-define Package/sipserver
+define Package/AREDN-Phonebook
   SECTION:=net
   CATEGORY:=Network
   SUBMENU:=Telephony
-  TITLE:=AREDN SIP Server
+  TITLE:=AREDN Phonebook SIP Server
   URL:=https://github.com/dhamstack/AREDN-Phonebook
 endef
 
-define Package/sipserver/description
+define Package/AREDN-Phonebook/description
   AREDN Phonebook SIP Server with passive safety features
   for Amateur Radio Emergency Data Networks.
 endef
@@ -32,7 +32,7 @@ define Build/Compile
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
 		-static \
 		-I$(PKG_BUILD_DIR) \
-		-o $(PKG_BUILD_DIR)/sipserver \
+		-o $(PKG_BUILD_DIR)/AREDN-Phonebook \
 		$(PKG_BUILD_DIR)/main.c \
 		$(PKG_BUILD_DIR)/call-sessions/call_sessions.c \
 		$(PKG_BUILD_DIR)/user_manager/user_manager.c \
@@ -47,13 +47,13 @@ define Build/Compile
 		-lpthread
 endef
 
-define Package/sipserver/install
+define Package/AREDN-Phonebook/install
 	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/sipserver $(1)/usr/bin/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/AREDN-Phonebook $(1)/usr/bin/
 	$(INSTALL_DIR) $(1)/etc
 	$(INSTALL_CONF) $(PKG_BUILD_DIR)/files/etc/sipserver.conf $(1)/etc/
 	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) ./files/etc/init.d/sip-proxy $(1)/etc/init.d/
+	$(INSTALL_BIN) ./files/etc/init.d/AREDN-Phonebook $(1)/etc/init.d/
 endef
 
-$(eval $(call BuildPackage,sipserver))
+$(eval $(call BuildPackage,AREDN-Phonebook))
