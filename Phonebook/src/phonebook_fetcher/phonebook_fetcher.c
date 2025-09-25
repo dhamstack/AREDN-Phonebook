@@ -136,13 +136,14 @@ void *phonebook_fetcher_thread(void *arg) {
                 LOG_INFO("CSV content changed. Updating persistent storage (flash write).");
             }
 
-            // Atomic move: temp file to flash (only one flash write per change)
-            if (rename(PB_CSV_TEMP_PATH, PB_CSV_PATH) != 0) {
-                LOG_ERROR("Failed to move temp CSV to persistent storage: %s", strerror(errno));
+            // Cross-filesystem move: copy temp file to flash, then remove temp
+            if (file_utils_copy_file(PB_CSV_TEMP_PATH, PB_CSV_PATH) != 0) {
+                LOG_ERROR("Failed to copy temp CSV to persistent storage");
                 remove(PB_CSV_TEMP_PATH); // Clean up temp file
                 goto end_fetcher_cycle;
             }
-            LOG_INFO("CSV successfully moved to persistent storage with minimal flash wear.");
+            remove(PB_CSV_TEMP_PATH); // Clean up temp file after successful copy
+            LOG_INFO("CSV successfully copied to persistent storage with minimal flash wear.");
         }
 
         LOG_INFO("Populating SIP users from CSV for phonebook update.");
