@@ -64,11 +64,12 @@
 #define SIP_HANDLER_NICE_VALUE    -5
 #define BACKGROUND_TASK_NICE_VALUE 10
 
-// Phonebook Fetcher settings (Simplified paths)
-#define PB_CSV_PATH "/tmp/phonebook.csv"
+// Phonebook Fetcher settings (Flash-friendly with temp downloads)
+#define PB_CSV_TEMP_PATH "/tmp/phonebook_download.csv"
+#define PB_CSV_PATH "/www/arednstack/phonebook.csv"
 #define PB_XML_BASE_PATH "/tmp/phonebook.xml"
 #define PB_XML_PUBLIC_PATH "/www/arednstack/phonebook_generic_direct.xml"
-#define PB_LAST_GOOD_CSV_HASH_PATH "/tmp/phonebook.csv.hash"
+#define PB_LAST_GOOD_CSV_HASH_PATH "/www/arednstack/phonebook.csv.hash"
 
 #define HASH_LENGTH 16
 
