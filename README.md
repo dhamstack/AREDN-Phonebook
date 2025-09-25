@@ -27,12 +27,12 @@ AREDN Phonebook is a SIP server that provides directory services for Amateur Rad
 
 2. **Navigate to Administration**: Go to **Administration** → **Package Management**
 
-   ![image-20250925093930979](C:\Users\AndreasSpiess\AppData\Roaming\Typora\typora-user-images\image-20250925093930979.png)
+   ![Package Management Screen](images/package-management.png)
 
 3. **Upload Package**:
    - Click **Choose File** and select your downloaded `.ipk` file
 
-     ![image-20250925094011144](C:\Users\AndreasSpiess\AppData\Roaming\Typora\typora-user-images\image-20250925094011144.png)
+     ![Upload Package Dialog](images/upload-package.png)
 
 4. **Install**: Click **Fetch and Install**
 
