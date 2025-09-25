@@ -1,0 +1,29 @@
+# Claude Code configuration and documentation
+CLAUDE.md
+claude.md
+
+# Microsoft Office documents
+*.docx
+
+# Archive files
+*.zip
+
+# Todo files
+todo.*
+
+# Build artifacts and temporary files
+*.o
+*.so
+*.a
+*~
+.DS_Store
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Log files
+*.log
