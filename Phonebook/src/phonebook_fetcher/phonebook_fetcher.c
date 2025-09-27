@@ -185,7 +185,12 @@ void *phonebook_fetcher_thread(void *arg) {
         end_fetcher_cycle:;
         LOG_INFO("Sleeping %d seconds...", g_pb_interval_seconds); // Use global g_pb_interval_seconds
         for (int i = 0; i < g_pb_interval_seconds; i++) {
-            // if (!keep_running) break; // REMOVED
+            // Check for webhook-triggered reload request
+            if (phonebook_reload_requested) {
+                phonebook_reload_requested = 0; // Reset flag
+                LOG_INFO("Webhook reload requested - interrupting sleep to fetch phonebook immediately");
+                break; // Exit sleep loop and restart fetch cycle
+            }
             sleep(1); // sleep from common.h
         }
     }

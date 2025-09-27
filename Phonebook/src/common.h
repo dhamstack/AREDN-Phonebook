@@ -24,10 +24,11 @@
 #include <sys/resource.h> // For setpriority, PRIO_PROCESS
 #include <sched.h> // For sched_yield
 #include <libgen.h>   // For dirname, basename
+#include <signal.h>   // For signal handling (SIGUSR1)
 
 
 // --- Application-specific Constants (remain hardcoded as agreed) -----------------------------------
-#define AREDN_PHONEBOOK_VERSION "1.4.2"
+#define AREDN_PHONEBOOK_VERSION "1.4.3"
 #define APP_NAME "AREDN-Phonebook"
 #define SIP_PORT 5060
 #define MAX_SIP_MSG_LEN 2048
@@ -126,6 +127,7 @@ typedef struct {
 // --- Global Variable Declarations (defined in main.c or config_loader.c) ---
 // extern volatile sig_atomic_t keep_running; // REMOVED
 // extern volatile sig_atomic_t phonebook_updated_flag; // REMOVED
+extern volatile sig_atomic_t phonebook_reload_requested; // For webhook-triggered reload
 
 // These are defined in config_loader.c and populated from sipserver.conf
 extern int g_pb_interval_seconds;
