@@ -52,24 +52,10 @@ http://localnode.local.mesh/arednstack/phonebook_generic_direct.xml
 4. Set **Name** to: `AREDN Phonebook`
 5. **Save** and **Reboot** the phone
 
-Replace `localnode` with your actual AREDN node name (e.g., `hb9dvd-hap-1.local.mesh`).
+## Account Configuration
 
-## Configuration (optional, not needed for most users)
-
-The phonebook server automatically configures itself. Default settings:
-
-- **Configuration**: `/etc/sipserver.conf`
-- **Service Commands**: `/etc/init.d/AREDN-Phonebook start|stop|restart|status`
 - **SIP Port**: 5060
-- **Directory URL**: `http://[your-node].local.mesh/arednstack/phonebook_generic_direct.xml`
-
-## Phone Setup
-
-Configure your SIP phone to use the node's directory:
-
-1. **Directory URL**: `http://localnode.local.mesh/arednstack/phonebook_generic_direct.xml`
-2. **SIP Server**: `localnode.local.mesh`
-3. **Refresh**: Directory updates automatically every xx seconds from router (your Update Time Interval)
+- **Directory URL**: `http://localhost.local.mesh`
 
 ## Webhook Endpoints
 
@@ -89,7 +75,10 @@ Configure your SIP phone to use the node's directory:
 
 ## Troubleshooting
 
-### Check Service Status
+http://[your-node].local.mesh/cgi-bin/loadphonebook` should load the phonebook from the server
+http://[your-node].local.mesh/cgi-bin/showphonebook` should show the phonebook on your router
+
+### Check Service Status in ssh terminal
 ```bash
 ps | grep AREDN-Phonebook
 /etc/init.d/AREDN-Phonebook status
