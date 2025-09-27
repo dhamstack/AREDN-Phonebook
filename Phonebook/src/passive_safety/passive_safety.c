@@ -116,6 +116,34 @@ void enable_graceful_degradation_if_needed(void) {
     }
 }
 
+// 3.5. ORPHANED FILE CLEANUP - Remove any leftover backup/temp files
+void cleanup_orphaned_phonebook_files(void) {
+    char backup_path[512];
+    char temp_path[512];
+
+    // Check for orphaned backup and temp files
+    snprintf(backup_path, sizeof(backup_path), "%s.backup", PB_XML_PUBLIC_PATH);
+    snprintf(temp_path, sizeof(temp_path), "%s.temp", PB_XML_PUBLIC_PATH);
+
+    // Remove orphaned backup file
+    if (access(backup_path, F_OK) == 0) {
+        if (remove(backup_path) == 0) {
+            LOG_INFO("Cleaned up orphaned backup file: %s", backup_path);
+        } else {
+            LOG_WARN("Failed to remove orphaned backup file: %s", backup_path);
+        }
+    }
+
+    // Remove orphaned temp file
+    if (access(temp_path, F_OK) == 0) {
+        if (remove(temp_path) == 0) {
+            LOG_INFO("Cleaned up orphaned temp file: %s", temp_path);
+        } else {
+            LOG_WARN("Failed to remove orphaned temp file: %s", temp_path);
+        }
+    }
+}
+
 // ============================================================================
 // WEEK 2: ENHANCED RESILIENCE FEATURES
 // ============================================================================
@@ -141,6 +169,10 @@ void safe_phonebook_file_operation(const char *source_path, const char *dest_pat
     // Step 2: Copy new data to temporary file
     if (file_utils_copy_file(source_path, temp_path) != 0) {
         LOG_ERROR("Failed to create temporary file for phonebook update");
+        // Clean up backup file if we created one
+        if (access(backup_path, F_OK) == 0) {
+            remove(backup_path);
+        }
         return; // Abort if copy fails
     }
 
@@ -149,6 +181,10 @@ void safe_phonebook_file_operation(const char *source_path, const char *dest_pat
     if (!verify_fp) {
         LOG_ERROR("Cannot verify temporary phonebook file integrity");
         remove(temp_path); // Clean up failed temp file
+        // Clean up backup file if we created one
+        if (access(backup_path, F_OK) == 0) {
+            remove(backup_path);
+        }
         return;
     }
 
@@ -160,6 +196,10 @@ void safe_phonebook_file_operation(const char *source_path, const char *dest_pat
     if (file_size < 50) { // Phonebook should be at least 50 bytes
         LOG_ERROR("Phonebook file appears corrupted (size: %ld bytes), aborting update", file_size);
         remove(temp_path);
+        // Clean up backup file if we created one
+        if (access(backup_path, F_OK) == 0) {
+            remove(backup_path);
+        }
         return;
     }
 
@@ -175,14 +215,19 @@ void safe_phonebook_file_operation(const char *source_path, const char *dest_pat
             LOG_INFO("Successfully rolled back to previous phonebook version");
         } else {
             LOG_ERROR("Rollback failed - phonebook may be unavailable");
+            // Clean up backup file even if rollback failed
+            remove(backup_path);
         }
     } else if (!rollback_needed) {
         // Success - clean up backup
         remove(backup_path);
         LOG_DEBUG("Phonebook update completed successfully");
+    } else {
+        // Backup doesn't exist but rollback was needed - clean up anyway
+        remove(backup_path);
     }
 
-    // Clean up any remaining temporary files
+    // Always clean up any remaining temporary files
     remove(temp_path);
 }
 
@@ -242,6 +287,7 @@ void *passive_safety_thread(void *arg) {
         // Week 1: Essential safety checks
         passive_cleanup_stale_call_sessions();
         enable_graceful_degradation_if_needed();
+        cleanup_orphaned_phonebook_files();
 
         // Week 2: Enhanced resilience checks (every 15 minutes)
         static int cycle_count = 0;
