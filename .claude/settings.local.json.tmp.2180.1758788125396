@@ -4,13 +4,9 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(gh release:*)",
-      "Bash(git checkout:*)",
-      "Bash(git push:*)",
-      "Bash(gh run list:*)",
-      "Bash(git tag:*)",
       "Bash(git rm:*)",
-      "Bash(make:*)",
-      "Bash(gcc:*)"
+      "Bash(git push:*)",
+      "Bash(git pull:*)"
     ],
     "deny": [],
     "ask": []
