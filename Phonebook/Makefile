@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=AREDN-Phonebook
-PKG_VERSION:=1.4.3
+PKG_VERSION:=1.4.4
 PKG_RELEASE:=1
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
@@ -56,7 +56,7 @@ define Package/AREDN-Phonebook/install
 	$(INSTALL_BIN) ./files/etc/init.d/AREDN-Phonebook $(1)/etc/init.d/
 	$(INSTALL_DIR) $(1)/www/cgi-bin
 	$(INSTALL_BIN) ./files/www/cgi-bin/loadphonebook $(1)/www/cgi-bin/
-	$(INSTALL_BIN) ./files/www/cgi-bin/listphonebook $(1)/www/cgi-bin/
+	$(INSTALL_BIN) ./files/www/cgi-bin/showphonebook $(1)/www/cgi-bin/
 endef
 
 $(eval $(call BuildPackage,AREDN-Phonebook))
