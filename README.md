@@ -36,6 +36,24 @@ AREDN Phonebook is a SIP server that provides directory services for Amateur Rad
 
 4. **Install**: Click **Fetch and Install**
 
+### Configure Your Yealink Phone
+
+After installation, configure your Yealink phone to access the AREDN phonebook:
+
+**Directory URL for Yealink phones:**
+```
+http://localnode.local.mesh/arednstack/phonebook_generic_direct.xml
+```
+
+**Steps:**
+1. Access your phone's web interface (usually `http://[phone-ip]`)
+2. Go to **Directory** → **Remote Phone Book**
+3. Set **Remote URL** to: `http://localnode.local.mesh/arednstack/phonebook_generic_direct.xml`
+4. Set **Name** to: `AREDN Phonebook`
+5. **Save** and **Reboot** the phone
+
+Replace `localnode` with your actual AREDN node name (e.g., `hb9dvd-hap-1.local.mesh`).
+
 ## Configuration (optional, not needed for most users)
 
 The phonebook server automatically configures itself. Default settings:
