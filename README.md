@@ -17,9 +17,9 @@ AREDN Phonebook is a SIP server that provides directory services for Amateur Rad
 
 1. Go to the [Releases page](https://github.com/dhamstack/AREDN-Phonebook/releases)
 2. Download the latest `AREDN-Phonebook-x.x.x-x_[architecture].ipk` file for your device:
-   - **ath79**: Most common AREDN routers (MikroTik hap lite, small white)
-   - **x86**: PC-based AREDN nodes (e.g. Proxmos)
-   - **ipq40xx**: (Mikrotik hap3, bigger black)
+   - **ath79**: Most common AREDN routers (e.g., Ubiquiti, MikroTik)
+   - **x86**: PC-based AREDN nodes
+   - **ipq40xx**: Some newer routers
 
 ### Install via AREDN Web Interface
 
@@ -36,26 +36,22 @@ AREDN Phonebook is a SIP server that provides directory services for Amateur Rad
 
 4. **Install**: Click **Fetch and Install**
 
-### Configure Your Yealink Phone
+## Configuration (optional, not needed for most users)
 
-After installation, configure your Yealink phone to access the AREDN phonebook:
+The phonebook server automatically configures itself. Default settings:
 
-**Directory URL for Yealink phones:**
-```
-http://localnode.local.mesh/arednstack/phonebook_generic_direct.xml
-```
-
-**Steps:**
-1. Access your phone's web interface (usually `http://[phone-ip]`)
-2. Go to **Directory** → **Remote Phone Book**
-3. Set **Remote URL** to: `http://localnode.local.mesh/arednstack/phonebook_generic_direct.xml`
-4. Set **Name** to: `AREDN Phonebook`
-5. **Save** and **Reboot** the phone
-
-## Account Configuration
-
+- **Configuration**: `/etc/sipserver.conf`
+- **Service Commands**: `/etc/init.d/AREDN-Phonebook start|stop|restart|status`
 - **SIP Port**: 5060
-- **Directory URL**: `http://localhost.local.mesh`
+- **Directory URL**: `http://[your-node].local.mesh/arednstack/phonebook_generic_direct.xml`
+
+## Phone Setup
+
+Configure your SIP phone to use the node's directory:
+
+1. **Directory URL**: `http://localnode.local.mesh/arednstack/phonebook_generic_direct.xml`
+2. **SIP Server**: `localnode.local.mesh`
+3. **Refresh**: Directory updates automatically every xx seconds from router (your Update Time Interval)
 
 ## Webhook Endpoints
 
@@ -75,66 +71,23 @@ http://localnode.local.mesh/arednstack/phonebook_generic_direct.xml
 
 ## Troubleshooting
 
-http://[your-node].local.mesh/cgi-bin/loadphonebook` should load the phonebook from the server
-http://[your-node].local.mesh/cgi-bin/showphonebook` should show the phonebook on your router
-
-### Check Service Status in ssh terminal
+### Check Service Status
 ```bash
 ps | grep AREDN-Phonebook
-/etc/init.d/AREDN-Phonebook status
+logread | grep "AREDN-Phonebook"
 ```
 
-### Check Installation and Version
-```bash
-opkg list-installed | grep AREDN-Phonebook
-```
-
-### Verify Directory Structure
-```bash
-ls -la /www/
-ls -la /www/arednstack/
-ls -la /www/cgi-bin/
-```
-
-### Check Logs for Errors
-```bash
-logread | grep -i "AREDN-Phonebook\|directory\|www"
-logread -f | grep AREDN-Phonebook
-```
-
-### Verify Phonebook Files
+### Verify Directory Files
 ```bash
 ls -la /www/arednstack/phonebook*
 curl http://localhost/arednstack/phonebook_generic_direct.xml
 ```
 
-### Test Webhook Endpoints
-```bash
-# Trigger immediate phonebook reload
-curl http://localhost/cgi-bin/loadphonebook
-
-# Show current phonebook contents
-curl http://localhost/cgi-bin/showphonebook
-```
-
-### Manual Directory Creation (if needed)
-```bash
-mkdir -p /www/arednstack
-/etc/init.d/AREDN-Phonebook restart
-```
-
-### Check Filesystem and Permissions
-```bash
-df -h /www
-mount | grep www
-```
-
 ### Common Issues
 
-- **No directory showing**: Wait up to 30 minutes for first download or use `curl http://localhost/cgi-bin/loadphonebook`
+- **No directory showing**: Wait up to 30 minutes for first download
 - **Service not starting**: Check logs with `logread | tail -50`
 - **Permission errors**: Ensure `/www/arednstack/` directory exists
-- **Webhooks not working**: Verify CGI scripts installed with `ls -la /www/cgi-bin/`
 
 ## Technical Details
 
