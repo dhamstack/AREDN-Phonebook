@@ -23,6 +23,7 @@ CallSession call_sessions[MAX_CALL_SESSIONS];
 // Other global variables (DEFINED here)
 // volatile sig_atomic_t keep_running = 1; // REMOVED
 // volatile sig_atomic_t phonebook_updated_flag = 0; // REMOVED as related to signal handling
+volatile sig_atomic_t phonebook_reload_requested = 0; // For webhook-triggered reload
 int num_registered_users = 0;
 int num_directory_entries = 0;
 
@@ -36,7 +37,13 @@ pthread_mutex_t phonebook_file_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t updater_trigger_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t updater_trigger_cond = PTHREAD_COND_INITIALIZER;
 
-// sig_handler function REMOVED
+// Signal handler for webhook-triggered phonebook reload
+void phonebook_reload_signal_handler(int sig) {
+    if (sig == SIGUSR1) {
+        phonebook_reload_requested = 1;
+        LOG_INFO("Received SIGUSR1 - immediate phonebook reload requested via webhook");
+    }
+}
 
 // sockaddr_to_ip_str prototype is in common.h, definition remains here
 const char* sockaddr_to_ip_str(const struct sockaddr_in* addr) {
@@ -65,6 +72,10 @@ int main(int argc, char *argv[]) {
 
     // --- Passive Safety: Self-correct configuration ---
     validate_and_correct_config(); // Fix common config errors automatically
+
+    // --- Register signal handler for webhook-triggered phonebook reload ---
+    signal(SIGUSR1, phonebook_reload_signal_handler);
+    LOG_INFO("Registered SIGUSR1 handler for webhook-triggered phonebook reload");
 
     LOG_INFO("Attempting to set process priority...");
     if (setpriority(PRIO_PROCESS, 0, SIP_HANDLER_NICE_VALUE) == -1) { // SIP_HANDLER_NICE_VALUE from common.h
