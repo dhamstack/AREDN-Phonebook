@@ -14,6 +14,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         target:
@@ -41,42 +42,132 @@ jobs:
 
       - name: Download and extract SDK
         run: |
-          wget "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
-          tar -xf sdk.tar.xz
+          echo "Downloading SDK (this may take a few minutes)..."
+          wget --progress=bar:force "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
+          echo "Extracting SDK..."
+          tar -xf sdk.tar.xz --checkpoint=1000 --checkpoint-action=echo
           mv openwrt-sdk-* sdk
+          echo "SDK ready for build"
 
-      - name: Inject Phonebook package
+      - name: Inject SIP Server package
         run: |
-          mkdir -p sdk/package/phonebook
-          cp -r Phonebook/* sdk/package/phonebook/
-          mkdir -p sdk/package/phonebook/files/etc
-          cp Phonebook/files/etc/sipserver.conf sdk/package/phonebook/files/etc/
+          mkdir -p sdk/package/sipserver
+          cp -r Phonebook/* sdk/package/sipserver/
+
+          # Verify Makefile was copied correctly
+          echo "Verifying simplified Makefile:"
+          if [ -f sdk/package/sipserver/Makefile ]; then
+            echo "✓ Makefile found"
+            head -15 sdk/package/sipserver/Makefile
+          else
+            echo "✗ Makefile missing!"
+            ls -la sdk/package/sipserver/
+            exit 1
+          fi
+
+          # Verify all source files are present
+          echo "Verifying source structure:"
+          find sdk/package/sipserver/src -name "*.c" -o -name "*.h" | sort
+
+          # Check if package is recognized
+          echo "Testing package recognition:"
+          cd sdk && make package/sipserver/info V=s || echo "Package info failed"
 
       - name: Build package
         run: |
           cd sdk
           make defconfig
-          make package/phonebook/compile V=s -j$(nproc)
 
-      # 1) Create (or get) the GitHub Release for this tag
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
+          # Show available packages first
+          echo "Available packages in SDK:"
+          find package -name "Makefile" | head -10
+
+          # Show our package structure
+          echo "Our package structure:"
+          find package/sipserver -type f | head -20
+
+          # Show package info
+          echo "Building sipserver package for ${{ matrix.target.arch }}..."
+
+          # Build with maximum debugging to see compilation errors
+          echo "Starting compilation with full debugging..."
+          echo "First, let's see if the package is recognized:"
+          make package/sipserver/info V=99 || echo "Package info failed"
+
+          echo "Now attempting compilation with full verbosity:"
+          if ! make package/sipserver/compile V=99 -j1 2>&1 | tee build.log; then
+            echo "BUILD FAILED! Full build log:"
+            cat build.log
+            echo "=== Checking for compilation errors ==="
+            grep -n -A5 -B5 -i "error\|fail\|undefined\|cannot\|missing" build.log || echo "No obvious errors found"
+            echo "=== Checking build directory ==="
+            find build_dir -name "*sipserver*" -o -name "*sip*" 2>/dev/null || echo "No sipserver build dir found"
+            echo "=== Checking if any C files were processed ==="
+            find . -name "*.o" | head -10
+            exit 1
+          fi
+
+          # Show build results
+          echo "Build completed! Searching for IPK files..."
+          find bin -name "*.ipk" -ls || echo "No IPK files found in bin/"
+
+      # Find and rename the built IPK file
+      - name: Find IPK file
+        id: find_ipk
+        run: |
+          echo "Searching for SIPServer IPK file..."
+          # Look for our sipserver package specifically, not dependency packages
+          IPK_FILE=$(find sdk/bin -name "*sipserver*.ipk" -o -name "*sip-server*.ipk" | head -n 1)
+
+          if [ -z "$IPK_FILE" ]; then
+            echo "SIPServer IPK not found! Checking all IPK files:"
+            find sdk/bin -name "*.ipk" -type f
+            echo "Maybe the package name is different. Checking non-library IPKs:"
+            find sdk/bin -name "*.ipk" -not -name "lib*" -type f
+            # Try to find any IPK that's not a standard library
+            IPK_FILE=$(find sdk/bin -name "*.ipk" -not -name "lib*" -type f | head -n 1)
+          fi
+
+          if [ -z "$IPK_FILE" ]; then
+            echo "ERROR: No suitable IPK file found!"
+            exit 1
+          fi
+
+          # Rename IPK file to include architecture
+          ARCH_IPK="sipserver-${{ matrix.target.arch }}-${{ github.ref_name }}.ipk"
+          cp "$IPK_FILE" "$ARCH_IPK"
+
+          echo "ipk_path=$ARCH_IPK" >> $GITHUB_OUTPUT
+          echo "Original IPK: $IPK_FILE"
+          echo "Renamed to: $ARCH_IPK"
+          ls -la "$ARCH_IPK"
+
+      # Upload IPK file to release
+      - name: Upload IPK to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ${{ steps.find_ipk.outputs.ipk_path }}
+          name: AREDN SIP Server ${{ github.ref_name }}
+          body: |
+            AREDN Phonebook SIP Server Release ${{ github.ref_name }}
+
+            ## Architecture Support
+            - ath79/generic (MikroTik devices)
+            - x86/64 (Intel devices)
+            - ipq40xx/generic (AREDN mesh devices)
+
+            ## Features
+            - Passive safety self-healing system
+            - Automatic resource management
+            - Thread recovery monitoring
+            - Smart file operations with rollback
+            - Enhanced reliability for emergency operations
+
+            ## Installation
+            ```bash
+            # Download appropriate IPK for your architecture
+            opkg install sipserver-*.ipk
+            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-
-      # 2) Upload only the .ipk files as release assets
-      - name: Upload .ipk to Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: sdk/bin/packages/*/*/*.ipk
-          asset_name: phonebook-${{ matrix.target.arch }}.ipk
-          asset_content_type: application/octet-stream

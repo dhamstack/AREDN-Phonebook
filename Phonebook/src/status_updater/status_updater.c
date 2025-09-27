@@ -5,6 +5,7 @@
 #include "../config_loader/config_loader.h" // For g_status_update_interval_seconds
 #include "../phonebook_fetcher/phonebook_fetcher.h"
 #include "../file_utils/file_utils.h"
+#include "../passive_safety/passive_safety.h" // For heartbeat tracking
 
 
 typedef struct {
@@ -58,6 +59,9 @@ void *status_updater_thread(void *arg) {
     struct timespec ts;
 
     while (1) { // Changed from while (keep_running) to while (1)
+        // Passive Safety: Update heartbeat for thread recovery monitoring
+        g_updater_last_heartbeat = time(NULL);
+
         pthread_mutex_lock(&updater_trigger_mutex);
         clock_gettime(CLOCK_REALTIME, &ts);
         ts.tv_sec += g_status_update_interval_seconds;

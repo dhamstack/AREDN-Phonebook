@@ -186,13 +186,13 @@ static int attempt_download(const char* host, const char* port, const char* path
     }
     LOG_DEBUG("Sent %zd bytes HTTP GET request:\n%s", sent_bytes, req);
 
-    FILE *fp = fopen(PB_CSV_PATH, "wb");
+    FILE *fp = fopen(PB_CSV_TEMP_PATH, "wb");
     if (!fp) {
-        LOG_ERROR("Failed to open %s for writing: %s", PB_CSV_PATH, strerror(errno));
+        LOG_ERROR("Failed to open temp file %s for writing: %s", PB_CSV_TEMP_PATH, strerror(errno));
         close(sock);
         return 1;
     }
-    LOG_DEBUG("Local file '%s' opened for writing downloaded CSV.", PB_CSV_PATH);
+    LOG_DEBUG("Temporary file '%s' opened for writing downloaded CSV.", PB_CSV_TEMP_PATH);
 
     char buf[4096];
     ssize_t len_read;

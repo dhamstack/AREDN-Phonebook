@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# AREDN Phonebook - Load Phonebook Webhook
+# Triggers immediate phonebook reload via SIGUSR1 signal
+
+# Set response headers
+echo "Content-Type: application/json"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+# Get PID of AREDN-Phonebook process
+PID=$(pidof AREDN-Phonebook)
+
+if [ -n "$PID" ]; then
+    # Send SIGUSR1 signal to trigger immediate phonebook reload
+    kill -USR1 "$PID" 2>/dev/null
+    if [ $? -eq 0 ]; then
+        echo '{"status":"success","message":"Phonebook reload triggered","pid":'$PID',"timestamp":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}'
+    else
+        echo '{"status":"error","message":"Failed to send signal to process","pid":'$PID',"timestamp":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}'
+    fi
+else
+    echo '{"status":"error","message":"AREDN-Phonebook process not found","timestamp":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}'
+fi

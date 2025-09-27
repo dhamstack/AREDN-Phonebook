@@ -24,11 +24,12 @@
 #include <sys/resource.h> // For setpriority, PRIO_PROCESS
 #include <sched.h> // For sched_yield
 #include <libgen.h>   // For dirname, basename
+#include <signal.h>   // For signal handling (SIGUSR1)
 
 
 // --- Application-specific Constants (remain hardcoded as agreed) -----------------------------------
-#define SIP_SERVER_VERSION "1.0.0"
-#define APP_NAME "sip-server"
+#define AREDN_PHONEBOOK_VERSION "1.4.5"
+#define APP_NAME "AREDN-Phonebook"
 #define SIP_PORT 5060
 #define MAX_SIP_MSG_LEN 2048
 
@@ -64,11 +65,12 @@
 #define SIP_HANDLER_NICE_VALUE    -5
 #define BACKGROUND_TASK_NICE_VALUE 10
 
-// Phonebook Fetcher settings (Simplified paths)
-#define PB_CSV_PATH "/tmp/phonebook.csv"
+// Phonebook Fetcher settings (Flash-friendly with temp downloads)
+#define PB_CSV_TEMP_PATH "/tmp/phonebook_download.csv"
+#define PB_CSV_PATH "/www/arednstack/phonebook.csv"
 #define PB_XML_BASE_PATH "/tmp/phonebook.xml"
 #define PB_XML_PUBLIC_PATH "/www/arednstack/phonebook_generic_direct.xml"
-#define PB_LAST_GOOD_CSV_HASH_PATH "/tmp/phonebook.csv.hash"
+#define PB_LAST_GOOD_CSV_HASH_PATH "/www/arednstack/phonebook.csv.hash"
 
 #define HASH_LENGTH 16
 
@@ -118,12 +120,14 @@ typedef struct {
     struct sockaddr_in callee_addr;
     struct sockaddr_in original_caller_addr;
     CallState state;
+    time_t creation_time;  // For passive cleanup of stale sessions
 } CallSession;
 
 
 // --- Global Variable Declarations (defined in main.c or config_loader.c) ---
 // extern volatile sig_atomic_t keep_running; // REMOVED
 // extern volatile sig_atomic_t phonebook_updated_flag; // REMOVED
+extern volatile sig_atomic_t phonebook_reload_requested; // For webhook-triggered reload
 
 // These are defined in config_loader.c and populated from sipserver.conf
 extern int g_pb_interval_seconds;
@@ -136,6 +140,10 @@ extern RegisteredUser registered_users[MAX_REGISTERED_USERS];
 extern int num_registered_users; // Count of active dynamic registrations
 extern int num_directory_entries; // Count of entries populated from CSV directory
 extern CallSession call_sessions[MAX_CALL_SESSIONS];
+
+// Thread IDs (defined in main.c, used by passive safety)
+extern pthread_t fetcher_tid;
+extern pthread_t status_updater_tid;
 
 // Mutexes and Condition Variables (defined in main.c)
 extern pthread_mutex_t registered_users_mutex;
