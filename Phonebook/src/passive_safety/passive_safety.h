@@ -10,6 +10,7 @@
 void passive_cleanup_stale_call_sessions(void);
 void validate_and_correct_config(void);
 void enable_graceful_degradation_if_needed(void);
+void cleanup_orphaned_phonebook_files(void);
 
 // Week 2: File protection and thread recovery
 void safe_phonebook_file_operation(const char *source_path, const char *dest_path);
