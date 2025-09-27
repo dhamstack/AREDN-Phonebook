@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# AREDN Phonebook - List Phonebook Webhook
+# AREDN Phonebook - Show Phonebook Webhook
 # Returns current phonebook contents as JSON
 
 # Set response headers

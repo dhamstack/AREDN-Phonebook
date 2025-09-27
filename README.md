@@ -53,25 +53,81 @@ Configure your SIP phone to use the node's directory:
 2. **SIP Server**: `localnode.local.mesh`
 3. **Refresh**: Directory updates automatically every xx seconds from router (your Update Time Interval)
 
+## Webhook Endpoints
+
+### Load Phonebook (Manual Refresh)
+- **URL**: `http://[your-node].local.mesh/cgi-bin/loadphonebook`
+- **Method**: GET
+- **Function**: Triggers immediate phonebook reload
+- **Response**: JSON with status and timestamp
+- **Use Case**: Manual refresh, testing, emergency situations
+
+### Show Phonebook (API Access)
+- **URL**: `http://[your-node].local.mesh/cgi-bin/showphonebook`
+- **Method**: GET
+- **Function**: Returns current phonebook contents as JSON
+- **Response**: JSON with entry count, last updated time, and full contact list
+- **Use Case**: Integration with other tools, status checking
+
 ## Troubleshooting
 
 ### Check Service Status
 ```bash
 ps | grep AREDN-Phonebook
-logread | grep "AREDN-Phonebook"
+/etc/init.d/AREDN-Phonebook status
 ```
 
-### Verify Directory Files
+### Check Installation and Version
+```bash
+opkg list-installed | grep AREDN-Phonebook
+```
+
+### Verify Directory Structure
+```bash
+ls -la /www/
+ls -la /www/arednstack/
+ls -la /www/cgi-bin/
+```
+
+### Check Logs for Errors
+```bash
+logread | grep -i "AREDN-Phonebook\|directory\|www"
+logread -f | grep AREDN-Phonebook
+```
+
+### Verify Phonebook Files
 ```bash
 ls -la /www/arednstack/phonebook*
 curl http://localhost/arednstack/phonebook_generic_direct.xml
 ```
 
+### Test Webhook Endpoints
+```bash
+# Trigger immediate phonebook reload
+curl http://localhost/cgi-bin/loadphonebook
+
+# Show current phonebook contents
+curl http://localhost/cgi-bin/showphonebook
+```
+
+### Manual Directory Creation (if needed)
+```bash
+mkdir -p /www/arednstack
+/etc/init.d/AREDN-Phonebook restart
+```
+
+### Check Filesystem and Permissions
+```bash
+df -h /www
+mount | grep www
+```
+
 ### Common Issues
 
-- **No directory showing**: Wait up to 30 minutes for first download
+- **No directory showing**: Wait up to 30 minutes for first download or use `curl http://localhost/cgi-bin/loadphonebook`
 - **Service not starting**: Check logs with `logread | tail -50`
 - **Permission errors**: Ensure `/www/arednstack/` directory exists
+- **Webhooks not working**: Verify CGI scripts installed with `ls -la /www/cgi-bin/`
 
 ## Technical Details
 
