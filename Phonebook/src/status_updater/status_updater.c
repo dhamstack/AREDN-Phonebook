@@ -6,6 +6,7 @@
 #include "../phonebook_fetcher/phonebook_fetcher.h"
 #include "../file_utils/file_utils.h"
 #include "../passive_safety/passive_safety.h" // For heartbeat tracking
+#include "../software_health/software_health.h" // For health monitoring heartbeats
 
 
 typedef struct {
@@ -61,6 +62,11 @@ void *status_updater_thread(void *arg) {
     while (1) { // Changed from while (keep_running) to while (1)
         // Passive Safety: Update heartbeat for thread recovery monitoring
         g_updater_last_heartbeat = time(NULL);
+
+        // Health Monitoring: Update thread heartbeat
+        if (g_health_config.enabled && g_health_config.thread_monitoring) {
+            update_thread_heartbeat(THREAD_UPDATER);
+        }
 
         pthread_mutex_lock(&updater_trigger_mutex);
         clock_gettime(CLOCK_REALTIME, &ts);

@@ -1,56 +1,47 @@
 # MeshMon Pi Collector — Developer Guide (v0.1)
 
 **Goal:** Build and run the **Raspberry Pi collector/analyzer** for the AREDN mesh monitoring system.
- **Audience:** Developer implementing the Pi-side software.
- **Style:** Step-by-step, down to command level.
- **Stack decisions (already made):**
-
+**Audience:** Developer implementing the Pi-side software.
+**Style:** Step-by-step, down to command level.
+**Stack decisions (already made):**
 - **Language:** Python (collector)
 - **DB:** PostgreSQL + TimescaleDB (single database)
 - **Runtime:** Docker (Compose)
 - **Transport:** HTTP POST (JSON), no auth/TLS (closed AREDN)
 - **Agents:** C on OpenWrt send JSON payloads to `/ingest`
 
-------
+---
 
 ## 0) High-Level Responsibilities (Pi)
+1. Ingest JSON from router agents and write to TimescaleDB.
+2. Issue Engine: evaluate sliding windows; open/close incidents from rules.
+3. Serve API to the UI layer (OpenWISP panel later): `/issues`, `/issues/{id}`, `/healthz`, `/registry` (optional).
+4. Ops: retention, compression, backup/restore, logs.
 
-1. **Ingest** JSON from router agents and write to TimescaleDB.
-2. **Issue Engine:** evaluate sliding windows; open/close **incidents** from rules.
-3. **Serve API** to the UI layer (OpenWISP panel later): `/issues`, `/issues/{id}`, `/healthz`, `/registry` (optional).
-4. **Ops:** retention, compression, backup/restore, logs.
-
-------
+---
 
 ## 1) Prerequisites on the Raspberry Pi
-
-- Raspberry Pi 4/5 with **64-bit OS** (Raspberry Pi OS (64-bit) or Ubuntu Server 22.04+).
+- Raspberry Pi 4/5 with 64-bit OS (Raspberry Pi OS (64-bit) or Ubuntu Server 22.04+).
 - Internet for initial image pulls.
 - `curl`, `git`.
 
 ### Install Docker & Compose
-
-```
-# Install Docker using the official convenience script
+```bash
+apt update
+apt install -y curl ca-certificates
 curl -fsSL https://get.docker.com | sh
-
-# Enable and test
 sudo usermod -aG docker $USER
 newgrp docker
 docker run --rm hello-world
-
-# Compose plugin is included with recent Docker; verify
 docker compose version
 ```
 
-------
+---
 
 ## 2) Repository Layout
-
-Create a working directory (or clone your own repo) with this structure:
-
+Create this structure:
 ```
-meshmon-pi/
+arednmon/
 ├─ docker-compose.yml
 ├─ api/
 │  ├─ Dockerfile
@@ -65,32 +56,29 @@ meshmon-pi/
 ├─ Makefile                  # convenience commands (optional)
 └─ README.md
 ```
-
 Create it:
-
+```bash
+mkdir -p ~/arednmon/api/sql
+cd ~/arednmon
 ```
-mkdir -p ~/meshmon-pi/api/sql
-cd ~/meshmon-pi
-```
 
-------
+---
 
 ## 3) Compose File
-
-Create `docker-compose.yml`:
-
-```
+Create `nano docker-compose.yml`:
+```yaml
 services:
   db:
-    image: timescale/timescaledb-ha:pg16-latest
+    image: timescale/timescaledb-ha:pg16-all
     environment:
       POSTGRES_DB: meshmon
       POSTGRES_USER: mesh
       POSTGRES_PASSWORD: meshpass
     ports:
       - "5432:5432"
+    # use a named volume to avoid permission headaches in LXC
     volumes:
-      - ./pgdata:/var/lib/postgresql/data
+      - dbdata:/home/postgres/pgdata/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mesh -d meshmon"]
       interval: 5s
@@ -105,45 +93,41 @@ services:
       WORKERS: "2"
       LOG_LEVEL: "info"
     ports:
-      - "8080:8080"    # HTTP API (ingest, issues, health)
+      - "8080:8080"
     depends_on:
       db:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  dbdata:
 ```
 
-> We use the TimescaleDB image and wait for DB health before starting the API.
-
-------
+---
 
 ## 4) Database DDL (init SQL)
-
-Create `api/sql/init.sql`:
-
-```
--- Enable extension
+Create `nano api/sql/init.sql`:
+```sql
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
--- Incidents table (relational)
 CREATE TABLE IF NOT EXISTS incidents(
   id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL,                -- link_jitter_burst, rf_quality_drop, etc.
-  scope JSONB NOT NULL,              -- {"type":"link","from":"A","to":"B"} | {"type":"route","src":"A","dst":"K"}
-  severity TEXT NOT NULL,            -- minor | major | critical
-  impact JSONB NOT NULL,             -- {"routes_affected":7,"est_users":12}
+  kind TEXT NOT NULL,
+  scope JSONB NOT NULL,
+  severity TEXT NOT NULL,
+  impact JSONB NOT NULL,
   cause TEXT,
   next_steps TEXT[],
   evidence JSONB,
   started_at TIMESTAMPTZ NOT NULL,
-  ended_at TIMESTAMPTZ               -- NULL=open
+  ended_at TIMESTAMPTZ
 );
 
--- Path probe hypertable
 CREATE TABLE IF NOT EXISTS path_probe(
   time TIMESTAMPTZ NOT NULL,
   src TEXT NOT NULL,
   dst TEXT NOT NULL,
-  route JSONB NOT NULL,              -- ["A","D","H","K"]
+  route JSONB NOT NULL,
   rtt_ms DOUBLE PRECISION,
   jitter_ms DOUBLE PRECISION,
   loss_pct DOUBLE PRECISION,
@@ -151,7 +135,6 @@ CREATE TABLE IF NOT EXISTS path_probe(
 );
 SELECT create_hypertable('path_probe','time', if_not_exists => true);
 
--- Hop quality hypertable
 CREATE TABLE IF NOT EXISTS hop_quality(
   time TIMESTAMPTZ NOT NULL,
   from_node TEXT NOT NULL,
@@ -162,11 +145,9 @@ CREATE TABLE IF NOT EXISTS hop_quality(
 );
 SELECT create_hypertable('hop_quality','time', if_not_exists => true);
 
--- Helpful indexes
 CREATE INDEX IF NOT EXISTS path_probe_time_idx ON path_probe (time DESC, src, dst);
 CREATE INDEX IF NOT EXISTS hop_quality_time_idx ON hop_quality (time DESC, from_node, to_node);
 
--- Retention & compression policies
 ALTER TABLE path_probe SET (timescaledb.compress);
 ALTER TABLE hop_quality SET (timescaledb.compress);
 SELECT add_compression_policy('path_probe', INTERVAL '7 days') ON CONFLICT DO NOTHING;
@@ -174,7 +155,6 @@ SELECT add_compression_policy('hop_quality', INTERVAL '7 days') ON CONFLICT DO N
 SELECT add_retention_policy('path_probe', INTERVAL '90 days') ON CONFLICT DO NOTHING;
 SELECT add_retention_policy('hop_quality', INTERVAL '90 days') ON CONFLICT DO NOTHING;
 
--- Optional hourly rollup
 CREATE MATERIALIZED VIEW IF NOT EXISTS path_probe_hourly
 WITH (timescaledb.continuous) AS
   SELECT time_bucket('1 hour', time) AS bucket,
@@ -187,15 +167,11 @@ WITH (timescaledb.continuous) AS
 SELECT add_retention_policy('path_probe_hourly', INTERVAL '365 days') ON CONFLICT DO NOTHING;
 ```
 
-Apply once DB is up (we’ll run it after build with `psql`).
-
-------
+---
 
 ## 5) API Container (FastAPI + Uvicorn)
-
-Create `api/Dockerfile`:
-
-```
+Create `nano api/Dockerfile`:
+```dockerfile
 FROM python:3.11-slim
 
 # System deps (psycopg)
@@ -213,8 +189,7 @@ EXPOSE 8080
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "2"]
 ```
 
-Create `api/requirements.txt`:
-
+Create `nano api/requirements.txt`:
 ```
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
@@ -223,22 +198,20 @@ psycopg2-binary==2.9.9
 python-dateutil==2.9.0.post0
 ```
 
-------
+---
 
 ## 6) Minimal App Files
 
-Create `api/config.py`:
-
-```
+Create `nano api/config.py`:
+```python
 import os
 
 DB_DSN = os.getenv("DB_DSN", "postgresql://mesh:meshpass@db:5432/meshmon")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info")
 ```
 
-Create `api/db.py`:
-
-```
+Create `nano api/db.py`:
+```python
 import psycopg2
 from psycopg2.extras import Json
 
@@ -273,9 +246,8 @@ def insert_hop_quality(conn, rec):
         ))
 ```
 
-Create `api/schemas.py`:
-
-```
+Create `nano api/schemas.py`:
+```python
 from pydantic import BaseModel, Field, AwareDatetime
 from typing import List, Optional, Literal, Dict, Any
 
@@ -325,9 +297,8 @@ class AgentHealth(BaseModel):
     neighbors_seen: int
 ```
 
-Create `api/issue_engine.py` (starter; add rules later):
-
-```
+Create `nano api/issue_engine.py` (starter rule):
+```python
 from datetime import datetime
 from psycopg2.extras import Json
 
@@ -345,40 +316,12 @@ def upsert_incident(conn, inc):
         cur.execute(sql, inc)
 
 def run_rules_once(conn, now: datetime):
-    q = """
-    WITH w AS (
-      SELECT time, src, dst, jitter_ms,
-             CASE WHEN jitter_ms IS NOT NULL AND jitter_ms > 30 THEN 1 ELSE 0 END AS bad
-      FROM path_probe
-      WHERE time > (NOW() - INTERVAL '5 minutes')
-    ),
-    agg AS (
-      SELECT src, dst, SUM(bad) AS bad_windows, MAX(jitter_ms) AS jitter_ms_max
-      FROM w GROUP BY src, dst
-    )
-    SELECT src, dst, jitter_ms_max FROM agg WHERE bad_windows >= 3;
-    """
-    with conn, conn.cursor() as cur:
-        cur.execute(q)
-        for (src, dst, jitter_max) in cur.fetchall():
-            inc = {
-                "id": f"JITTER-{src}-{dst}",
-                "kind": "path_jitter_burst",
-                "scope": Json({"type":"route","src":src,"dst":dst}),
-                "severity": "major",
-                "impact": Json({"routes_affected": 1}),
-                "cause": "Likely congestion or RF interference",
-                "next_steps": ["Reduce channel width", "Enable airtime fairness"],
-                "evidence": Json({"jitter_ms_p95": jitter_max}),
-                "started_at": now,
-                "ended_at": None
-            }
-            upsert_incident(conn, inc)
+    # Placeholder: implement rule queries here (e.g., jitter bursts)
+    pass
 ```
 
-Create `api/app.py`:
-
-```
+Create `nano api/app.py`:
+```python
 from fastapi import FastAPI, Request, HTTPException
 from datetime import datetime, timezone
 from config import DB_DSN
@@ -413,7 +356,7 @@ async def ingest(request: Request):
             obj = HopResult.model_validate(rec)
             insert_hop_quality(_conn, obj.model_dump(by_alias=True))
         elif t == "agent_health":
-            _ = AgentHealth.model_validate(rec)  # future use
+            _ = AgentHealth.model_validate(rec)
         else:
             raise HTTPException(status_code=400, detail=f"unknown type: {t}")
 
@@ -447,49 +390,34 @@ def get_issue(iid: str):
     return dict(zip(keys, r))
 ```
 
-------
+---
 
 ## 7) Build & Run
-
-```
-cd ~/meshmon-pi
-
-# Build API image
+```bash
+cd ~/arednmon
 docker compose build
-
-# Start services
 docker compose up -d
-
-# Tail logs
 docker compose logs -f
 ```
 
 Initialize DB (run init.sql):
-
-```
-# Test DB connectivity
+```bash
 docker compose exec -T db psql -U mesh -d meshmon -c "SELECT version();"
-
-# Apply schema
 docker compose exec -T db psql -U mesh -d meshmon -f /dev/stdin < api/sql/init.sql
-
-# Verify tables
 docker compose exec -T db psql -U mesh -d meshmon -c "\dt"
 ```
 
-------
+---
 
 ## 8) Smoke Tests (curl + SQL)
 
 ### Health
-
-```
+```bash
 curl -s http://localhost:8080/healthz
 ```
 
 ### Ingest one `path_result`
-
-```
+```bash
 curl -s http://localhost:8080/ingest \
  -H 'Content-Type: application/json' \
  -d '{
@@ -502,8 +430,7 @@ curl -s http://localhost:8080/ingest \
 ```
 
 ### Ingest a few windows (batch)
-
-```
+```bash
 cat > /tmp/batch.json <<'EOF'
 [
  {"schema":"meshmon.v1","type":"path_result","src":"node-A","dst":"node-K","sent_at":"2025-09-29T18:41:05Z","window_s":5,"route":["node-A","node-D","node-H","node-K"],"metrics":{"rtt_ms_avg":70,"jitter_ms_rfc3550":35,"loss_pct":0.5}},
@@ -518,60 +445,52 @@ curl -s http://localhost:8080/ingest \
 ```
 
 ### Check tables
-
-```
+```bash
 docker compose exec -T db psql -U mesh -d meshmon -c "SELECT COUNT(*) FROM path_probe;"
 docker compose exec -T db psql -U mesh -d meshmon -c "SELECT * FROM path_probe ORDER BY time DESC LIMIT 5;"
 ```
 
-### Issues API (should show a jitter incident if thresholds met)
-
-```
+### Issues API (should show an incident when rules are implemented)
+```bash
 curl -s http://localhost:8080/issues | jq
 ```
 
-------
+---
 
 ## 9) Daily Operations
 
 ### Backups
-
-```
-# Create a dated dump (schema + data)
+```bash
 mkdir -p backups
 docker compose exec -T db pg_dump -U mesh meshmon | gzip > backups/meshmon_$(date +%F).sql.gz
 ```
 
 ### Restore (from a fresh db)
-
-```
+```bash
 gunzip -c backups/meshmon_YYYY-MM-DD.sql.gz | docker compose exec -T db psql -U mesh -d meshmon
 ```
 
 ### Retention & compression status
-
-```
+```bash
 docker compose exec -T db psql -U mesh -d meshmon -c "\dx"
 docker compose exec -T db psql -U mesh -d meshmon -c "SELECT * FROM timescaledb_information.jobs;"
 ```
 
-------
+---
 
 ## 10) Hardening & Next Steps (when needed)
-
-- Move `run_rules_once` to a **background scheduler** (APScheduler or separate worker).
+- Move `run_rules_once` to a background scheduler (APScheduler or separate worker).
 - Implement the remaining rule set (RF drop, loss spike, flapping, bottleneck, node overload).
 - Add `/registry` endpoint if you want Pi-managed participant list.
 - Add **OpenWISP panel** to consume `/issues` and link into topology view.
-- Optional: add token/TLS later (reverse proxy) without changing the agent contract.
+- Optional: add token/TLS later (reverse proxy) without changing the agent contract).
 
-------
+---
 
 ## 11) JSON Contracts (Appendix)
 
 ### `path_result`
-
-```
+```json
 {
   "schema": "meshmon.v1",
   "type": "path_result",
@@ -590,8 +509,7 @@ docker compose exec -T db psql -U mesh -d meshmon -c "SELECT * FROM timescaledb_
 ```
 
 ### `hop_result`
-
-```
+```json
 {
   "schema": "meshmon.v1",
   "type": "hop_result",
@@ -605,8 +523,7 @@ docker compose exec -T db psql -U mesh -d meshmon -c "SELECT * FROM timescaledb_
 ```
 
 ### `agent_health`
-
-```
+```json
 {
   "schema": "meshmon.v1",
   "type": "agent_health",
@@ -619,12 +536,15 @@ docker compose exec -T db psql -U mesh -d meshmon -c "SELECT * FROM timescaledb_
 }
 ```
 
-------
+---
 
 ## 12) Troubleshooting
+- API won’t start: check DB health (`docker compose ps`), inspect API logs.
+- `init.sql` not applied: run the `psql` command again (see §7).
+- No incidents appear: ensure test payloads cross thresholds (e.g., jitter > 30 for 3 windows).
+- Space usage high: verify compression jobs, retention policies (see §9).
+- Slow queries: add indexes on frequent filters (time, src/dst, from/to).
 
-- **API won’t start:** check DB health (`docker compose ps`), inspect API logs.
-- **`init.sql` not applied:** run the `psql` command again (see §7).
-- **No incidents appear:** ensure test payloads cross thresholds (e.g., jitter > 30 for 3 windows).
-- **Space usage high:** verify compression jobs, retention policies (see §9).
-- **Slow queries:** add indexes on frequent filters (time, src/dst, from/to).
+---
+
+**End of Developer Guide v0.1**

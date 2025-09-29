@@ -7,6 +7,7 @@
 #include "../file_utils/file_utils.h"
 #include "../csv_processor/csv_processor.h"
 #include "../passive_safety/passive_safety.h" // For heartbeat tracking
+#include "../software_health/software_health.h" // For health monitoring heartbeats
 
 // Note: Global extern declarations moved to common.h
 // extern int g_pb_interval_seconds; // Declared in common.h
@@ -90,6 +91,11 @@ void *phonebook_fetcher_thread(void *arg) {
     while (1) { // Changed from while (keep_running) to while (1)
         // Passive Safety: Update heartbeat for thread recovery monitoring
         g_fetcher_last_heartbeat = time(NULL);
+
+        // Health Monitoring: Update thread heartbeat
+        if (g_health_config.enabled && g_health_config.thread_monitoring) {
+            update_thread_heartbeat(THREAD_FETCHER);
+        }
 
         LOG_INFO("Starting new fetcher cycle.");
         char new_csv_hash[HASH_LENGTH + 1]; // HASH_LENGTH from common.h

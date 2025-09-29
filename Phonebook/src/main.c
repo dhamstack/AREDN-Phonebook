@@ -239,6 +239,11 @@ int main(int argc, char *argv[]) {
     LOG_INFO("Entering main SIP message processing loop.");
 
     while (1) { // Changed from while(keep_running) to while(1)
+        // Health Monitoring: Update main thread heartbeat
+        if (g_health_config.enabled && g_health_config.thread_monitoring) {
+            update_thread_heartbeat(THREAD_MAIN);
+        }
+
         len = sizeof(cliaddr);
         FD_ZERO(&readfds);
         FD_SET(sockfd, &readfds);

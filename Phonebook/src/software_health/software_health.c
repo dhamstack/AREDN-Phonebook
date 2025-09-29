@@ -4,6 +4,7 @@
 #include "../config_loader/config_loader.h"
 #include "../log_manager/log_manager.h"
 #include <math.h>
+#include <signal.h>
 
 // Global health state definitions
 process_health_t g_process_health = {0};
@@ -22,6 +23,72 @@ static const char* thread_names[MAX_THREADS] = {
 
 // Health monitoring enabled flag
 static bool health_enabled = false;
+
+//=============================================================================
+// Crash Detection and Signal Handling
+//=============================================================================
+
+static void crash_signal_handler(int sig) {
+    if (!health_enabled) return;
+
+    time_t now = time(NULL);
+
+    pthread_mutex_lock(&g_health_mutex);
+
+    // Record crash information
+    g_process_health.last_crash_time = now;
+    g_process_health.crash_count_24h++;
+
+    snprintf(g_process_health.last_crash_reason, sizeof(g_process_health.last_crash_reason),
+             "Signal %d at %ld", sig, now);
+
+    pthread_mutex_unlock(&g_health_mutex);
+
+    // Log the crash
+    LOG_ERROR("CRASH DETECTED: Signal %d (%s) at %ld", sig,
+              (sig == SIGSEGV ? "Segmentation fault" :
+               sig == SIGBUS ? "Bus error" :
+               sig == SIGFPE ? "Floating point exception" :
+               sig == SIGABRT ? "Abort" : "Unknown"), now);
+
+    // Save crash state for later analysis
+    emergency_save_health_state();
+
+    // Allow default signal handling to proceed
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+static int setup_crash_handlers(void) {
+    if (!g_health_config.crash_reporting) {
+        LOG_DEBUG("Crash reporting disabled by configuration");
+        return 0;
+    }
+
+    // Install signal handlers for major crash signals
+    if (signal(SIGSEGV, crash_signal_handler) == SIG_ERR) {
+        LOG_ERROR("Failed to install SIGSEGV handler");
+        return -1;
+    }
+
+    if (signal(SIGBUS, crash_signal_handler) == SIG_ERR) {
+        LOG_ERROR("Failed to install SIGBUS handler");
+        return -1;
+    }
+
+    if (signal(SIGFPE, crash_signal_handler) == SIG_ERR) {
+        LOG_ERROR("Failed to install SIGFPE handler");
+        return -1;
+    }
+
+    if (signal(SIGABRT, crash_signal_handler) == SIG_ERR) {
+        LOG_ERROR("Failed to install SIGABRT handler");
+        return -1;
+    }
+
+    LOG_INFO("Crash detection signal handlers installed");
+    return 0;
+}
 
 //=============================================================================
 // Core Health Management Functions
@@ -59,6 +126,11 @@ int software_health_init(void) {
     health_enabled = true;
 
     pthread_mutex_unlock(&g_health_mutex);
+
+    // Setup crash detection handlers
+    if (setup_crash_handlers() != 0) {
+        LOG_WARN("Failed to setup crash detection handlers");
+    }
 
     // Try to load previous health state if available
     load_health_state_from_storage();
@@ -486,6 +558,36 @@ void cleanup_old_errors(void) {
     g_error_tracker.fetch_failures_per_hour = 0;
     g_error_tracker.probe_failures_per_hour = 0;
     pthread_mutex_unlock(&g_health_mutex);
+}
+
+//=============================================================================
+// Periodic Health Monitoring
+//=============================================================================
+
+void periodic_health_check(void) {
+    if (!health_enabled) return;
+
+    // Update memory monitoring
+    monitor_memory_usage();
+
+    // Check thread responsiveness
+    check_thread_responsiveness();
+
+    // Log health status if configured
+    static time_t last_health_log = 0;
+    time_t now = time(NULL);
+
+    if (now - last_health_log >= g_health_config.health_check_interval) {
+        log_health_status();
+        last_health_log = now;
+    }
+
+    // Clean up old error counts periodically (every hour)
+    static time_t last_cleanup = 0;
+    if (now - last_cleanup >= 3600) {
+        cleanup_old_errors();
+        last_cleanup = now;
+    }
 }
 
 void write_health_to_file(const char* filepath) {

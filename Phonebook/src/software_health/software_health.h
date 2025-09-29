@@ -118,6 +118,9 @@ bool is_system_healthy(void);
 void log_health_status(void);
 void write_health_to_file(const char* filepath);
 
+// Periodic health monitoring
+void periodic_health_check(void);
+
 // Emergency functions
 void emergency_save_health_state(void);
 void load_health_state_from_storage(void);

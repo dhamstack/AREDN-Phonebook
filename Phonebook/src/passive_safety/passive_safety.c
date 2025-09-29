@@ -5,6 +5,7 @@
 #include "../call-sessions/call_sessions.h"
 #include "../config_loader/config_loader.h"
 #include "../file_utils/file_utils.h"
+#include "../software_health/software_health.h" // For health monitoring heartbeats
 
 // Thread health tracking
 time_t g_fetcher_last_heartbeat = 0;
@@ -281,6 +282,11 @@ void *passive_safety_thread(void *arg) {
     LOG_INFO("Passive safety thread started - silent self-healing enabled");
 
     while (1) {
+        // Health Monitoring: Update thread heartbeat
+        if (g_health_config.enabled && g_health_config.thread_monitoring) {
+            update_thread_heartbeat(THREAD_SAFETY);
+        }
+
         // Run safety checks every 5 minutes
         sleep(300);
 
@@ -288,6 +294,11 @@ void *passive_safety_thread(void *arg) {
         passive_cleanup_stale_call_sessions();
         enable_graceful_degradation_if_needed();
         cleanup_orphaned_phonebook_files();
+
+        // Health monitoring periodic checks
+        if (is_software_health_enabled()) {
+            periodic_health_check();
+        }
 
         // Week 2: Enhanced resilience checks (every 15 minutes)
         static int cycle_count = 0;
