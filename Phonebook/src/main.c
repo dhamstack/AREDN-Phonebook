@@ -12,6 +12,7 @@
 #include "user_manager/user_manager.h"   // For user management functions
 #include "call-sessions/call_sessions.h" // For call session management functions
 #include "passive_safety/passive_safety.h" // For passive safety and self-healing
+#include "software_health/software_health.h" // For software health monitoring
 
 // Define MODULE_NAME specific to main.c
 #define MODULE_NAME "MAIN"
@@ -70,8 +71,26 @@ int main(int argc, char *argv[]) {
     // --- Load configuration from file ---
     load_configuration("/etc/sipserver.conf"); // Call the loader function
 
+    // --- Initialize software health monitoring ---
+    if (g_health_config.enabled) {
+        LOG_INFO("Initializing software health monitoring...");
+        if (software_health_init() != 0) {
+            LOG_ERROR("Failed to initialize software health monitoring");
+            return EXIT_FAILURE;
+        }
+        LOG_INFO("Software health monitoring initialized successfully");
+    } else {
+        LOG_INFO("Software health monitoring disabled by configuration");
+    }
+
     // --- Passive Safety: Self-correct configuration ---
     validate_and_correct_config(); // Fix common config errors automatically
+
+    // --- Register main thread with health monitoring ---
+    if (g_health_config.enabled && g_health_config.thread_monitoring) {
+        register_thread_health(pthread_self(), "main");
+        LOG_DEBUG("Main thread registered with health monitoring");
+    }
 
     // --- Register signal handler for webhook-triggered phonebook reload ---
     signal(SIGUSR1, phonebook_reload_signal_handler);
@@ -153,12 +172,24 @@ int main(int argc, char *argv[]) {
     LOG_DEBUG("Phonebook fetcher thread launched.");
     LOG_DEBUG("Fetcher thread TID: %lu", (unsigned long)fetcher_tid);
 
+    // Register fetcher thread with health monitoring
+    if (g_health_config.enabled && g_health_config.thread_monitoring) {
+        register_thread_health(fetcher_tid, "fetcher");
+        LOG_DEBUG("Fetcher thread registered with health monitoring");
+    }
+
     LOG_INFO("Creating status updater thread...");
     if (pthread_create(&status_updater_tid, NULL, status_updater_thread, NULL) != 0) {
         LOG_ERROR("Failed to create status updater thread.");
         return EXIT_FAILURE;
     }
     LOG_DEBUG("Status updater thread launched.");
+
+    // Register updater thread with health monitoring
+    if (g_health_config.enabled && g_health_config.thread_monitoring) {
+        register_thread_health(status_updater_tid, "updater");
+        LOG_DEBUG("Updater thread registered with health monitoring");
+    }
     LOG_DEBUG("Updater thread TID: %lu", (unsigned long)status_updater_tid);
 
     LOG_INFO("Creating passive safety thread...");
@@ -168,6 +199,12 @@ int main(int argc, char *argv[]) {
     }
     LOG_DEBUG("Passive safety thread launched (silent self-healing enabled).");
     LOG_DEBUG("Passive safety thread TID: %lu", (unsigned long)g_passive_safety_tid);
+
+    // Register safety thread with health monitoring
+    if (g_health_config.enabled && g_health_config.thread_monitoring) {
+        register_thread_health(g_passive_safety_tid, "safety");
+        LOG_DEBUG("Safety thread registered with health monitoring");
+    }
 
     LOG_INFO("Initializing call sessions table...");
     init_call_sessions();
@@ -238,6 +275,12 @@ int main(int argc, char *argv[]) {
     pthread_mutex_destroy(&updater_trigger_mutex);
     pthread_cond_destroy(&updater_trigger_cond);
     LOG_DEBUG("Mutexes and condition variables destroyed.");
+
+    // Shutdown software health monitoring
+    if (g_health_config.enabled) {
+        LOG_INFO("Shutting down software health monitoring...");
+        software_health_shutdown();
+    }
 
     LOG_INFO("AREDN Phonebook shut down."); // Changed from "shut down cleanly"
     log_shutdown();

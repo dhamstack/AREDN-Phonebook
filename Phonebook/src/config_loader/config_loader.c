@@ -2,6 +2,7 @@
 #include "config_loader.h" // This includes common.h
 #include <stdio.h>
 #include <string.h>
+#include <strings.h> // For strcasecmp
 #include <stdlib.h>
 #include <errno.h>
 #include <ctype.h> // For isspace
@@ -14,6 +15,18 @@ int g_pb_interval_seconds = 3600; // Default: 1 hour
 int g_status_update_interval_seconds = 600; // Default: 10 minutes
 ConfigurableServer g_phonebook_servers_list[MAX_PB_SERVERS];
 int g_num_phonebook_servers = 0; // Will be populated by the loader
+
+// Software health configuration with defaults
+software_health_config_t g_health_config = {
+    .enabled = true,                        // Enable health monitoring by default
+    .crash_reporting = true,                // Enable crash reporting
+    .thread_monitoring = true,              // Enable thread monitoring
+    .memory_leak_detection = true,          // Enable memory leak detection
+    .health_check_interval = 60,            // Check every 60 seconds
+    .crash_history_days = 7,                // Keep 7 days of crash history
+    .max_restart_attempts = 3,              // Maximum 3 restart attempts
+    .health_endpoint = true                 // Enable health status endpoint
+};
 
 // Helper function to trim leading/trailing whitespace (static to this file)
 static char* trim_whitespace(char *str) {
@@ -110,6 +123,46 @@ int load_configuration(const char *config_filepath) {
             } else {
                 LOG_WARN("Max phonebook servers (%d) reached. Ignoring additional PHONEBOOK_SERVER entries.", MAX_PB_SERVERS);
             }
+        // Software health configuration parameters
+        } else if (strcmp(key, "HEALTH_ENABLED") == 0) {
+            g_health_config.enabled = (strcmp(value, "1") == 0 || strcasecmp(value, "true") == 0);
+            LOG_DEBUG("Config: HEALTH_ENABLED = %s", g_health_config.enabled ? "true" : "false");
+        } else if (strcmp(key, "HEALTH_CRASH_REPORTING") == 0) {
+            g_health_config.crash_reporting = (strcmp(value, "1") == 0 || strcasecmp(value, "true") == 0);
+            LOG_DEBUG("Config: HEALTH_CRASH_REPORTING = %s", g_health_config.crash_reporting ? "true" : "false");
+        } else if (strcmp(key, "HEALTH_THREAD_MONITORING") == 0) {
+            g_health_config.thread_monitoring = (strcmp(value, "1") == 0 || strcasecmp(value, "true") == 0);
+            LOG_DEBUG("Config: HEALTH_THREAD_MONITORING = %s", g_health_config.thread_monitoring ? "true" : "false");
+        } else if (strcmp(key, "HEALTH_MEMORY_LEAK_DETECTION") == 0) {
+            g_health_config.memory_leak_detection = (strcmp(value, "1") == 0 || strcasecmp(value, "true") == 0);
+            LOG_DEBUG("Config: HEALTH_MEMORY_LEAK_DETECTION = %s", g_health_config.memory_leak_detection ? "true" : "false");
+        } else if (strcmp(key, "HEALTH_CHECK_INTERVAL") == 0) {
+            int parsed_value = atoi(value);
+            if (parsed_value > 0) {
+                g_health_config.health_check_interval = parsed_value;
+                LOG_DEBUG("Config: HEALTH_CHECK_INTERVAL = %d", g_health_config.health_check_interval);
+            } else {
+                LOG_WARN("Invalid HEALTH_CHECK_INTERVAL value '%s'. Using default %d.", value, g_health_config.health_check_interval);
+            }
+        } else if (strcmp(key, "HEALTH_CRASH_HISTORY_DAYS") == 0) {
+            int parsed_value = atoi(value);
+            if (parsed_value > 0) {
+                g_health_config.crash_history_days = parsed_value;
+                LOG_DEBUG("Config: HEALTH_CRASH_HISTORY_DAYS = %d", g_health_config.crash_history_days);
+            } else {
+                LOG_WARN("Invalid HEALTH_CRASH_HISTORY_DAYS value '%s'. Using default %d.", value, g_health_config.crash_history_days);
+            }
+        } else if (strcmp(key, "HEALTH_MAX_RESTART_ATTEMPTS") == 0) {
+            int parsed_value = atoi(value);
+            if (parsed_value >= 0) {
+                g_health_config.max_restart_attempts = parsed_value;
+                LOG_DEBUG("Config: HEALTH_MAX_RESTART_ATTEMPTS = %d", g_health_config.max_restart_attempts);
+            } else {
+                LOG_WARN("Invalid HEALTH_MAX_RESTART_ATTEMPTS value '%s'. Using default %d.", value, g_health_config.max_restart_attempts);
+            }
+        } else if (strcmp(key, "HEALTH_ENDPOINT") == 0) {
+            g_health_config.health_endpoint = (strcmp(value, "1") == 0 || strcasecmp(value, "true") == 0);
+            LOG_DEBUG("Config: HEALTH_ENDPOINT = %s", g_health_config.health_endpoint ? "true" : "false");
         } else {
             LOG_WARN("Unknown configuration key: '%s'. Skipping.", key);
         }
