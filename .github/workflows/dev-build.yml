@@ -47,15 +47,15 @@ jobs:
 
       - name: Inject AREDN-Phonebook package
         run: |
-          mkdir -p sdk/package/AREDN-Phonebook
-          cp -r Phonebook/* sdk/package/AREDN-Phonebook/
+          mkdir -p sdk/package/aredn-phonebook
+          cp -r Phonebook/* sdk/package/aredn-phonebook/
 
       - name: Test build (development)
         run: |
           cd sdk
           make defconfig
           echo "Testing development build compilation..."
-          if ! make package/AREDN-Phonebook/compile V=s -j1; then
+          if ! make package/aredn-phonebook/compile V=s -j1; then
             echo "❌ Development build failed"
             exit 1
           else
