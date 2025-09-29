@@ -1,0 +1,72 @@
+name: Development Build (No Release)
+
+on:
+  # Build development tags but don't create releases
+  push:
+    tags:
+      - 'dev-*'      # dev-1.5.0-alpha1
+      - 'test-*'     # test-mesh-monitor
+      - 'alpha-*'    # alpha-1.5.0
+      - 'beta-*'     # beta-1.5.0
+      - 'rc-*'       # rc-1.5.0
+  # Also build on development branch pushes
+  push:
+    branches:
+      - development
+      - 'feature/*'
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        target:
+          - arch: ath79
+            subtarget: generic
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up SDK URL
+        id: sdk
+        run: |
+          echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
+
+      - name: Download and extract SDK
+        run: |
+          echo "Downloading SDK for development build..."
+          wget --progress=bar:force "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
+          tar -xf sdk.tar.xz --checkpoint=1000 --checkpoint-action=echo
+          mv openwrt-sdk-* sdk
+
+      - name: Inject AREDN-Phonebook package
+        run: |
+          mkdir -p sdk/package/aredn-phonebook
+          cp -r Phonebook/* sdk/package/aredn-phonebook/
+
+      - name: Test build (development)
+        run: |
+          cd sdk
+          make defconfig
+          echo "Testing development build compilation..."
+          if ! make package/aredn-phonebook/compile V=s -j1; then
+            echo "❌ Development build failed"
+            exit 1
+          else
+            echo "✅ Development build successful"
+            find bin -name "*.ipk" -ls || echo "IPK files built"
+          fi
+
+      - name: Upload development artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev-build-${{ matrix.target.arch }}-${{ github.sha }}
+          path: sdk/bin/packages/*/base/*.ipk
+          retention-days: 7  # Keep dev builds for 1 week only
