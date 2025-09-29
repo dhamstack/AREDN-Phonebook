@@ -1,7 +1,7 @@
 name: Development Build (No Release)
 
 on:
-  # Build development tags but don't create releases
+  # Build development tags and branches but don't create releases
   push:
     tags:
       - 'dev-*'      # dev-1.5.0-alpha1
@@ -9,8 +9,6 @@ on:
       - 'alpha-*'    # alpha-1.5.0
       - 'beta-*'     # beta-1.5.0
       - 'rc-*'       # rc-1.5.0
-  # Also build on development branch pushes
-  push:
     branches:
       - development
       - 'feature/*'
