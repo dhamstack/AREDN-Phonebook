@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -16,6 +17,9 @@
 #define OLSR_JSONINFO_PORT 9090
 #define HTTP_TIMEOUT_SEC 5
 #define HTTP_BUFFER_SIZE 65536
+
+#define BABEL_SOCKET_PATH "/var/run/babeld.sock"
+#define BABEL_BUFFER_SIZE 32768
 
 static routing_daemon_t current_daemon = ROUTING_AUTO;
 static bool adapter_initialized = false;
@@ -259,11 +263,131 @@ static int get_olsr_neighbors(neighbor_info_t *neighbors, int max_neighbors) {
     return parse_olsr_neighbors_json(http_buffer, neighbors, max_neighbors);
 }
 
-// Parse Babel control socket
-static int get_babel_neighbors(neighbor_info_t *neighbors, int max_neighbors) {
-    // TODO: Implement Babel control socket query
-    LOG_DEBUG("Babel neighbor query (stub implementation)");
+// Send command to Babel control socket and read response
+static int babel_control_command(const char *command, char *buffer, size_t buffer_size) {
+    int sockfd;
+    struct sockaddr_un addr;
+    ssize_t bytes_received = 0;
+
+    // Create Unix domain socket
+    sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        LOG_ERROR("Failed to create socket for Babel: %s", strerror(errno));
+        return -1;
+    }
+
+    // Set receive timeout
+    struct timeval timeout;
+    timeout.tv_sec = HTTP_TIMEOUT_SEC;
+    timeout.tv_usec = 0;
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    // Setup socket address
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, BABEL_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+
+    // Connect to Babel control socket
+    if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        LOG_DEBUG("Failed to connect to Babel control socket (daemon may not be running): %s", strerror(errno));
+        close(sockfd);
+        return -1;
+    }
+
+    // Send command
+    size_t cmd_len = strlen(command);
+    if (send(sockfd, command, cmd_len, 0) < 0) {
+        LOG_ERROR("Failed to send Babel command: %s", strerror(errno));
+        close(sockfd);
+        return -1;
+    }
+
+    // Read response
+    memset(buffer, 0, buffer_size);
+    bytes_received = recv(sockfd, buffer, buffer_size - 1, 0);
+
+    close(sockfd);
+
+    if (bytes_received < 0) {
+        LOG_ERROR("Failed to receive Babel response: %s", strerror(errno));
+        return -1;
+    }
+
+    buffer[bytes_received] = '\0';
     return 0;
+}
+
+// Parse Babel "dump" output for neighbors
+static int get_babel_neighbors(neighbor_info_t *neighbors, int max_neighbors) {
+    static char babel_buffer[BABEL_BUFFER_SIZE];
+
+    // Query Babel for neighbor table using "dump" command
+    if (babel_control_command("dump\n", babel_buffer, sizeof(babel_buffer)) != 0) {
+        LOG_DEBUG("Failed to query Babel neighbors");
+        return 0;
+    }
+
+    int count = 0;
+    char *line = babel_buffer;
+    char *next_line;
+
+    // Parse Babel dump output line by line
+    // Format: "neighbour <id> address <ip> if <interface> reach <reach> rxcost <cost> ..."
+    while (line && *line && count < max_neighbors) {
+        next_line = strchr(line, '\n');
+        if (next_line) *next_line++ = '\0';
+
+        // Look for neighbor lines
+        if (strncmp(line, "neighbour ", 10) == 0) {
+            char *address_field = strstr(line, "address ");
+            if (address_field) {
+                address_field += 8;  // Skip "address "
+
+                // Extract IP address
+                char ip_buffer[16] = {0};
+                int i = 0;
+                while (i < 15 && address_field[i] && address_field[i] != ' ' && address_field[i] != '\t') {
+                    ip_buffer[i] = address_field[i];
+                    i++;
+                }
+                ip_buffer[i] = '\0';
+
+                // Validate IP
+                struct in_addr addr;
+                if (inet_pton(AF_INET, ip_buffer, &addr) == 1) {
+                    strncpy(neighbors[count].ip, ip_buffer, sizeof(neighbors[count].ip) - 1);
+                    strncpy(neighbors[count].node, ip_buffer, sizeof(neighbors[count].node) - 1);
+
+                    // Extract interface
+                    char *if_field = strstr(line, "if ");
+                    if (if_field) {
+                        if_field += 3;
+                        int j = 0;
+                        while (j < 15 && if_field[j] && if_field[j] != ' ' && if_field[j] != '\t') {
+                            neighbors[count].interface[j] = if_field[j];
+                            j++;
+                        }
+                        neighbors[count].interface[j] = '\0';
+                    }
+
+                    // Extract rxcost (use as rough ETX estimate)
+                    char *rxcost_field = strstr(line, "rxcost ");
+                    if (rxcost_field) {
+                        rxcost_field += 7;
+                        int cost = atoi(rxcost_field);
+                        neighbors[count].etx = cost / 256.0;  // Babel cost is 256 * metric
+                    }
+
+                    count++;
+                }
+            }
+        }
+
+        line = next_line;
+    }
+
+    LOG_DEBUG("Parsed %d neighbors from Babel", count);
+    return count;
 }
 
 int get_neighbors(neighbor_info_t *neighbors, int max_neighbors) {
@@ -360,12 +484,75 @@ int get_route(const char *dst_ip, route_info_t *route) {
         case ROUTING_OLSR:
             return get_olsr_route(dst_ip, route);
         case ROUTING_BABEL:
-            LOG_DEBUG("Babel route query not implemented");
-            return -1;
+            return get_babel_route(dst_ip, route);
         default:
             LOG_ERROR("Invalid routing daemon type");
             return -1;
     }
+}
+
+// Parse Babel "dump" output for route to specific destination
+static int get_babel_route(const char *dst_ip, route_info_t *route) {
+    static char babel_buffer[BABEL_BUFFER_SIZE];
+
+    // Query Babel routing table
+    if (babel_control_command("dump\n", babel_buffer, sizeof(babel_buffer)) != 0) {
+        LOG_DEBUG("Failed to query Babel routes");
+        return -1;
+    }
+
+    char *line = babel_buffer;
+    char *next_line;
+
+    // Parse Babel dump output for route entries
+    // Format: "route <prefix> via <nexthop> if <interface> metric <metric> ..."
+    while (line && *line) {
+        next_line = strchr(line, '\n');
+        if (next_line) *next_line++ = '\0';
+
+        if (strncmp(line, "route ", 6) == 0) {
+            // Check if this route matches our destination
+            char route_prefix[64];
+            sscanf(line + 6, "%63s", route_prefix);
+
+            // Simple match - check if dst_ip starts with prefix or is exact match
+            if (strstr(route_prefix, dst_ip) == route_prefix || strstr(dst_ip, route_prefix) == dst_ip) {
+                // Extract next hop
+                char *via_field = strstr(line, "via ");
+                if (via_field) {
+                    via_field += 4;
+                    int i = 0;
+                    while (i < 15 && via_field[i] && via_field[i] != ' ' && via_field[i] != '\t') {
+                        route->next_hop_ip[i] = via_field[i];
+                        i++;
+                    }
+                    route->next_hop_ip[i] = '\0';
+                }
+
+                // Extract metric (convert to ETX-like value)
+                char *metric_field = strstr(line, "metric ");
+                if (metric_field) {
+                    metric_field += 7;
+                    int metric = atoi(metric_field);
+                    route->etx = metric / 256.0;
+                    // Rough hop count estimate from metric (Babel typically uses 256 per hop)
+                    route->hop_count = (metric + 128) / 256;
+                }
+
+                strncpy(route->dst_ip, dst_ip, sizeof(route->dst_ip) - 1);
+
+                LOG_DEBUG("Babel route to %s: next_hop=%s, hops=%d, etx=%.2f",
+                          dst_ip, route->next_hop_ip, route->hop_count, route->etx);
+
+                return 0;
+            }
+        }
+
+        line = next_line;
+    }
+
+    LOG_DEBUG("No Babel route found for %s", dst_ip);
+    return -1;
 }
 
 // Get hop-by-hop path using OLSR topology
@@ -438,10 +625,53 @@ int get_path_hops(const char *dst_ip, neighbor_info_t *hops, int max_hops) {
         case ROUTING_OLSR:
             return get_olsr_path_hops(dst_ip, hops, max_hops);
         case ROUTING_BABEL:
-            LOG_DEBUG("Babel path query not implemented");
-            return 0;
+            return get_babel_path_hops(dst_ip, hops, max_hops);
         default:
             LOG_ERROR("Invalid routing daemon type");
             return -1;
     }
+}
+
+// Get hop-by-hop path for Babel
+static int get_babel_path_hops(const char *dst_ip, neighbor_info_t *hops, int max_hops) {
+    // Get the route first to know the path
+    route_info_t route;
+    if (get_babel_route(dst_ip, &route) != 0) {
+        LOG_DEBUG("No route found for Babel path analysis to %s", dst_ip);
+        return 0;
+    }
+
+    // For Babel, we construct a simplified path based on the route
+    int hop_count = 0;
+
+    // If it's a direct neighbor (1 hop)
+    if (route.hop_count <= 1) {
+        memset(&hops[0], 0, sizeof(neighbor_info_t));
+        strncpy(hops[0].ip, dst_ip, sizeof(hops[0].ip) - 1);
+        strncpy(hops[0].node, dst_ip, sizeof(hops[0].node) - 1);
+        hops[0].etx = route.etx;
+        LOG_DEBUG("Direct Babel neighbor path: %s (1 hop)", dst_ip);
+        return 1;
+    }
+
+    // For multi-hop paths, add first hop (next hop)
+    if (route.next_hop_ip[0] != '\0' && max_hops > 0) {
+        memset(&hops[hop_count], 0, sizeof(neighbor_info_t));
+        strncpy(hops[hop_count].ip, route.next_hop_ip, sizeof(hops[hop_count].ip) - 1);
+        strncpy(hops[hop_count].node, route.next_hop_ip, sizeof(hops[hop_count].node) - 1);
+        strncpy(hops[hop_count].interface, "unknown", sizeof(hops[hop_count].interface) - 1);
+        hop_count++;
+    }
+
+    // Add destination as final hop if room
+    if (hop_count < max_hops && strcmp(route.next_hop_ip, dst_ip) != 0) {
+        memset(&hops[hop_count], 0, sizeof(neighbor_info_t));
+        strncpy(hops[hop_count].ip, dst_ip, sizeof(hops[hop_count].ip) - 1);
+        strncpy(hops[hop_count].node, dst_ip, sizeof(hops[hop_count].node) - 1);
+        hops[hop_count].etx = route.etx;
+        hop_count++;
+    }
+
+    LOG_DEBUG("Babel path to %s: %d hops", dst_ip, hop_count);
+    return hop_count;
 }
