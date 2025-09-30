@@ -33,17 +33,26 @@ jobs:
         run: |
           echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
 
-      - name: Download and extract SDK
+      - name: Download and extract SDK (fresh every time)
         run: |
-          echo "Downloading SDK for development build..."
+          echo "Downloading fresh SDK for development build..."
+          rm -rf sdk sdk.tar.xz openwrt-sdk-* || true
           wget --progress=bar:force "${{ steps.sdk.outputs.sdk_url }}" -O sdk.tar.xz
           tar -xf sdk.tar.xz --checkpoint=1000 --checkpoint-action=echo
           mv openwrt-sdk-* sdk
+          echo "Fresh SDK extracted - no cached artifacts"
 
       - name: Inject AREDN-Phonebook package
         run: |
+          echo "Checking for any pre-existing aredn-phonebook files in SDK..."
+          find sdk -name "*aredn-phonebook*" -o -name "*aredn*" 2>/dev/null || echo "No pre-existing files found"
+
           mkdir -p sdk/package/aredn-phonebook
           cp -r Phonebook/* sdk/package/aredn-phonebook/
+
+          echo "Verifying source files were copied with current dates:"
+          ls -la sdk/package/aredn-phonebook/src/software_health/software_health.c
+          head -5 sdk/package/aredn-phonebook/src/software_health/software_health.c
 
       - name: Test build (development)
         run: |
@@ -57,12 +66,26 @@ jobs:
           rm -rf dl/aredn-phonebook* || true
           make package/aredn-phonebook/clean V=s
           make clean V=s
+
+          echo "Verifying source file content before compilation..."
+          if [ -f "build_dir/target-mips_24kc_musl/aredn-phonebook-1.5.0/software_health/software_health.c" ]; then
+            echo "ERROR: Build dir already exists after clean!"
+            head -5 build_dir/target-mips_24kc_musl/aredn-phonebook-1.5.0/software_health/software_health.c
+          fi
+
           echo "Testing development build compilation..."
           if ! make package/aredn-phonebook/compile V=s -j1; then
             echo "❌ Development build failed"
             exit 1
           else
             echo "✅ Development build successful"
+
+            echo "Verifying compiled binary size and date..."
+            ls -la build_dir/target-mips_24kc_musl/aredn-phonebook-1.5.0/aredn-phonebook || echo "Binary not found in build_dir"
+
+            echo "Checking source file that was compiled..."
+            head -5 build_dir/target-mips_24kc_musl/aredn-phonebook-1.5.0/software_health/software_health.c || echo "Source not found"
+
             find bin -name "*.ipk" -ls || echo "IPK files built"
           fi
 
