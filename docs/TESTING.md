@@ -12,10 +12,18 @@
 - Mesh monitor module fully implemented
 - Configuration parser, routing adapter, probe engine complete
 - OLSR jsoninfo HTTP client implemented
+- Babel routing daemon support via Unix socket
 - RFC3550 metrics calculation (RTT, jitter, packet loss)
 - Network JSON export to `/tmp/meshmon_network.json`
 - CGI endpoint: `/cgi-bin/network`
 - **Integrated into build** - ready for testing
+
+### ✅ Phase 2: Path Quality Analysis (Complete)
+- Hop-by-hop path reconstruction from routing tables
+- Per-hop ETX, LQ, NLQ metrics from OLSR
+- Link type classification (RF, tunnel, ethernet)
+- Path quality data included in network JSON
+- Supports both OLSR and Babel routing protocols
 
 ## Testing Phase 0 (Software Health - Currently Deployed)
 
@@ -69,6 +77,12 @@ cat /tmp/meshmon_health.json | json_pp
   "type": "agent_health",
   "node": "YOUR-NODE-NAME",
   "sent_at": "2025-09-30T19:17:20Z",
+  "routing_daemon": "olsr",
+  "lat": "47.123456",
+  "lon": "8.654321",
+  "grid_square": "JN47xe",
+  "hardware_model": "MikroTik RouterBOARD 952Ui-5ac2nD",
+  "firmware_version": "3.24.10.0",
   "cpu_pct": 0.0,
   "mem_mb": 0.2,
   "queue_len": 0,
@@ -133,7 +147,35 @@ done
 
 **Expected:** Memory should be stable (not growing continuously)
 
-### 6. Test Crash Detection
+### 6. Test Node Static Information (Geographic Location)
+
+```bash
+# Check if sysinfo.json is accessible
+curl http://localhost:8080/cgi-bin/sysinfo.json
+
+# Check if static node info was fetched during startup
+logread | grep "Node info:"
+
+# Expected output:
+# daemon.info AREDN-Phonebook[PID]: SOFTWARE_HEALTH: Node info: lat=47.123456, lon=8.654321, grid=JN47xe, model=MikroTik..., fw=3.24.10.0
+
+# Verify static info in health JSON
+cat /tmp/meshmon_health.json | grep -E "lat|lon|grid_square|hardware_model|firmware_version"
+```
+
+**Expected fields:**
+```json
+"routing_daemon": "olsr",
+"lat": "47.123456",
+"lon": "8.654321",
+"grid_square": "JN47xe",
+"hardware_model": "MikroTik RouterBOARD 952Ui-5ac2nD",
+"firmware_version": "3.24.10.0"
+```
+
+**Note:** If sysinfo.json is not available, fields will show "unknown" but monitoring will still work.
+
+### 7. Test Crash Detection
 
 **WARNING: This will intentionally crash the phonebook!**
 
@@ -169,9 +211,11 @@ logread | grep "CRASH DETECTED"
 ]
 ```
 
-## Testing Phase 1 (Network Monitoring - INTEGRATED)
+## Testing Phase 1 & 2 (Network Monitoring - INTEGRATED)
 
-✅ **Phase 1 is now fully integrated and ready for testing.**
+✅ **Phase 1 and Phase 2 are now fully integrated and ready for testing.**
+
+Phase 1 covers basic network probing and metrics. Phase 2 adds hop-by-hop path analysis with ETX/LQ/NLQ metrics.
 
 ### 1. Configuration
 
@@ -245,11 +289,152 @@ curl http://localhost/cgi-bin/network
 curl http://your-node.local.mesh/cgi-bin/network
 ```
 
+**Expected network JSON structure:**
+```json
+{
+  "schema": "meshmon.v1",
+  "type": "network_status",
+  "node": "YOUR-NODE-NAME",
+  "sent_at": "2025-09-30T19:30:00Z",
+  "routing_daemon": "olsr",
+  "probe_count": 2,
+  "probes": [
+    {
+      "dst_node": "NEIGHBOR-NODE-1",
+      "dst_ip": "10.54.1.1",
+      "timestamp": "2025-09-30T19:29:55Z",
+      "routing_daemon": "olsr",
+      "rtt_ms_avg": 12.34,
+      "jitter_ms": 1.23,
+      "loss_pct": 0.0,
+      "hop_count": 2,
+      "path": [
+        {
+          "node": "HOP-1-NODE",
+          "interface": "wlan0",
+          "link_type": "RF",
+          "lq": 1.0,
+          "nlq": 0.98,
+          "etx": 1.02,
+          "rtt_ms": 0.0
+        },
+        {
+          "node": "NEIGHBOR-NODE-1",
+          "interface": "wlan0",
+          "link_type": "RF",
+          "lq": 0.95,
+          "nlq": 1.0,
+          "etx": 1.05,
+          "rtt_ms": 0.0
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 4. Test Routing Daemon Detection
+
+```bash
+# Check which routing daemon was detected
+logread | grep "Detected.*routing daemon"
+
+# Expected output (OLSR):
+# daemon.info AREDN-Phonebook[PID]: ROUTING_ADAPTER: Detected OLSR routing daemon
+
+# Expected output (Babel):
+# daemon.info AREDN-Phonebook[PID]: ROUTING_ADAPTER: Detected Babel routing daemon
+
+# Verify routing daemon in health JSON
+cat /tmp/meshmon_health.json | grep routing_daemon
+
+# Verify routing daemon in network JSON
+cat /tmp/meshmon_network.json | grep routing_daemon
+```
+
+### 5. Test OLSR Integration
+
+```bash
+# Check if OLSR is running
+ps | grep olsrd
+
+# Test OLSR jsoninfo API directly
+curl http://127.0.0.1:9090/neighbors
+curl http://127.0.0.1:9090/routes
+curl http://127.0.0.1:9090/topology
+
+# Check if mesh monitor is querying OLSR
+logread | grep "OLSR"
+```
+
+### 6. Test Babel Integration
+
+```bash
+# Check if Babel is running
+ps | grep babeld
+
+# Check if Babel control socket exists
+ls -la /var/run/babeld.sock
+
+# Test Babel commands manually (if available)
+echo "dump" | nc -U /var/run/babeld.sock
+
+# Check if mesh monitor is querying Babel
+logread | grep "Babel"
+```
+
+### 7. Test Phase 2 Path Analysis
+
+```bash
+# Check for hop-by-hop path information in network JSON
+cat /tmp/meshmon_network.json | json_pp | grep -A 20 "path"
+
+# Verify hop_count is populated
+cat /tmp/meshmon_network.json | grep hop_count
+
+# Check for link type classification
+cat /tmp/meshmon_network.json | grep link_type
+
+# Verify ETX metrics are present
+cat /tmp/meshmon_network.json | grep etx
+```
+
+**Expected hop information:**
+- `node`: Node name for each hop
+- `interface`: Network interface (wlan0, eth0, tun0, etc.)
+- `link_type`: RF (wireless), tunnel, ethernet, or bridge
+- `lq`: Link quality (0.0-1.0)
+- `nlq`: Neighbor link quality (0.0-1.0)
+- `etx`: Expected transmission count (lower is better)
+
+### 8. Test UDP Probe Engine
+
+```bash
+# Check if probe responder is listening
+netstat -ulnp | grep 40050
+
+# Expected output:
+# udp  0  0 0.0.0.0:40050  0.0.0.0:*  PID/aredn-phonebook
+
+# Send test probe manually (from another node)
+echo "test" | nc -u your-node.local.mesh 40050
+
+# Check probe logs
+logread | grep "PROBE_ENGINE"
+
+# Monitor probe activity
+logread -f | grep "Probing neighbor"
+```
+
+
 ## Quick Validation Checklist
 
-### Phase 0 (Current)
+### Phase 0 (Software Health)
 - [ ] Health JSON file exists at `/tmp/meshmon_health.json`
 - [ ] Health JSON updates every 60 seconds
+- [ ] `routing_daemon` field shows "olsr" or "babel"
+- [ ] `lat`, `lon`, `grid_square` fields populated (or "unknown")
+- [ ] `hardware_model` and `firmware_version` populated
 - [ ] `threads_responsive` is `true`
 - [ ] `health_score` is > 90.0
 - [ ] `/cgi-bin/health` returns valid JSON
@@ -257,16 +442,27 @@ curl http://your-node.local.mesh/cgi-bin/network
 - [ ] Memory usage is stable over 10 minutes
 - [ ] After restart, health state recovers
 
-### Phase 1 (Integrated - Ready for Testing)
+### Phase 1 (Network Monitoring)
 - [ ] Mesh monitor initializes without errors
-- [ ] Routing daemon (OLSR/Babel) detected
+- [ ] Routing daemon (OLSR/Babel) detected correctly
 - [ ] Probe responder listening on UDP port 40050
 - [ ] Probe cycles run every 40 seconds (configurable)
 - [ ] Network metrics calculated (RTT, jitter, loss per RFC3550)
 - [ ] `/tmp/meshmon_network.json` created and updates
 - [ ] `/cgi-bin/network` returns valid JSON probe results
-- [ ] OLSR jsoninfo neighbors queried successfully
+- [ ] OLSR jsoninfo neighbors queried successfully (if OLSR)
+- [ ] Babel socket commands working (if Babel)
 - [ ] Probe responses received and metrics accurate
+- [ ] `routing_daemon` field in network JSON matches detected daemon
+
+### Phase 2 (Path Quality Analysis)
+- [ ] Hop-by-hop path data included in network JSON
+- [ ] `hop_count` populated for each probe
+- [ ] `path` array contains hop information
+- [ ] Link type classification working (RF, tunnel, ethernet)
+- [ ] ETX, LQ, NLQ metrics present for each hop
+- [ ] Multi-hop paths reconstructed correctly
+- [ ] Works with both OLSR and Babel routing daemons
 
 ## Troubleshooting
 
@@ -308,6 +504,80 @@ for i in {1..10}; do
   cat /tmp/meshmon_health.json | grep mem_mb
   sleep 60
 done
+```
+
+### Geographic Location Shows "unknown"
+
+```bash
+# Check if sysinfo.json is accessible
+curl http://localhost:8080/cgi-bin/sysinfo.json
+
+# If not accessible, check AREDN web interface
+# Navigate to: http://your-node.local.mesh:8080/cgi-bin/status
+
+# Check if location is configured in AREDN
+# Navigate to: Setup > Basic Setup > Location section
+
+# If sysinfo returns data, check logs for parsing errors
+logread | grep "fetch_node_static_info"
+```
+
+### Routing Daemon Not Detected
+
+```bash
+# Check which routing daemon is actually running
+ps | grep -E "olsrd|babeld"
+
+# Check for PID files
+ls -la /var/run/olsrd.pid
+ls -la /var/run/babeld.pid
+
+# Check logs for detection errors
+logread | grep "ROUTING_ADAPTER"
+
+# Manually test OLSR (if installed)
+curl http://127.0.0.1:9090/neighbors
+
+# Manually test Babel (if installed)
+ls -la /var/run/babeld.sock
+```
+
+### Network JSON Not Created
+
+```bash
+# Check if mesh monitor is enabled
+cat /etc/sipserver.conf | grep -A 10 "\[mesh_monitor\]"
+
+# Check if mesh monitor initialized
+logread | grep "MESH_MONITOR"
+
+# Check for routing adapter errors
+logread | grep "ROUTING_ADAPTER"
+
+# Check if neighbors were found
+logread | grep "neighbors found"
+
+# Force a probe cycle (wait 40+ seconds after restart)
+sleep 45
+ls -la /tmp/meshmon_network.json
+```
+
+### No Hop-by-Hop Path Data
+
+```bash
+# Check if routing daemon provides topology info
+# For OLSR:
+curl http://127.0.0.1:9090/topology
+curl http://127.0.0.1:9090/routes
+
+# For Babel:
+echo "dump" | nc -U /var/run/babeld.sock
+
+# Check logs for path reconstruction
+logread | grep "Path to"
+
+# Verify hop_count in network JSON
+cat /tmp/meshmon_network.json | grep hop_count
 ```
 
 ## Performance Benchmarks
@@ -363,8 +633,44 @@ while True:
 
 ## Next Steps
 
-1. ✅ Verify Phase 0 works on your AREDN router
-2. 🔧 Complete Phase 1 integration (Makefile + main.c)
-3. 🧪 Implement remaining stubs (OLSR client, metrics calculator)
-4. 🔍 Test on multi-hop mesh network
-5. 📊 Build centralized collector (optional)
+1. ✅ ~~Verify Phase 0 works on your AREDN router~~
+2. ✅ ~~Complete Phase 1 integration (Makefile + main.c)~~
+3. ✅ ~~Implement OLSR client and metrics calculator~~
+4. ✅ ~~Add Babel routing daemon support~~
+5. ✅ ~~Implement Phase 2 hop-by-hop path analysis~~
+6. ✅ ~~Add routing daemon identification to reports~~
+7. ✅ ~~Add geographic location and hardware info~~
+8. 🔍 **Test on multi-hop mesh network with real AREDN nodes**
+9. 🧪 Validate Babel support on Babel-based mesh
+10. 📊 Build centralized collector for network-wide monitoring (optional)
+11. 🎨 Create web dashboard for visualization (optional)
+
+## Summary of Features
+
+**Phase 0 - Software Health:**
+- ✅ CPU, memory, thread monitoring
+- ✅ Crash detection and reporting
+- ✅ Health scoring (0-100)
+- ✅ Geographic location (lat/lon/grid_square)
+- ✅ Hardware model and firmware version
+- ✅ Routing daemon identification
+
+**Phase 1 - Network Monitoring:**
+- ✅ Auto-detect OLSR or Babel routing daemon
+- ✅ UDP probe engine (RFC3550 metrics)
+- ✅ RTT, jitter, packet loss measurement
+- ✅ Neighbor discovery from routing tables
+- ✅ Configurable probe intervals and targets
+
+**Phase 2 - Path Quality:**
+- ✅ Hop-by-hop path reconstruction
+- ✅ Per-hop ETX, LQ, NLQ metrics
+- ✅ Link type classification (RF, tunnel, ethernet)
+- ✅ Multi-hop path analysis
+- ✅ Works with both OLSR and Babel
+
+**Data Export:**
+- ✅ JSON export (meshmon.v1 schema)
+- ✅ HTTP CGI endpoints (/cgi-bin/health, /cgi-bin/network, /cgi-bin/crash)
+- ✅ Atomic file writes (crash-safe)
+- ✅ Ready for centralized collection
