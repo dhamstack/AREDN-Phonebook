@@ -59,6 +59,8 @@ define Package/aredn-phonebook/install
 	$(INSTALL_BIN) ./files/www/cgi-bin/loadphonebook $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/showphonebook $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/healthcheck $(1)/www/cgi-bin/
+	$(INSTALL_BIN) ./files/www/cgi-bin/health $(1)/www/cgi-bin/
+	$(INSTALL_BIN) ./files/www/cgi-bin/crash $(1)/www/cgi-bin/
 endef
 
 $(eval $(call BuildPackage,aredn-phonebook))
