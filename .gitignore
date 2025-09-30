@@ -34,3 +34,7 @@ docs/implementation/
 
 # Temporary files
 *.tmp.*
+
+# IPK build artifacts and extracted contents
+ipk files/
+ipk-contents/
