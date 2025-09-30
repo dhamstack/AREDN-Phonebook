@@ -144,26 +144,32 @@ flash_protection = 1
 [mesh_monitor]
 enabled = 1
 mode = lightweight        # lightweight | full | disabled
-probe_interval_s = 40     # Seconds between probe cycles
-probe_window_s = 5        # Duration of each probe burst
-neighbor_targets = 2      # Neighbors to probe per cycle
-rotating_peer = 1         # Additional non-neighbor target
-max_probe_kbps = 80      # Bandwidth limit per probe
-routing_daemon = auto     # auto | olsr | babel
-routing_cache_s = 5       # Cache routing info for N seconds
-health_report_interval = 300  # Health report interval
-probe_port = 40050        # UDP port for probes
-dscp_ef = 1              # Mark probes with DSCP EF (voice-like)
-collector_url =          # Optional: external collector endpoint
 
-# Software health monitoring
-software_health_enabled = 1     # Enable software health tracking
-crash_detection = 1             # Monitor and report crashes
-thread_monitoring = 1           # Track thread health and responsiveness
-memory_leak_detection = 1       # Detect memory growth patterns
-health_check_interval = 60      # Software health check interval (seconds)
-restart_threshold = 3           # Max restarts before alerting
-uptime_reporting = 1            # Include uptime in health reports
+# Network status measurement
+network_status_interval_s = 40  # How often to measure network status (UDP probes)
+probe_window_s = 5              # Duration of each probe burst
+neighbor_targets = 2            # Neighbors to probe per cycle
+rotating_peer = 1               # Additional non-neighbor target
+max_probe_kbps = 80             # Bandwidth limit per probe
+probe_port = 40050              # UDP port for probes
+dscp_ef = 1                     # Mark probes with DSCP EF (voice-like)
+
+# Phonebook health status monitoring
+phonebook_health_update_s = 60        # How often passive_safety updates /tmp/meshmon_health.json
+phonebook_health_report_s = 14400     # Report to collector every 4 hours (or on significant change)
+health_change_threshold_cpu = 20      # Report if CPU change > 20%
+health_change_threshold_mem_mb = 10   # Report if memory change > 10 MB
+crash_detection = 1                   # Monitor and report crashes immediately
+thread_monitoring = 1                 # Track thread health and responsiveness
+restart_threshold = 3                 # Max restarts before alerting
+
+# Routing daemon integration
+routing_daemon = auto           # auto | olsr | babel
+routing_cache_s = 5             # Cache routing info for N seconds
+
+# Remote reporting (optional)
+network_status_report_s = 40    # Report network status every 40 seconds
+collector_url =                 # Optional: external collector endpoint
 ```
 
 ### 4.2 Monitoring Modes
@@ -227,98 +233,344 @@ uptime_reporting = 1            # Include uptime in health reports
 }
 ```
 
-### 5.2 New Mesh Quality Endpoint
+### 5.2 Connection Check Query
 
-**Endpoint:** `GET /cgi-bin/meshquality`
+**Endpoint:** `GET /cgi-bin/connectioncheck?target=W6XYZ-2` (NEW)
 
-```json
-{
-  "node_id": "W6ABC-1",
-  "timestamp": "2025-09-29T18:45:00Z",
-  "paths": [
-    {
-      "dst": "W6XYZ-2",
-      "state": "good",
-      "metrics": {
-        "rtt_ms": 12.3,
-        "jitter_ms": 2.1,
-        "loss_pct": 0.0
-      },
-      "route": ["W6ABC-1", "W6DEF-3", "W6XYZ-2"],
-      "hops": [
-        {"from": "W6ABC-1", "to": "W6DEF-3", "lq": 0.95, "nlq": 0.92},
-        {"from": "W6DEF-3", "to": "W6XYZ-2", "lq": 0.88, "nlq": 0.90}
-      ]
-    }
-  ],
-  "summary": {
-    "paths_monitored": 3,
-    "paths_good": 2,
-    "paths_degraded": 1,
-    "paths_failed": 0
-  }
-}
-```
+Queries existing network probe data for specific destination (does not trigger new probe):
 
-### 5.3 Webhook for Quality Alerts
-
-**Endpoint:** `POST /cgi-bin/qualityalert` (NEW)
-
-Triggers immediate quality probe to specific destination:
-
+**Response:**
 ```json
 {
   "target": "W6XYZ-2",
-  "duration_s": 10,
-  "priority": "high"
+  "last_probed": "2025-09-29T18:44:00Z",
+  "status": "degraded",
+  "path_result": {
+    "rtt_ms_avg": 86.2,
+    "jitter_ms": 15.3,
+    "loss_pct": 2.1
+  },
+  "hop_result": {
+    "hops": [
+      {"seq": 0, "node": "node-A", "link_type": "RF", "etx": 1.19},
+      {"seq": 1, "node": "node-D", "link_type": "tunnel", "etx": 1.0, "rtt_ms": 45.2},
+      {"seq": 2, "node": "node-H", "link_type": "RF", "etx": 2.15, "warning": "High ETX"}
+    ]
+  },
+  "recommendation": "Check node-H RF link (ETX=2.15)"
 }
 ```
 
-### 5.4 Software Health Status Endpoint
-
-**Endpoint:** `GET /cgi-bin/healthstatus` (NEW)
-
-Returns comprehensive software and system health:
-
+**If target not in recent probes:**
 ```json
 {
-  "overall_status": "healthy",
-  "health_score": 95.5,
-  "timestamp": "2025-09-29T18:45:00Z",
-  "checks": {
-    "threads_responsive": true,
-    "memory_stable": true,
-    "no_recent_crashes": true,
-    "sip_service_ok": true,
-    "phonebook_current": true,
-    "mesh_reachable": true
-  },
-  "alerts": [
-    {
-      "level": "warning",
-      "component": "mesh_monitor",
-      "message": "High jitter detected to node-K: 45ms",
-      "since": "2025-09-29T18:30:00Z",
-      "action": "Check RF interference"
-    }
-  ],
-  "recommendations": [
-    "Consider reducing probe frequency during peak hours",
-    "Monitor memory usage - approaching 75% of budget"
-  ],
-  "diagnostics": {
-    "last_restart_reason": "Manual restart",
-    "performance_trend": "stable",
-    "error_trend": "decreasing"
-  }
+  "target": "W6XYZ-2",
+  "status": "no_data",
+  "message": "No recent probe data available for this target"
 }
 ```
 
 ---
 
-## 6) Network Behavior & Resource Budgets
+## 6) Monitoring Access Architecture
 
-### 6.1 Enhanced Resource Targets
+### 6.1 Local-First Design Principle
+
+**All monitoring data is accessible locally via CGI endpoints first.** Remote reporting to a centralized collector is optional and uses the same data.
+
+### 6.2 Access Methods
+
+#### 6.2.1 Local CGI Access (Primary, Always Available)
+
+**Interface:** HTTP CGI scripts on the agent (`uhttpd` on OpenWrt)
+**Endpoints:** See Section 5 for all endpoints
+**Access:** `http://node.local.mesh/cgi-bin/...`
+**Dependencies:** None - works standalone
+**Use cases:**
+- Local troubleshooting with `curl`
+- Web dashboard on node itself
+- Manual monitoring and diagnostics
+- Emergency access when collector unavailable
+
+**Benefits:**
+- Zero network overhead
+- Instant access to current state
+- No external dependencies
+- Works even if mesh partitioned
+
+#### 6.2.2 Remote Reporting (Optional, Centralized Monitoring)
+
+**Interface:** HTTP POST to collector
+**Endpoint:** `POST http://collector.local.mesh:5000/ingest`
+**Frequency:** Configurable (default: health every 5min, probes every 40s)
+**Dependencies:** Requires Pi collector (AREDNmon backend)
+**Use cases:**
+- Mesh-wide visibility
+- Historical trend analysis
+- Automated issue detection
+- Alerting and notifications
+
+**Benefits:**
+- Centralized dashboard
+- Pattern detection across nodes
+- Long-term data retention
+- Automated alerting
+
+### 6.3 Data Flow Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    AREDN Router Agent                    │
+├─────────────────────────────────────────────────────────┤
+│                                                           │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────┐    │
+│  │ SIP Proxy   │  │ Health       │  │ Probe       │    │
+│  │ (existing)  │  │ Monitor      │  │ Thread      │    │
+│  │             │  │ (existing)   │  │ (optional)  │    │
+│  └──────┬──────┘  └──────┬───────┘  └──────┬──────┘    │
+│         │                │                  │            │
+│         └────────────────┼──────────────────┘            │
+│                          │                               │
+│                    ┌─────▼──────┐                        │
+│                    │ Agent      │                        │
+│                    │ State      │                        │
+│                    │ (RAM/tmp)  │                        │
+│                    └─────┬──────┘                        │
+│                          │                               │
+│         ┌────────────────┼────────────────┐             │
+│         │                │                │             │
+│    ┌────▼────┐     ┌─────▼─────┐   ┌────▼────┐        │
+│    │ CGI     │     │ State     │   │ Remote  │        │
+│    │ Scripts │     │ File(s)   │   │ Reporter│        │
+│    │         │     │ /tmp/*.json   │(optional)│        │
+│    └────┬────┘     └───────────┘   └────┬────┘        │
+│         │                                │             │
+└─────────┼────────────────────────────────┼─────────────┘
+          │ HTTP GET                       │ HTTP POST
+          │ (local)                        │ (remote)
+          ▼                                ▼
+   ┌──────────────┐              ┌──────────────────┐
+   │ Local Web    │              │ Pi Collector     │
+   │ Browser/curl │              │ (AREDNmon)       │
+   └──────────────┘              └──────────────────┘
+```
+
+### 6.4 Implementation Details
+
+#### 6.4.1 State Storage
+
+**Health state file:** `/tmp/meshmon_health.json` (updated every 60s by passive_safety_thread)
+
+**Schema:** Unified format for both local CGI access and remote reporting (meshmon.v1 type: "agent_health")
+
+**Note:** The "agent_health" message type represents the **Phonebook Health Status** - the health of the AREDN-Phonebook application running on this node.
+
+```json
+{
+  "schema": "meshmon.v1",
+  "type": "agent_health",
+  "node": "W6ABC-1",
+  "sent_at": "2025-09-29T18:45:00Z",
+  "cpu_pct": 3.1,
+  "mem_mb": 8.2,
+  "queue_len": 0,
+  "uptime_seconds": 86400,
+  "restart_count": 0,
+  "threads_responsive": true,
+  "health_score": 95.5,
+  "checks": {
+    "memory_stable": true,
+    "no_recent_crashes": true,
+    "sip_service_ok": true,
+    "phonebook_current": true
+  },
+  "sip_service": {
+    "active_calls": 2,
+    "registered_users": 15
+  },
+  "monitoring": {
+    "probe_queue_depth": 0,
+    "last_probe_sent": "2025-09-29T18:44:00Z"
+  }
+}
+```
+
+**Notes:**
+- Uses `meshmon.v1` schema for consistency with remote reporting
+- `queue_len` = monitoring probe queue depth (same as `monitoring.probe_queue_depth`)
+- `threads_responsive` at top level (from architecture spec) + expanded `checks` object
+- Can be sent as-is to collector or read by local CGI scripts
+
+**Probe circular buffer:** In-memory (last 10-20 probes, ~10 KB)
+**Crash history:** `/tmp/meshmon_crashes.json` (last 5 crashes, ~2 KB)
+
+#### 6.4.2 CGI Implementation
+
+**Option A: Shell Scripts (Lightweight, recommended for start)**
+```bash
+#!/bin/sh
+# /www/cgi-bin/health
+
+echo "Content-Type: application/json"
+echo ""
+cat /tmp/meshmon_health.json
+```
+
+**Option B: C Programs (High Performance)**
+```c
+// Compiled CGI binary
+// Reads shared memory or queries agent directly
+// More efficient for high-frequency polling
+```
+
+**Recommendation:** Start with shell scripts. Upgrade to C if CGI performance becomes bottleneck.
+
+#### 6.4.3 Remote Reporter Thread (Optional)
+
+When `remote_enabled=1` in config:
+
+**Two separate reporting timers:**
+
+```c
+// Network status reporter - runs every 40 seconds
+void *network_status_reporter_thread(void *arg) {
+    while (1) {
+        sleep(network_status_report_interval);
+
+        // Read latest network probe results
+        probe_result_t *probes = get_recent_probes();
+
+        // Send path_result + hop_result messages
+        for (int i = 0; i < probe_count; i++) {
+            char *json = encode_path_result(&probes[i]);
+            http_post(collector_url, json);
+            free(json);
+
+            json = encode_hop_result(&probes[i]);
+            http_post(collector_url, json);
+            free(json);
+        }
+    }
+}
+
+// Phonebook health reporter - runs every 4 hours OR on significant change
+void *phonebook_health_reporter_thread(void *arg) {
+    agent_health_t last_reported = {0};
+    time_t last_report_time = 0;
+
+    while (1) {
+        sleep(60);  // Check every minute
+
+        agent_health_t current = read_health_state();
+        time_t now = time(NULL);
+        bool should_report = false;
+
+        // Scheduled report (every 4 hours)
+        if (now - last_report_time >= phonebook_health_report_interval) {
+            should_report = true;
+        }
+
+        // Event-driven: CPU change > threshold
+        if (abs(current.cpu_pct - last_reported.cpu_pct) > cpu_change_threshold) {
+            should_report = true;
+        }
+
+        // Event-driven: Memory change > threshold
+        if (abs(current.mem_mb - last_reported.mem_mb) > mem_change_threshold) {
+            should_report = true;
+        }
+
+        // Event-driven: Thread became unresponsive
+        if (current.checks.threads_responsive != last_reported.checks.threads_responsive) {
+            should_report = true;
+        }
+
+        // Event-driven: Restart occurred
+        if (current.restart_count > last_reported.restart_count) {
+            should_report = true;
+        }
+
+        if (should_report) {
+            char *json = encode_agent_health(&current);
+            http_post(collector_url, json);
+            free(json);
+
+            last_reported = current;
+            last_report_time = now;
+        }
+    }
+}
+```
+
+**Key principles:**
+- CGI and remote reporters read from same source (no duplication)
+- Network status: High frequency (40s) - network conditions change rapidly
+- Phonebook health: Low frequency (4h) + event-driven - health changes slowly
+- Reduces bandwidth: ~97% reduction in health reports while maintaining responsiveness
+
+### 6.5 Configuration
+
+```
+# /etc/config/meshmon
+
+config monitoring 'agent'
+    option enabled '1'
+    option node_id 'W6ABC-1'
+
+    # Local CGI (always enabled if monitoring enabled)
+    option cgi_enabled '1'
+
+    # Remote reporting (optional)
+    option remote_enabled '1'
+    option collector_url 'http://collector.local.mesh:5000/ingest'
+    option network_status_report_s '40'            # Network status every 40s
+    option phonebook_health_report_s '14400'       # Phonebook health every 4h (or on change)
+    option health_change_threshold_cpu '20'        # Report if CPU change > 20%
+    option health_change_threshold_mem_mb '10'     # Report if memory change > 10 MB
+
+    # Network probing (optional)
+    option probing_enabled '1'
+    option probe_neighbor_count '2'
+    option probe_rotate_peers '1'
+    option reduce_on_voip_calls '1'
+```
+
+### 6.6 Deployment Modes
+
+**Mode 1: Local CGI Only (Minimal)**
+- `cgi_enabled=1`, `remote_enabled=0`, `probing_enabled=0`
+- Zero network overhead
+- Manual monitoring only
+- Best for: Single-node debugging
+
+**Mode 2: Local + Remote Health (Hybrid Light)**
+- `cgi_enabled=1`, `remote_enabled=1`, `probing_enabled=0`
+- Reports agent health to collector
+- No active probing
+- Best for: Basic centralized monitoring
+
+**Mode 3: Full Monitoring (Hybrid Complete)**
+- `cgi_enabled=1`, `remote_enabled=1`, `probing_enabled=1`
+- Local CGI + remote reporting + active probing
+- Complete visibility local and centralized
+- Best for: Production deployments
+
+### 6.7 Memory Footprint
+
+**Monitoring overhead:**
+- Health state files: ~1-2 KB
+- Probe circular buffer: ~10 KB (if probing enabled)
+- Crash history: ~2 KB
+- Remote reporter thread: ~100 KB stack
+- **Total: ~13 KB data + 100 KB code**
+
+**No historical data storage** - agent remains stateless for long-term trends.
+
+---
+
+## 7) Network Behavior & Resource Budgets
+
+### 7.1 Enhanced Resource Targets
 
 | Component | Original | With Monitoring | Notes |
 |-----------|----------|-----------------|-------|
@@ -368,120 +620,273 @@ typedef struct {
 - Text protocol parsing for routes and neighbors
 - Automatic detection and fallback
 
----
+### 7.3 Link Technology Detection (RF vs Tunnel)
 
-## 8) Passive Safety Enhancements
+**Goal:** Identify whether each hop uses wireless/RF or wired/tunnel technology to help isolate bottlenecks.
 
-### 8.1 Enhanced Self-Healing Features
+**Implementation Strategy:**
 
+**Option 1: Query Routing Daemon Interface Info**
 ```c
-// In passive_safety.c - Enhanced with software health monitoring
+// OLSR jsoninfo interfaces endpoint
+GET http://127.0.0.1:9090/interfaces
 
-void passive_monitor_health_check(void) {
-    // Kill stuck probe threads
-    if (probe_thread_hung()) {
-        LOG_WARN("Monitor probe thread hung - restarting");
-        pthread_cancel(probe_tid);
-        restart_probe_engine();
-        increment_restart_counter("probe_thread");
+// Response example:
+{
+  "interfaces": [
+    {
+      "name": "wlan0",
+      "ipv4Address": "10.0.0.1",
+      "olsr4": "UP"
+    },
+    {
+      "name": "tun50",
+      "ipv4Address": "172.16.50.1",
+      "olsr4": "UP"
     }
-
-    // Clear stale probe results > 1 hour
-    cleanup_old_probe_data();
-
-    // Reset if consuming too much memory
-    if (monitor_mem_usage() > MAX_MONITOR_MEM) {
-        LOG_ERROR("Monitor memory usage exceeded %d MB - resetting", MAX_MONITOR_MEM);
-        reset_monitor_module();
-        increment_restart_counter("memory_reset");
-    }
+  ]
 }
 
-void passive_software_health_check(void) {
-    // Check thread responsiveness
-    for (int i = 0; i < NUM_THREADS; i++) {
-        if (!thread_responsive(i)) {
-            LOG_ERROR("Thread %s unresponsive for %d seconds",
-                      thread_names[i], get_thread_silence_duration(i));
-            if (get_thread_silence_duration(i) > THREAD_RESTART_THRESHOLD) {
-                restart_unresponsive_thread(i);
-            }
-        }
-    }
+// Map neighbor IPs to interface names
+typedef struct {
+    char neighbor_ip[16];
+    char interface[16];      // "wlan0", "tun50", etc.
+    char link_type[16];      // "RF", "tunnel", "ethernet"
+} neighbor_interface_t;
+```
 
-    // Monitor memory growth
-    size_t current_rss = get_process_memory_usage();
-    if (detect_memory_leak(current_rss)) {
-        LOG_WARN("Memory leak suspected: RSS grown to %zu MB", current_rss / 1024 / 1024);
-    }
-
-    // Check error rates
-    if (get_hourly_error_rate() > ERROR_RATE_THRESHOLD) {
-        LOG_WARN("High error rate detected: %d errors/hour", get_hourly_error_rate());
-    }
-}
-
-void correlate_failures_with_mesh(void) {
-    // Log correlation between SIP failures and mesh issues
-    if (sip_registration_failures > threshold) {
-        mesh_quality_t quality = get_path_quality(peer);
-        if (quality.loss_pct > 5.0) {
-            LOG_WARN("SIP failures correlate with %.1f%% packet loss to %s",
-                     quality.loss_pct, peer);
-            update_health_alert("sip_mesh_correlation",
-                               "SIP registration failures due to mesh quality");
-        }
-    }
-}
-
-void setup_crash_recovery(void) {
-    // Install signal handlers for crash detection
-    signal(SIGSEGV, crash_signal_handler);
-    signal(SIGBUS, crash_signal_handler);
-    signal(SIGFPE, crash_signal_handler);
-
-    // Set up crash info persistence
-    load_crash_history();
-}
-
-void crash_signal_handler(int sig) {
-    // Record crash information
-    record_crash_event(sig, "Signal received", time(NULL));
-
-    // Attempt emergency data save
-    emergency_save_phonebook_state();
-
-    LOG_CRITICAL("Process crashed with signal %d - emergency shutdown initiated", sig);
-
-    // Clean shutdown and let system restart us
-    emergency_shutdown();
-    exit(1);
+**Option 2: Interface Name Pattern Matching**
+```c
+// Simple heuristic classification
+const char* classify_link_type(const char* iface) {
+    if (strncmp(iface, "wlan", 4) == 0) return "RF";
+    if (strncmp(iface, "tun", 3) == 0) return "tunnel";
+    if (strncmp(iface, "eth", 3) == 0) return "ethernet";
+    if (strncmp(iface, "br-", 3) == 0) return "bridge";
+    return "unknown";
 }
 ```
+
+**Option 3: Query AREDN Node Info (Most Reliable)**
+```bash
+# AREDN nodes expose /cgi-bin/sysinfo.json
+curl http://neighbor-node.local.mesh/cgi-bin/sysinfo.json
+
+# Contains interface details and tunnel status
+{
+  "interfaces": {
+    "wlan0": {"type": "RF", "channel": 5, "bandwidth": 20},
+    "tun50": {"type": "tunnel", "peer": "node-remote"}
+  }
+}
+```
+
+**Implementation Priority:**
+1. Start with Option 2 (interface name matching) - simplest, no external dependencies
+2. Add Option 1 (OLSR interface query) when routing adapter is implemented
+3. Consider Option 3 (AREDN sysinfo) for maximum accuracy in Phase 3
+
+**Enhanced hop_result schema with link type:**
+```json
+{
+  "schema": "meshmon.v1",
+  "type": "hop_result",
+  "src": "node-A",
+  "dst": "node-K",
+  "sent_at": "2025-09-29T18:41:05Z",
+  "hops": [
+    {
+      "seq": 0,
+      "node": "node-A",
+      "interface": "wlan0",
+      "link_type": "RF",
+      "to_next": {
+        "ip": "10.0.0.4",
+        "lq": 0.92,
+        "nlq": 0.89,
+        "etx": 1.19,
+        "rtt_ms": 12.3
+      }
+    },
+    {
+      "seq": 1,
+      "node": "node-D",
+      "interface": "tun50",
+      "link_type": "tunnel",
+      "to_next": {
+        "ip": "172.16.50.8",
+        "lq": 1.0,
+        "nlq": 1.0,
+        "etx": 1.0,
+        "rtt_ms": 45.2
+      }
+    },
+    {
+      "seq": 2,
+      "node": "node-H",
+      "interface": "wlan0",
+      "link_type": "RF",
+      "to_next": {
+        "ip": "10.0.0.11",
+        "lq": 0.67,
+        "nlq": 0.72,
+        "etx": 2.15,
+        "rtt_ms": 28.7
+      }
+    }
+  ]
+}
+```
+
+**Bottleneck Analysis Benefits:**
+- RF links with high ETX (>2.0) → Check antenna alignment, interference
+- Tunnel links with high RTT → Check Internet backhaul quality
+- Mixed path quality → Identify which technology is causing issues
+
+### 7.4 Hop-by-Hop Bottleneck Identification
+
+**Goal:** Isolate which specific hop in a multi-hop path is causing performance degradation.
+
+**Data Collection:**
+
+Each probe window collects:
+1. **End-to-end metrics** → `path_result` message (RTT, jitter, loss for full path)
+2. **Per-hop metrics** → `hop_result` message (RTT, LQ/NLQ/ETX for each hop)
+
+**Analysis Approach:**
+
+```c
+// Agent calculates per-hop contribution to total RTT
+typedef struct {
+    int hop_index;
+    char node[32];
+    float rtt_ms;              // RTT to this hop
+    float rtt_contribution_pct; // % of total path RTT
+    float lq, nlq, etx;
+    char link_type[16];
+    bool is_bottleneck;        // Flagged if contribution > 40%
+} hop_analysis_t;
+
+// Example calculation:
+// Path A→D→H→K: Total RTT = 86.2 ms
+// Hop A→D: 12.3 ms (14% contribution)
+// Hop D→H: 45.2 ms (52% contribution) ← BOTTLENECK
+// Hop H→K: 28.7 ms (33% contribution)
+```
+
+**Bottleneck Detection Rules:**
+
+1. **High RTT Contribution** - Hop contributes >40% of total path RTT
+2. **High ETX** - ETX > 2.0 indicates poor link quality
+3. **High Loss on Hop** - Requires ICMP probe to each hop (optional, expensive)
+4. **Asymmetric Quality** - Large difference between LQ and NLQ
+
+**Agent Data Collection:**
+
+Agent collects raw per-hop metrics and stores in memory (circular buffer, last 10-20 probe windows):
+
+```c
+typedef struct {
+    char dst_node[32];
+    time_t timestamp;
+    float end_to_end_rtt_ms;
+    float end_to_end_jitter_ms;
+    float end_to_end_loss_pct;
+    int hop_count;
+    struct {
+        char node[32];
+        char interface[16];
+        char link_type[16];
+        float rtt_ms;
+        float lq, nlq, etx;
+    } hops[MAX_HOPS];
+} probe_result_t;
+```
+
+**Local CGI Access:**
+
+`GET /cgi-bin/network` returns raw network performance data (same format sent to collector):
+
+```json
+{
+  "schema": "meshmon.v1",
+  "node": "node-A",
+  "timestamp": "2025-09-29T18:45:00Z",
+  "recent_probes": [
+    {
+      "dst": "node-K",
+      "probed_at": "2025-09-29T18:44:00Z",
+      "path_result": {
+        "rtt_ms_avg": 86.2,
+        "jitter_ms": 15.3,
+        "loss_pct": 2.1
+      },
+      "hop_result": {
+        "hops": [
+          {
+            "seq": 0,
+            "node": "node-A",
+            "interface": "wlan0",
+            "link_type": "RF",
+            "to_next": {"ip": "10.0.0.4", "lq": 0.92, "nlq": 0.89, "etx": 1.19, "rtt_ms": 12.3}
+          },
+          {
+            "seq": 1,
+            "node": "node-D",
+            "interface": "tun50",
+            "link_type": "tunnel",
+            "to_next": {"ip": "172.16.50.8", "lq": 1.0, "nlq": 1.0, "etx": 1.0, "rtt_ms": 45.2}
+          },
+          {
+            "seq": 2,
+            "node": "node-H",
+            "interface": "wlan0",
+            "link_type": "RF",
+            "to_next": {"ip": "10.0.0.11", "lq": 0.67, "nlq": 0.72, "etx": 2.15, "rtt_ms": 28.7}
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+**Remote Reporting:**
+
+Same data sent to collector as `path_result` and `hop_result` messages (meshmon.v1 schema).
+
+**Analysis Done by Backend:**
+
+Backend collector analyzes raw data to:
+- Calculate RTT contribution percentages
+- Flag bottleneck hops (>40% contribution, ETX >2.0)
+- Aggregate patterns across multiple nodes
+- Generate summaries and actionable alerts
+- Provide user-facing interpretations with visual indicators
 
 ---
 
 ## 9) Implementation Phases
 
-### Phase 1: Foundation (Week 1-2)
+### Phase 1: Foundation
 - [ ] Create mesh_monitor module structure
 - [ ] Implement routing adapter (OLSR first)
 - [ ] Basic probe engine (ping-like)
 - [ ] Simple loss/RTT metrics
 
-### Phase 2: Integration (Week 3)
+### Phase 2: Integration
 - [ ] Wire into existing threads
 - [ ] Shared configuration parsing
 - [ ] Enhanced showphonebook endpoint
 - [ ] Memory pool sharing
 
-### Phase 3: Advanced Features (Week 4)
+### Phase 3: Advanced Features
 - [ ] RFC3550 jitter calculation
 - [ ] Hop-by-hop analysis
 - [ ] Quality correlation with SIP
 - [ ] Historical trending
 
-### Phase 4: Testing & Optimization (Week 5)
+### Phase 4: Testing & Optimization
 - [ ] Field testing on real AREDN network
 - [ ] Memory optimization
 - [ ] Flash write minimization
@@ -527,77 +932,93 @@ IF (Flash writes > 100/hour) THEN
 
 ## 12) Testing Strategy
 
-### 12.1 Unit Tests
+### 12.1 Unit Tests (Local CGI Scripts)
+
+All monitoring functionality is testable locally via CGI endpoints without requiring a backend collector:
+
+```bash
+# Test health monitoring
+curl http://node.local.mesh/cgi-bin/health
+
+# Test network performance
+curl http://node.local.mesh/cgi-bin/network
+
+# Test crash reporting
+curl http://node.local.mesh/cgi-bin/crash
+
+# Test phonebook integration
+curl http://node.local.mesh/cgi-bin/showphonebook
+```
+
+**Validation:**
 - RFC3550 jitter calculator with test vectors
-- JSON marshalling/unmarshalling
+- JSON output schema validation
 - Routing parser with OLSR/Babel fixtures
 - Memory pool management
+- Thread responsiveness checks
+- Crash signal handler behavior
 
-### 12.2 Integration Tests
-- Combined phonebook + monitoring operation
-- Resource limit enforcement
-- Degradation mode transitions
-- Flash write budgeting
+### 12.2 Remote Reporting Tests (No Backend Required)
+
+Test remote reporting functionality without implementing the full collector backend:
+
+**Option 1: Simple HTTP Echo Server**
+```bash
+# On test machine, run simple receiver
+nc -l -p 5000 | tee received_messages.json
+```
+
+**Option 2: Minimal Python Test Collector**
+```python
+#!/usr/bin/env python3
+# test_collector.py - Validates agent messages without storage
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+
+class TestCollector(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers['Content-Length'])
+        body = self.rfile.read(length)
+
+        # Validate JSON schema
+        try:
+            data = json.loads(body)
+            assert data.get('schema') == 'meshmon.v1'
+            print(f"✓ Valid {data.get('type')} from {data.get('node', data.get('src'))}")
+            self.send_response(200)
+        except Exception as e:
+            print(f"✗ Invalid message: {e}")
+            self.send_response(400)
+
+        self.end_headers()
+
+HTTPServer(('0.0.0.0', 5000), TestCollector).serve_forever()
+```
+
+**Option 3: Log File Analysis**
+```bash
+# Configure agent to log POST bodies before sending
+tail -f /tmp/meshmon_outgoing.log | jq .
+
+# Validate message schemas
+grep '"schema":"meshmon.v1"' /tmp/meshmon_outgoing.log | jq '.type' | sort | uniq -c
+```
+
+**Test scenarios:**
+- Agent starts with `remote_enabled=1`, collector URL configured
+- Verify agent_health messages sent at configured interval
+- Verify path_result messages sent when probing enabled
+- Verify crash_report messages after simulated crash
+- Test exponential backoff when collector unreachable
+- Verify message queue behavior during network partition
 
 ### 12.3 Field Validation
 - Deploy to 3+ node test network
-- Verify no impact on voice calls
-- Measure actual resource usage
-- Stress test with poor links
-
----
-
-## 13) Documentation Updates
-
-### 13.1 User Documentation
-- New configuration options in README
-- Mesh quality endpoint usage
-- Troubleshooting guide updates
-- Performance tuning guide
-
-### 13.2 Developer Documentation
-- Module API reference
-- Integration guide for custom collectors
-- Protocol specifications
-- Build instructions for monitoring
-
----
-
-## 14) Success Metrics
-
-### 14.1 Functional Success
-- ✅ Phonebook operation unaffected
-- ✅ <5% CPU overhead with monitoring
-- ✅ Quality metrics match iperf3/ping
-- ✅ Correlation identifies real issues
-
-### 14.2 Emergency Resilience
-- ✅ Degrades gracefully under load
-- ✅ Survives routing daemon failures
-- ✅ Self-heals from probe hangs
-- ✅ Maintains backward compatibility
-
----
-
-## 15) Future Roadmap
-
-### v1.1 Features
-- mDNS peer discovery
-- Grafana dashboard templates
-- SNMP export option
-- Mesh topology visualization
-
-### v1.2 Features
-- Machine learning anomaly detection
-- Predictive failure warnings
-- Automatic rerouting suggestions
-- Band steering optimization
-
-### Long-term Vision
-- Full network observability platform
-- Integration with Winlink gateways
-- Federal emergency system compatibility
-- Satellite backup coordination
+- Verify no impact on voice calls during active monitoring
+- Measure actual CPU/memory resource usage
+- Stress test with deliberately degraded links
+- Validate local CGI access during mesh partition
+- Test behavior when collector temporarily offline
 
 ---
 
@@ -621,11 +1042,17 @@ Phonebook/
 │       └── monitor_config.c
 ├── files/
 │   ├── etc/
-│   │   └── sipserver.conf        (enhanced)
+│   │   ├── sipserver.conf        (enhanced)
+│   │   └── config/
+│   │       └── meshmon           (NEW - UCI config)
 │   └── www/
 │       └── cgi-bin/
-│           ├── meshquality       (NEW CGI script)
-│           └── healthstatus      (NEW CGI script)
+│           ├── loadphonebook     (existing - trigger fetch)
+│           ├── showphonebook     (existing - show entries)
+│           ├── health            (NEW - phonebook health status)
+│           ├── network           (NEW - network performance)
+│           ├── crash             (NEW - crash reports)
+│           └── connectioncheck   (NEW - on-demand probe trigger)
 └── Makefile                       (updated dependencies)
 ```
 

@@ -1,17 +1,26 @@
-# 📞 AREDN Phonebook
+# 📞 AREDN Phonebook with Mesh Monitoring
 
-> 🎯 **Emergency-Ready SIP Directory Service for Amateur Radio Mesh Networks**
+> 🎯 **Emergency-Ready SIP Directory Service + Network Quality Monitoring for Amateur Radio Mesh Networks**
 
-AREDN Phonebook is a SIP server that provides directory services for Amateur Radio Emergency Data Network (AREDN) mesh networks. During normal times, it automatically fetches a phonebook from common servers and maintains a copy on the router, making it easy for SIP phones to access directory listings across the mesh network. The router stores this phonebook so the latest copied version is always available.
+AREDN Phonebook is a SIP proxy server that provides directory services and optional network monitoring for Amateur Radio Emergency Data Network (AREDN) mesh networks. It automatically fetches and maintains a phonebook from mesh servers, while optionally monitoring network quality to help identify issues before they affect emergency communications.
 
-## ✨ Features
+## ✨ Core Features
 
+### 📞 Phonebook Services
 - 🔄 **Automatic Directory Updates**: Downloads phonebook from mesh servers every 30 minutes
 - 🛡️ **Emergency Resilience**: Survives power outages with persistent storage
 - 💾 **Flash-Friendly**: Minimizes writes to preserve router memory
 - 🔌 **Plug-and-Play**: Works immediately after installation
 - 📱 **Phone Integration**: Provides XML directory for SIP phones (tested with Yealink)
 - 🔧 **Passive Safety**: Self-healing with automatic error recovery
+
+### 📡 Network Monitoring (Optional)
+- 📊 **Network Status**: RTT, jitter, packet loss measurements
+- 🔍 **Link Technology Detection**: Identifies RF vs tunnel links
+- 🏥 **Health Monitoring**: Tracks software health, crashes, memory usage
+- 🌐 **Local Access**: CGI endpoints for on-node diagnostics
+- 📤 **Remote Reporting**: Optional centralized monitoring via collector
+- ⚡ **Event-Driven**: Reports immediately on problems, baseline every 4 hours
 
 ## 📦 Installation
 
@@ -55,21 +64,23 @@ Configure your SIP phone to use the node's directory:
 2. 📡 **SIP Server**: `localnode.local.mesh`
 3. 🔄 **Refresh**: Directory updates automatically every xx seconds from router (your Update Time Interval)
 
-## 🔗 Webhook Endpoints
+## 🔗 CGI Endpoints
 
-### 🔄 Load Phonebook (Manual Refresh)
-- 🌐 **URL**: `http://[your-node].local.mesh/cgi-bin/loadphonebook`
-- 📡 **Method**: GET
-- ⚡ **Function**: Triggers immediate phonebook reload
-- 📋 **Response**: JSON with status and timestamp
-- 🎯 **Use Case**: Manual refresh, testing, emergency situations
+### 📞 Phonebook Endpoints
+- **`/cgi-bin/loadphonebook`** (GET): Triggers immediate phonebook reload
+- **`/cgi-bin/showphonebook`** (GET): Returns current phonebook as JSON
 
-### 📊 Show Phonebook (API Access)
-- 🌐 **URL**: `http://[your-node].local.mesh/cgi-bin/showphonebook`
-- 📡 **Method**: GET
-- 📖 **Function**: Returns current phonebook contents as JSON
-- 📋 **Response**: JSON with entry count, last updated time, and full contact list
-- 🎯 **Use Case**: Integration with other tools, status checking
+### 📡 Monitoring Endpoints (Optional)
+- **`/cgi-bin/health`** (GET): Phonebook health status (CPU, memory, threads, SIP service)
+- **`/cgi-bin/network`** (GET): Network performance data (RTT, jitter, loss, hop analysis)
+- **`/cgi-bin/crash`** (GET): Crash history (last 5 crashes with stack traces)
+- **`/cgi-bin/connectioncheck?target=node-name`** (GET): Query connectivity to specific node
+
+**Example:**
+```bash
+curl http://localnode.local.mesh/cgi-bin/health
+curl http://localnode.local.mesh/cgi-bin/network
+```
 
 ## 🔧 Troubleshooting
 
@@ -99,10 +110,15 @@ curl http://localhost/arednstack/phonebook_generic_direct.xml
 - 🧵 **Multi-threaded**: Background fetching doesn't affect SIP performance
 - 🔧 **Auto-healing**: Recovers from network failures and corrupt data
 
+## 📚 Documentation
+
+- 📄 **Phonebook FSD**: [`docs/AREDN-phonebook-fsd.md`](docs/AREDN-phonebook-fsd.md) - Original phonebook implementation
+- 📄 **Monitoring FSD**: [`docs/AREDN-Phonebook-With-Monitoring-FSD.md`](docs/AREDN-Phonebook-With-Monitoring-FSD.md) - Agent implementation with monitoring
+- 🏗️ **Architecture**: [`docs/AREDNmon-Architecture.md`](docs/AREDNmon-Architecture.md) - System architecture and collector design
+
 ## 🆘 Support
 
 - 🐛 **Issues**: [GitHub Issues](https://github.com/dhamstack/AREDN-Phonebook/issues)
-- 📚 **Documentation**: [Functional Specification](AREDN-phonebook-fsd.md)
 - 🌐 **AREDN Community**: [AREDN Forums](https://www.arednmesh.org/)
 
 ## 📄 License
