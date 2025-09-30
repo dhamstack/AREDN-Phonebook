@@ -413,13 +413,18 @@ void record_fetch_error(const char* error_details) {
     record_error_event("fetch", error_details);
 }
 
+// Internal version without mutex (caller must hold mutex)
+static int get_hourly_error_rate_locked(void) {
+    return g_error_tracker.sip_errors_per_hour +
+           g_error_tracker.fetch_failures_per_hour +
+           g_error_tracker.probe_failures_per_hour;
+}
+
 int get_hourly_error_rate(void) {
     if (!health_enabled) return 0;
 
     pthread_mutex_lock(&g_health_mutex);
-    int total_errors = g_error_tracker.sip_errors_per_hour +
-                      g_error_tracker.fetch_failures_per_hour +
-                      g_error_tracker.probe_failures_per_hour;
+    int total_errors = get_hourly_error_rate_locked();
     pthread_mutex_unlock(&g_health_mutex);
 
     return total_errors;
@@ -484,7 +489,8 @@ float calculate_health_score(void) {
     }
 
     // Deduct for high error rates (1 point per error per hour)
-    score -= get_hourly_error_rate();
+    // Note: Use locked version since caller already holds mutex
+    score -= get_hourly_error_rate_locked();
 
     return fmax_simple(0.0, score);
 }
