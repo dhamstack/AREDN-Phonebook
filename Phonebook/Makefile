@@ -50,6 +50,11 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/passive_safety/passive_safety.c \
 		$(PKG_BUILD_DIR)/software_health/software_health.c \
 		$(PKG_BUILD_DIR)/debug_logger/debug_logger.c \
+		$(PKG_BUILD_DIR)/mesh_monitor/mesh_monitor.c \
+		$(PKG_BUILD_DIR)/mesh_monitor/monitor_config.c \
+		$(PKG_BUILD_DIR)/mesh_monitor/routing_adapter.c \
+		$(PKG_BUILD_DIR)/mesh_monitor/probe_engine.c \
+		$(PKG_BUILD_DIR)/mesh_monitor/health_reporter.c \
 		-lpthread
 endef
 
@@ -63,9 +68,9 @@ define Package/aredn-phonebook/install
 	$(INSTALL_DIR) $(1)/www/cgi-bin
 	$(INSTALL_BIN) ./files/www/cgi-bin/loadphonebook $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/showphonebook $(1)/www/cgi-bin/
-	$(INSTALL_BIN) ./files/www/cgi-bin/healthcheck $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/health $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/crash $(1)/www/cgi-bin/
+	$(INSTALL_BIN) ./files/www/cgi-bin/network $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/version $(1)/www/cgi-bin/
 endef
 

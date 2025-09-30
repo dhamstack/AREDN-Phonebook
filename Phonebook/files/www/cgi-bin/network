@@ -1,0 +1,14 @@
+#!/bin/sh
+# CGI script to serve network monitoring data
+# Returns /tmp/meshmon_network.json if available
+
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache"
+echo ""
+
+if [ ! -f "/tmp/meshmon_network.json" ]; then
+    echo '{"error":"Network monitoring data not available"}'
+    exit 1
+fi
+
+cat /tmp/meshmon_network.json

@@ -13,6 +13,7 @@
 #include "call-sessions/call_sessions.h" // For call session management functions
 #include "passive_safety/passive_safety.h" // For passive safety and self-healing
 #include "software_health/software_health.h" // For software health monitoring
+#include "mesh_monitor/mesh_monitor.h"  // For mesh network monitoring
 
 // Define MODULE_NAME specific to main.c
 #define MODULE_NAME "MAIN"
@@ -93,6 +94,20 @@ int main(int argc, char *argv[]) {
         LOG_INFO("Initial health state exported to /tmp/meshmon_health.json");
     } else {
         LOG_INFO("Software health monitoring disabled by configuration");
+    }
+
+    // --- Initialize mesh network monitoring (optional) ---
+    static pthread_t mesh_monitor_tid = 0;
+    if (mesh_monitor_init(NULL) == 0) {
+        if (is_mesh_monitor_enabled()) {
+            LOG_INFO("Starting mesh monitor thread...");
+            if (pthread_create(&mesh_monitor_tid, NULL, mesh_monitor_thread, NULL) != 0) {
+                LOG_ERROR("Failed to create mesh monitor thread");
+                mesh_monitor_shutdown();
+            } else {
+                LOG_INFO("Mesh monitor thread started successfully");
+            }
+        }
     }
 
     // --- Passive Safety: Self-correct configuration ---

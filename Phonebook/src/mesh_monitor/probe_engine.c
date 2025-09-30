@@ -186,22 +186,133 @@ void* probe_responder_thread(void *arg) {
     return NULL;
 }
 
+// Calculate RTT, jitter, and packet loss from probe responses (RFC3550)
 int calculate_probe_metrics(const char *dst_ip, probe_result_t *result) {
     if (!dst_ip || !result) return -1;
-
-    // TODO: Implement RFC3550 metric calculation
-    // This is a stub that returns placeholder values
-    LOG_DEBUG("Calculating probe metrics for %s (stub implementation)", dst_ip);
 
     memset(result, 0, sizeof(probe_result_t));
     strncpy(result->dst_ip, dst_ip, sizeof(result->dst_ip) - 1);
     result->timestamp = time(NULL);
 
-    // Placeholder values
-    result->rtt_ms_avg = 0.0;
-    result->jitter_ms = 0.0;
-    result->loss_pct = 0.0;
-    result->hop_count = 0;
+    // Collect responses from probe socket (with timeout)
+    char buffer[1024];
+    struct sockaddr_in src_addr;
+    socklen_t addr_len = sizeof(src_addr);
+    struct timeval timeout;
+    fd_set readfds;
+
+    float rtt_samples[MAX_PENDING_PROBES];
+    int rtt_count = 0;
+    int expected_responses = 0;
+
+    pthread_mutex_lock(&pending_mutex);
+    expected_responses = pending_probe_count;
+    pthread_mutex_unlock(&pending_mutex);
+
+    if (expected_responses == 0) {
+        LOG_DEBUG("No pending probes to calculate metrics for");
+        return -1;
+    }
+
+    // Wait for responses (100ms timeout per probe)
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 100000;
+
+    for (int attempts = 0; attempts < 50 && rtt_count < expected_responses; attempts++) {
+        FD_ZERO(&readfds);
+        FD_SET(probe_socket, &readfds);
+
+        int ready = select(probe_socket + 1, &readfds, NULL, NULL, &timeout);
+        if (ready <= 0) {
+            continue;  // Timeout or error
+        }
+
+        ssize_t n = recvfrom(probe_socket, buffer, sizeof(buffer), 0,
+                             (struct sockaddr *)&src_addr, &addr_len);
+
+        if (n < sizeof(probe_packet_t)) {
+            continue;  // Invalid packet
+        }
+
+        probe_packet_t *response = (probe_packet_t *)buffer;
+        struct timeval recv_time;
+        gettimeofday(&recv_time, NULL);
+
+        uint32_t seq = ntohl(response->sequence);
+        uint32_t sent_sec = ntohl(response->timestamp_sec);
+        uint32_t sent_usec = ntohl(response->timestamp_usec);
+
+        // Find matching pending probe
+        pthread_mutex_lock(&pending_mutex);
+        for (int i = 0; i < pending_probe_count; i++) {
+            if (pending_probes[i].sequence == seq &&
+                strcmp(pending_probes[i].dst_ip, dst_ip) == 0) {
+
+                // Calculate RTT in milliseconds
+                long sec_diff = recv_time.tv_sec - sent_sec;
+                long usec_diff = recv_time.tv_usec - sent_usec;
+                float rtt_ms = (sec_diff * 1000.0) + (usec_diff / 1000.0);
+
+                if (rtt_ms >= 0 && rtt_ms < 10000.0) {  // Sanity check (< 10 seconds)
+                    rtt_samples[rtt_count++] = rtt_ms;
+                }
+                break;
+            }
+        }
+        pthread_mutex_unlock(&pending_mutex);
+    }
+
+    // Calculate packet loss percentage
+    if (expected_responses > 0) {
+        result->loss_pct = 100.0 * (1.0 - ((float)rtt_count / (float)expected_responses));
+    } else {
+        result->loss_pct = 100.0;
+    }
+
+    // Calculate average RTT
+    if (rtt_count > 0) {
+        float rtt_sum = 0.0;
+        for (int i = 0; i < rtt_count; i++) {
+            rtt_sum += rtt_samples[i];
+        }
+        result->rtt_ms_avg = rtt_sum / rtt_count;
+
+        // Calculate jitter (RFC3550 Section 6.4.1 - interarrival jitter)
+        // Simplified: standard deviation of RTT differences
+        if (rtt_count > 1) {
+            float jitter_sum = 0.0;
+            for (int i = 1; i < rtt_count; i++) {
+                float diff = rtt_samples[i] - rtt_samples[i-1];
+                jitter_sum += (diff < 0 ? -diff : diff);  // Absolute difference
+            }
+            result->jitter_ms = jitter_sum / (rtt_count - 1);
+        } else {
+            result->jitter_ms = 0.0;
+        }
+    } else {
+        result->rtt_ms_avg = 0.0;
+        result->jitter_ms = 0.0;
+        result->loss_pct = 100.0;
+    }
+
+    // Clear pending probes for this destination
+    pthread_mutex_lock(&pending_mutex);
+    int write_idx = 0;
+    for (int read_idx = 0; read_idx < pending_probe_count; read_idx++) {
+        if (strcmp(pending_probes[read_idx].dst_ip, dst_ip) != 0) {
+            if (write_idx != read_idx) {
+                pending_probes[write_idx] = pending_probes[read_idx];
+            }
+            write_idx++;
+        }
+    }
+    pending_probe_count = write_idx;
+    pthread_mutex_unlock(&pending_mutex);
+
+    // Log results
+    LOG_DEBUG("Probe metrics for %s: RTT=%.2fms, Jitter=%.2fms, Loss=%.1f%% (%d/%d)",
+              dst_ip, result->rtt_ms_avg, result->jitter_ms, result->loss_pct,
+              rtt_count, expected_responses);
 
     return 0;
 }

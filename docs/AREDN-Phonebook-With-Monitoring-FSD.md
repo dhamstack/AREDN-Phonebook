@@ -1,4 +1,4 @@
-# AREDN Phonebook Enhanced — Functional Specification v1.0
+# AREDN Phonebook — Functional Specification
 ## With Integrated Mesh Quality Monitoring
 
 **Audience:** C developers and AREDN network operators

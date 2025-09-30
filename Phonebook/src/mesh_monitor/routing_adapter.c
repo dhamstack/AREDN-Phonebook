@@ -6,6 +6,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <errno.h>
+
+#define OLSR_JSONINFO_HOST "127.0.0.1"
+#define OLSR_JSONINFO_PORT 9090
+#define HTTP_TIMEOUT_SEC 5
+#define HTTP_BUFFER_SIZE 65536
 
 static routing_daemon_t current_daemon = ROUTING_AUTO;
 static bool adapter_initialized = false;
@@ -64,12 +74,189 @@ void routing_adapter_shutdown(void) {
     LOG_INFO("Routing adapter shutdown");
 }
 
+// Simple HTTP GET request to OLSR jsoninfo
+static int http_get_olsr_jsoninfo(const char *endpoint, char *buffer, size_t buffer_size) {
+    int sockfd;
+    struct sockaddr_in serv_addr;
+    struct timeval timeout;
+    char request[512];
+    ssize_t bytes_received = 0;
+
+    // Create socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        LOG_ERROR("Failed to create socket for OLSR jsoninfo: %s", strerror(errno));
+        return -1;
+    }
+
+    // Set receive timeout
+    timeout.tv_sec = HTTP_TIMEOUT_SEC;
+    timeout.tv_usec = 0;
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    // Setup server address
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(OLSR_JSONINFO_PORT);
+
+    if (inet_pton(AF_INET, OLSR_JSONINFO_HOST, &serv_addr.sin_addr) <= 0) {
+        LOG_ERROR("Invalid OLSR jsoninfo address");
+        close(sockfd);
+        return -1;
+    }
+
+    // Connect to server
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        LOG_DEBUG("Failed to connect to OLSR jsoninfo (daemon may not be running): %s", strerror(errno));
+        close(sockfd);
+        return -1;
+    }
+
+    // Send HTTP GET request
+    snprintf(request, sizeof(request),
+             "GET /%s HTTP/1.0\r\n"
+             "Host: %s\r\n"
+             "Connection: close\r\n\r\n",
+             endpoint, OLSR_JSONINFO_HOST);
+
+    if (send(sockfd, request, strlen(request), 0) < 0) {
+        LOG_ERROR("Failed to send HTTP request: %s", strerror(errno));
+        close(sockfd);
+        return -1;
+    }
+
+    // Read response
+    memset(buffer, 0, buffer_size);
+    bytes_received = recv(sockfd, buffer, buffer_size - 1, 0);
+
+    close(sockfd);
+
+    if (bytes_received < 0) {
+        LOG_ERROR("Failed to receive HTTP response: %s", strerror(errno));
+        return -1;
+    }
+
+    buffer[bytes_received] = '\0';
+
+    // Find start of JSON (after HTTP headers)
+    char *json_start = strstr(buffer, "\r\n\r\n");
+    if (json_start) {
+        json_start += 4;
+        memmove(buffer, json_start, strlen(json_start) + 1);
+    } else {
+        json_start = strstr(buffer, "\n\n");
+        if (json_start) {
+            json_start += 2;
+            memmove(buffer, json_start, strlen(json_start) + 1);
+        }
+    }
+
+    return 0;
+}
+
+// Simple JSON parser for OLSR neighbors (no external JSON library)
+static int parse_olsr_neighbors_json(const char *json, neighbor_info_t *neighbors, int max_neighbors) {
+    int count = 0;
+    const char *pos = json;
+
+    // Look for "neighbors" array in JSON
+    const char *neighbors_array = strstr(pos, "\"neighbors\"");
+    if (!neighbors_array) {
+        LOG_DEBUG("No neighbors array found in OLSR response");
+        return 0;
+    }
+
+    // Find the opening bracket of the array
+    const char *array_start = strchr(neighbors_array, '[');
+    if (!array_start) {
+        LOG_DEBUG("Malformed neighbors array");
+        return 0;
+    }
+
+    pos = array_start + 1;
+
+    // Parse each neighbor object
+    while (count < max_neighbors && pos && *pos) {
+        // Look for IP address field
+        const char *ip_field = strstr(pos, "\"ipAddress\"");
+        if (!ip_field) {
+            ip_field = strstr(pos, "\"neighborIP\"");
+        }
+        if (!ip_field) break;
+
+        // Find the value after the colon
+        const char *value_start = strchr(ip_field, ':');
+        if (!value_start) break;
+        value_start++;
+
+        // Skip whitespace and quote
+        while (*value_start == ' ' || *value_start == '\t' || *value_start == '"') {
+            value_start++;
+        }
+
+        // Extract IP address
+        char ip_buffer[16] = {0};
+        int i = 0;
+        while (i < 15 && *value_start && *value_start != '"' && *value_start != ',' && *value_start != '}') {
+            ip_buffer[i++] = *value_start++;
+        }
+        ip_buffer[i] = '\0';
+
+        // Validate and store IP
+        struct in_addr addr;
+        if (inet_pton(AF_INET, ip_buffer, &addr) == 1) {
+            strncpy(neighbors[count].ip, ip_buffer, sizeof(neighbors[count].ip) - 1);
+            neighbors[count].ip[sizeof(neighbors[count].ip) - 1] = '\0';
+
+            // Try to extract node name (hostname) if available
+            const char *hostname_field = strstr(pos, "\"hostname\"");
+            if (hostname_field && hostname_field < pos + 500) {  // Within same object
+                const char *name_start = strchr(hostname_field, ':');
+                if (name_start) {
+                    name_start++;
+                    while (*name_start == ' ' || *name_start == '\t' || *name_start == '"') {
+                        name_start++;
+                    }
+                    int j = 0;
+                    while (j < 63 && *name_start && *name_start != '"' && *name_start != ',') {
+                        neighbors[count].node_name[j++] = *name_start++;
+                    }
+                    neighbors[count].node_name[j] = '\0';
+                }
+            }
+
+            // If no hostname, use IP as node name
+            if (neighbors[count].node_name[0] == '\0') {
+                strncpy(neighbors[count].node_name, ip_buffer, sizeof(neighbors[count].node_name) - 1);
+            }
+
+            // Default interface (OLSR doesn't always provide this easily)
+            strncpy(neighbors[count].interface, "unknown", sizeof(neighbors[count].interface) - 1);
+
+            count++;
+        }
+
+        // Move to next object
+        pos = strchr(pos, '}');
+        if (pos) pos++;
+    }
+
+    LOG_DEBUG("Parsed %d neighbors from OLSR jsoninfo", count);
+    return count;
+}
+
 // Parse OLSR jsoninfo neighbors endpoint
 static int get_olsr_neighbors(neighbor_info_t *neighbors, int max_neighbors) {
-    // TODO: Implement actual HTTP query to http://127.0.0.1:9090/neighbors
-    // For now, return 0 neighbors (stub implementation)
-    LOG_DEBUG("OLSR neighbor query (stub implementation)");
-    return 0;
+    static char http_buffer[HTTP_BUFFER_SIZE];
+
+    // Query OLSR jsoninfo neighbors endpoint
+    if (http_get_olsr_jsoninfo("neighbors", http_buffer, sizeof(http_buffer)) != 0) {
+        LOG_DEBUG("Failed to query OLSR neighbors");
+        return 0;
+    }
+
+    // Parse JSON response
+    return parse_olsr_neighbors_json(http_buffer, neighbors, max_neighbors);
 }
 
 // Parse Babel control socket

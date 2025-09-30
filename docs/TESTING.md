@@ -8,10 +8,14 @@
 - Crash reporting to `/tmp/meshmon_crashes.json`
 - CGI endpoints: `/cgi-bin/health`, `/cgi-bin/crash`
 
-### 🚧 Phase 1: Network Monitoring (Foundation Complete, Not Integrated)
-- Mesh monitor module structure created
-- Configuration parser, routing adapter, probe engine implemented
-- **Not yet integrated into build** - requires Makefile updates
+### ✅ Phase 1: Network Monitoring (Complete and Integrated)
+- Mesh monitor module fully implemented
+- Configuration parser, routing adapter, probe engine complete
+- OLSR jsoninfo HTTP client implemented
+- RFC3550 metrics calculation (RTT, jitter, packet loss)
+- Network JSON export to `/tmp/meshmon_network.json`
+- CGI endpoint: `/cgi-bin/network`
+- **Integrated into build** - ready for testing
 
 ## Testing Phase 0 (Software Health - Currently Deployed)
 
@@ -165,43 +169,13 @@ logread | grep "CRASH DETECTED"
 ]
 ```
 
-## Testing Phase 1 (Network Monitoring - NOT YET INTEGRATED)
+## Testing Phase 1 (Network Monitoring - INTEGRATED)
 
-⚠️ **Phase 1 code exists but is not integrated into the build yet.**
+✅ **Phase 1 is now fully integrated and ready for testing.**
 
-To enable Phase 1 for testing, you need to:
+### 1. Configuration
 
-### 1. Update Makefile
-
-Add mesh_monitor source files to the build:
-
-```makefile
-# Edit Phonebook/Makefile, add to Build/Compile section:
-$(PKG_BUILD_DIR)/mesh_monitor/mesh_monitor.c \
-$(PKG_BUILD_DIR)/mesh_monitor/monitor_config.c \
-$(PKG_BUILD_DIR)/mesh_monitor/routing_adapter.c \
-$(PKG_BUILD_DIR)/mesh_monitor/probe_engine.c \
-```
-
-### 2. Wire into main.c
-
-```c
-// Add to main.c includes:
-#include "mesh_monitor/mesh_monitor.h"
-
-// Add after software_health_init():
-mesh_monitor_config_t monitor_config;
-if (mesh_monitor_init(&monitor_config) == 0) {
-    if (is_mesh_monitor_enabled()) {
-        pthread_t monitor_tid;
-        pthread_create(&monitor_tid, NULL, mesh_monitor_thread, NULL);
-    }
-}
-```
-
-### 3. Add Configuration
-
-Edit `/etc/sipserver.conf`:
+Edit `/etc/sipserver.conf` and add the mesh_monitor section:
 
 ```ini
 [mesh_monitor]
@@ -214,21 +188,61 @@ probe_port = 40050
 routing_daemon = auto
 ```
 
-### 4. Test Network Monitoring (Once Integrated)
+### 2. Deploy and Restart
+
+```bash
+# Upload new ipk to router
+scp aredn-phonebook_*.ipk root@your-node.local.mesh:/tmp/
+
+# SSH to router
+ssh root@your-node.local.mesh
+
+# Install updated package
+opkg remove aredn-phonebook
+opkg install /tmp/aredn-phonebook_*.ipk
+
+# Restart service
+/etc/init.d/AREDN-Phonebook restart
+```
+
+### 3. Test Network Monitoring
 
 ```bash
 # Check if mesh monitor initialized
 logread | grep "MESH_MONITOR"
 
+# Expected output:
+# daemon.info AREDN-Phonebook[PID]: MESH_MONITOR: Initializing mesh monitor
+# daemon.info AREDN-Phonebook[PID]: MESH_MONITOR: Mesh monitor initialized successfully
+# daemon.info AREDN-Phonebook[PID]: MESH_MONITOR: Starting mesh monitor thread...
+# daemon.info AREDN-Phonebook[PID]: MESH_MONITOR: Mesh monitor thread started successfully
+
 # Check if routing daemon detected
-logread | grep "Detected.*routing daemon"
+logread | grep "ROUTING_ADAPTER"
+
+# Expected output:
+# daemon.info AREDN-Phonebook[PID]: ROUTING_ADAPTER: Detected OLSR routing daemon
 
 # Check if probe responder is running
 netstat -ulnp | grep 40050
 
-# TODO: Test probe cycle (not yet fully implemented)
-# TODO: Test OLSR integration (stub only)
-# TODO: Test metrics calculation (stub only)
+# Expected output:
+# udp        0      0 0.0.0.0:40050           0.0.0.0:*               PID/aredn-phonebook
+
+# Wait for first probe cycle (40 seconds)
+sleep 45
+
+# Check if network JSON was created
+ls -la /tmp/meshmon_network.json
+
+# View network monitoring data
+cat /tmp/meshmon_network.json | json_pp
+
+# Test network CGI endpoint
+curl http://localhost/cgi-bin/network
+
+# Test from another mesh node
+curl http://your-node.local.mesh/cgi-bin/network
 ```
 
 ## Quick Validation Checklist
@@ -243,14 +257,16 @@ netstat -ulnp | grep 40050
 - [ ] Memory usage is stable over 10 minutes
 - [ ] After restart, health state recovers
 
-### Phase 1 (Future - After Integration)
+### Phase 1 (Integrated - Ready for Testing)
 - [ ] Mesh monitor initializes without errors
 - [ ] Routing daemon (OLSR/Babel) detected
 - [ ] Probe responder listening on UDP port 40050
-- [ ] Probe cycles run every 40 seconds
-- [ ] Network metrics calculated (RTT, jitter, loss)
-- [ ] `/tmp/meshmon_network.json` created
-- [ ] `/cgi-bin/network` returns probe results
+- [ ] Probe cycles run every 40 seconds (configurable)
+- [ ] Network metrics calculated (RTT, jitter, loss per RFC3550)
+- [ ] `/tmp/meshmon_network.json` created and updates
+- [ ] `/cgi-bin/network` returns valid JSON probe results
+- [ ] OLSR jsoninfo neighbors queried successfully
+- [ ] Probe responses received and metrics accurate
 
 ## Troubleshooting
 

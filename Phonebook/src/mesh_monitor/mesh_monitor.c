@@ -4,6 +4,7 @@
 #include "monitor_config.h"
 #include "routing_adapter.h"
 #include "probe_engine.h"
+#include "health_reporter.h"
 #include "../log_manager/log_manager.h"
 #include <string.h>
 #include <unistd.h>
@@ -145,6 +146,9 @@ void* mesh_monitor_thread(void *arg) {
             } else {
                 LOG_DEBUG("No neighbors found to probe");
             }
+
+            // Export network status to JSON
+            export_network_to_json("/tmp/meshmon_network.json");
 
             last_probe_time = now;
         }
