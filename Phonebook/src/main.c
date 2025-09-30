@@ -88,10 +88,6 @@ int main(int argc, char *argv[]) {
             return EXIT_FAILURE;
         }
         LOG_INFO("Software health monitoring initialized successfully");
-
-        // Export initial health state immediately (don't wait for first periodic check)
-        export_health_to_json("/tmp/meshmon_health.json");
-        LOG_INFO("Initial health state exported to /tmp/meshmon_health.json");
     } else {
         LOG_INFO("Software health monitoring disabled by configuration");
     }
@@ -108,6 +104,12 @@ int main(int argc, char *argv[]) {
                 LOG_INFO("Mesh monitor thread started successfully");
             }
         }
+    }
+
+    // Export initial health state after mesh monitor init so routing daemon is detected
+    if (is_software_health_enabled()) {
+        export_health_to_json("/tmp/meshmon_health.json");
+        LOG_INFO("Initial health state exported to /tmp/meshmon_health.json");
     }
 
     // --- Passive Safety: Self-correct configuration ---
