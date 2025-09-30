@@ -14,13 +14,16 @@ AREDN Phonebook is a SIP proxy server that provides directory services and optio
 - 📱 **Phone Integration**: Provides XML directory for SIP phones (tested with Yealink)
 - 🔧 **Passive Safety**: Self-healing with automatic error recovery
 
-### 📡 Network Monitoring (Optional)
-- 📊 **Network Status**: RTT, jitter, packet loss measurements
-- 🔍 **Link Technology Detection**: Identifies RF vs tunnel links
-- 🏥 **Health Monitoring**: Tracks software health, crashes, memory usage
-- 🌐 **Local Access**: CGI endpoints for on-node diagnostics
-- 📤 **Remote Reporting**: Optional centralized monitoring via collector
-- ⚡ **Event-Driven**: Reports immediately on problems, baseline every 4 hours
+### 📡 Network Monitoring (Optional - Enabled by Default)
+- 📊 **Network Probing**: RFC3550-compliant RTT, jitter, packet loss measurements
+- 🛣️ **Hop-by-Hop Analysis**: Path quality metrics with ETX, LQ, NLQ per hop
+- 🔍 **Link Classification**: Identifies RF, tunnel, ethernet, bridge links
+- 🗺️ **Geographic Data**: Reports node location (lat/lon/grid square) from AREDN
+- 🖥️ **Hardware Info**: Tracks device model and firmware version
+- 🔄 **Multi-Protocol**: Supports both OLSR and Babel routing daemons
+- 🏥 **Health Monitoring**: Software health, crashes, memory, thread responsiveness
+- 🌐 **Local Access**: HTTP CGI endpoints for on-node diagnostics
+- 📊 **Standard Schema**: meshmon.v1 JSON format for easy integration
 
 ## 📦 Installation
 
@@ -70,16 +73,48 @@ Configure your SIP phone to use the node's directory:
 - **`/cgi-bin/loadphonebook`** (GET): Triggers immediate phonebook reload
 - **`/cgi-bin/showphonebook`** (GET): Returns current phonebook as JSON
 
-### 📡 Monitoring Endpoints (Optional)
-- **`/cgi-bin/health`** (GET): Phonebook health status (CPU, memory, threads, SIP service)
-- **`/cgi-bin/network`** (GET): Network performance data (RTT, jitter, loss, hop analysis)
-- **`/cgi-bin/crash`** (GET): Crash history (last 5 crashes with stack traces)
-- **`/cgi-bin/connectioncheck?target=node-name`** (GET): Query connectivity to specific node
+### 📡 Monitoring Endpoints (Enabled by Default)
+- **`/cgi-bin/health`** (GET): Agent health with location, hardware, routing daemon
+  - Returns: CPU, memory, threads, health score (0-100)
+  - Includes: lat/lon, grid square, hardware model, firmware version
+  - Reports: routing daemon (OLSR/Babel), uptime, restart count
+
+- **`/cgi-bin/network`** (GET): Network quality with hop-by-hop path analysis
+  - Returns: RTT, jitter, packet loss per neighbor
+  - Includes: Complete path reconstruction with per-hop metrics
+  - Reports: ETX, LQ, NLQ, link types (RF/tunnel/ethernet)
+
+- **`/cgi-bin/crash`** (GET): Crash history with stack traces
+  - Returns: Last 5 crashes with timestamps and signals
 
 **Example:**
 ```bash
-curl http://localnode.local.mesh/cgi-bin/health
-curl http://localnode.local.mesh/cgi-bin/network
+# Get agent health (includes geographic location)
+curl http://localnode.local.mesh/cgi-bin/health | json_pp
+
+# Get network quality (includes hop-by-hop path data)
+curl http://localnode.local.mesh/cgi-bin/network | json_pp
+
+# Get crash history
+curl http://localnode.local.mesh/cgi-bin/crash | json_pp
+```
+
+**Sample Health Response:**
+```json
+{
+  "schema": "meshmon.v1",
+  "type": "agent_health",
+  "node": "HB9BLA-HAP-2",
+  "routing_daemon": "olsr",
+  "lat": "47.123456",
+  "lon": "8.654321",
+  "grid_square": "JN47xe",
+  "hardware_model": "MikroTik RouterBOARD 952Ui-5ac2nD",
+  "firmware_version": "3.24.10.0",
+  "health_score": 100.0,
+  "cpu_pct": 2.5,
+  "mem_mb": 12.3
+}
 ```
 
 ## 🔧 Troubleshooting
@@ -113,8 +148,31 @@ curl http://localhost/arednstack/phonebook_generic_direct.xml
 ## 📚 Documentation
 
 - 📄 **Phonebook FSD**: [`docs/AREDN-phonebook-fsd.md`](docs/AREDN-phonebook-fsd.md) - Original phonebook implementation
-- 📄 **Monitoring FSD**: [`docs/AREDN-Phonebook-With-Monitoring-FSD.md`](docs/AREDN-Phonebook-With-Monitoring-FSD.md) - Agent implementation with monitoring
+- 📄 **Monitoring FSD**: [`docs/AREDN-Phonebook-With-Monitoring-FSD.md`](docs/AREDN-Phonebook-With-Monitoring-FSD.md) - Complete feature specification (Phases 0-2)
 - 🏗️ **Architecture**: [`docs/AREDNmon-Architecture.md`](docs/AREDNmon-Architecture.md) - System architecture and collector design
+- 🧪 **Testing Guide**: [`docs/TESTING.md`](docs/TESTING.md) - Comprehensive testing procedures for all features
+
+## 🎯 Implementation Status
+
+✅ **Phase 0 - Software Health** (Complete)
+- Health monitoring, crash detection, memory tracking
+- Geographic location and hardware info
+- Health scoring (0-100)
+
+✅ **Phase 1 - Network Monitoring** (Complete)
+- UDP probe engine with RFC3550 metrics
+- OLSR and Babel routing daemon support
+- Neighbor discovery and probing
+
+✅ **Phase 2 - Path Analysis** (Complete)
+- Hop-by-hop path reconstruction
+- Per-hop ETX, LQ, NLQ metrics
+- Link type classification
+
+🔜 **Future Enhancements**
+- Centralized collector for network-wide monitoring
+- Web dashboard for visualization
+- Historical trending and alerting
 
 ## 🆘 Support
 
