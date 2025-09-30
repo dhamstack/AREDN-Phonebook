@@ -725,28 +725,39 @@ void populate_agent_health(agent_health_t* health) {
     gemini_debug_log("GEMINI_DEBUG: populate_agent_health mutex acquired\n");
 
     // Schema and type
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health setting schema and type\n");
     strncpy(health->schema, "meshmon.v1", sizeof(health->schema) - 1);
     strncpy(health->type, "agent_health", sizeof(health->type) - 1);
 
     // Node identifier (get from hostname or config)
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health getting hostname\n");
     char hostname[64] = {0};
     if (gethostname(hostname, sizeof(hostname) - 1) == 0) {
         strncpy(health->node, hostname, sizeof(health->node) - 1);
     } else {
         strncpy(health->node, "unknown", sizeof(health->node) - 1);
     }
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health hostname: %s\n", health->node);
 
     // Timestamp
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health getting timestamp\n");
     get_iso8601_timestamp(health->sent_at, sizeof(health->sent_at));
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health timestamp: %s\n", health->sent_at);
 
     // System metrics
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health getting CPU usage\n");
     health->cpu_pct = get_cpu_usage_percent();
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health CPU: %.1f%%\n", health->cpu_pct);
+
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health getting memory usage\n");
     health->mem_mb = (float)(g_memory_health.current_rss) / 1024.0 / 1024.0;
     health->queue_len = 0; // TODO: Implement network probe queue tracking
     health->uptime_seconds = time(NULL) - g_process_health.process_start_time;
     health->restart_count = g_process_health.restart_count;
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health memory: %.1f MB\n", health->mem_mb);
 
     // Thread responsiveness check
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health checking thread responsiveness\n");
     health->threads_responsive = true;
     for (int i = 0; i < MAX_THREADS; i++) {
         if (g_thread_health[i].tid != 0 && !g_thread_health[i].is_responsive) {
@@ -755,7 +766,9 @@ void populate_agent_health(agent_health_t* health) {
         }
     }
 
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health calculating health score\n");
     health->health_score = calculate_health_score();
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health health score: %.1f\n", health->health_score);
 
     // Checks object
     health->checks.memory_stable = !g_memory_health.leak_suspected;
