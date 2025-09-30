@@ -675,3 +675,20 @@ static int get_babel_path_hops(const char *dst_ip, neighbor_info_t *hops, int ma
     LOG_DEBUG("Babel path to %s: %d hops", dst_ip, hop_count);
     return hop_count;
 }
+
+// Get current routing daemon name
+const char* get_routing_daemon_name(void) {
+    if (!adapter_initialized) {
+        return "none";
+    }
+
+    switch (current_daemon) {
+        case ROUTING_OLSR:
+            return "olsr";
+        case ROUTING_BABEL:
+            return "babel";
+        case ROUTING_AUTO:
+        default:
+            return "unknown";
+    }
+}

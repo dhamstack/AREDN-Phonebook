@@ -2,6 +2,7 @@
 
 #include "health_reporter.h"
 #include "mesh_monitor.h"
+#include "routing_adapter.h"
 #include "../log_manager/log_manager.h"
 #include "../common.h"
 #include <stdio.h>
@@ -68,6 +69,7 @@ int export_network_to_json(const char *filepath) {
     fprintf(fp, "  \"type\": \"network_status\",\n");
     fprintf(fp, "  \"node\": \"%s\",\n", node_name);
     fprintf(fp, "  \"sent_at\": \"%s\",\n", timestamp);
+    fprintf(fp, "  \"routing_daemon\": \"%s\",\n", get_routing_daemon_name());
     fprintf(fp, "  \"probe_count\": %d,\n", probe_count);
     fprintf(fp, "  \"probes\": [\n");
 
@@ -82,6 +84,7 @@ int export_network_to_json(const char *filepath) {
         fprintf(fp, "      \"dst_node\": \"%s\",\n", p->dst_node);
         fprintf(fp, "      \"dst_ip\": \"%s\",\n", p->dst_ip);
         fprintf(fp, "      \"timestamp\": \"%s\",\n", probe_time);
+        fprintf(fp, "      \"routing_daemon\": \"%s\",\n", p->routing_daemon);
         fprintf(fp, "      \"rtt_ms_avg\": %.2f,\n", p->rtt_ms_avg);
         fprintf(fp, "      \"jitter_ms\": %.2f,\n", p->jitter_ms);
         fprintf(fp, "      \"loss_pct\": %.2f,\n", p->loss_pct);

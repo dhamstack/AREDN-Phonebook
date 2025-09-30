@@ -79,6 +79,7 @@ typedef struct {
     char type[32];                   // "agent_health"
     char node[64];                   // Node identifier (e.g., "W6ABC-1")
     char sent_at[32];                // ISO 8601 timestamp
+    char routing_daemon[16];         // "olsr", "babel", "none", "unknown"
     float cpu_pct;                   // CPU usage percentage
     float mem_mb;                    // Memory usage in MB
     int queue_len;                   // Network probe queue length

@@ -40,4 +40,7 @@ int get_path_hops(const char *dst_ip, neighbor_info_t *hops, int max_hops);
 // Detect link type from interface name
 const char* classify_link_type(const char *interface);
 
+// Get current routing daemon name
+const char* get_routing_daemon_name(void);
+
 #endif // ROUTING_ADAPTER_H

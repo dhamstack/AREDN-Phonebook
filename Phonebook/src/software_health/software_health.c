@@ -4,6 +4,7 @@
 #include "software_health.h"
 #include "../config_loader/config_loader.h"
 #include "../log_manager/log_manager.h"
+#include "../mesh_monitor/routing_adapter.h"
 #include <signal.h>
 
 // Simple max function to avoid math library dependency
@@ -734,6 +735,9 @@ void populate_agent_health(agent_health_t* health) {
     // Timestamp
     get_iso8601_timestamp(health->sent_at, sizeof(health->sent_at));
 
+    // Routing daemon
+    strncpy(health->routing_daemon, get_routing_daemon_name(), sizeof(health->routing_daemon) - 1);
+
     // System metrics
     health->cpu_pct = get_cpu_usage_percent();
     health->mem_mb = (float)(g_memory_health.current_rss) / 1024.0 / 1024.0;
@@ -786,6 +790,7 @@ char* agent_health_to_json_string(const agent_health_t* health) {
         "  \"type\": \"%s\",\n"
         "  \"node\": \"%s\",\n"
         "  \"sent_at\": \"%s\",\n"
+        "  \"routing_daemon\": \"%s\",\n"
         "  \"cpu_pct\": %.1f,\n"
         "  \"mem_mb\": %.1f,\n"
         "  \"queue_len\": %d,\n"
@@ -812,6 +817,7 @@ char* agent_health_to_json_string(const agent_health_t* health) {
         health->type,
         health->node,
         health->sent_at,
+        health->routing_daemon,
         health->cpu_pct,
         health->mem_mb,
         health->queue_len,

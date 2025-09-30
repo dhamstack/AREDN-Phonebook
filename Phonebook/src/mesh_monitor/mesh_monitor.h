@@ -53,6 +53,7 @@ typedef struct {
     char dst_node[64];
     char dst_ip[16];
     time_t timestamp;
+    char routing_daemon[16];  // "olsr", "babel", "none", "unknown"
 
     // End-to-end metrics
     float rtt_ms_avg;

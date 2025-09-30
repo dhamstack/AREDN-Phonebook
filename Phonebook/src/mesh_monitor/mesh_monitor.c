@@ -133,6 +133,9 @@ void* mesh_monitor_thread(void *arg) {
                         // Calculate metrics
                         probe_result_t result;
                         if (calculate_probe_metrics(neighbors[i].ip, &result) == 0) {
+                            // Record routing daemon used for this probe
+                            strncpy(result.routing_daemon, get_routing_daemon_name(), sizeof(result.routing_daemon) - 1);
+
                             // Get hop-by-hop path information (Phase 2)
                             neighbor_info_t path_hops[MAX_HOPS];
                             int hop_count = get_path_hops(neighbors[i].ip, path_hops, MAX_HOPS);
