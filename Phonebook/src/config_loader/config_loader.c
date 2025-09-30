@@ -164,8 +164,9 @@ int load_configuration(const char *config_filepath) {
         } else if (strcmp(key, "HEALTH_ENDPOINT") == 0) {
             g_health_config.health_endpoint = (strcmp(value, "1") == 0 || strcasecmp(value, "true") == 0);
             LOG_DEBUG("Config: HEALTH_ENDPOINT = %s", g_health_config.health_endpoint ? "true" : "false");
-        } else {
-            LOG_WARN("Unknown configuration key: '%s'. Skipping.", key);
+        } else if (strcmp(key, "HEALTH_ENDPOINT") == 0) {
+            g_health_config.health_endpoint = (strcmp(value, "1") == 0 || strcasecmp(value, "true") == 0);
+            LOG_DEBUG("Config: HEALTH_ENDPOINT = %s", g_health_config.health_endpoint ? "true" : "false");
         } else if (strcmp(key, "LOG_LEVEL") == 0) {
             int parsed_level = LOG_LEVEL_INFO; // Default to INFO
             if (strcasecmp(value, "ERROR") == 0) {
@@ -183,6 +184,8 @@ int load_configuration(const char *config_filepath) {
             }
             set_log_level(parsed_level);
             LOG_DEBUG("Config: LOG_LEVEL = %s", value);
+        } else {
+            LOG_WARN("Unknown configuration key: '%s'. Skipping.", key);
         }
     }
     fclose(fp);

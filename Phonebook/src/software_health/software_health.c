@@ -50,7 +50,7 @@ static void crash_signal_handler(int sig) {
     g_process_health.crash_count_24h++;
 
     snprintf(g_process_health.last_crash_reason, sizeof(g_process_health.last_crash_reason),
-             "Signal %d at %ld", sig, now);
+             "Signal %d at %lld", sig, (long long)now);
 
     pthread_mutex_unlock(&g_health_mutex);
 
