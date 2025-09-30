@@ -81,6 +81,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "GEMINI_DEBUG: Before load_configuration\n");
     load_configuration("/etc/sipserver.conf"); // Call the loader function
     fprintf(stderr, "GEMINI_DEBUG: After load_configuration\n");
+    fprintf(stderr, "GEMINI_DEBUG: g_health_config.enabled = %d\n", g_health_config.enabled);
 
     // --- Initialize software health monitoring ---
     fprintf(stderr, "GEMINI_DEBUG: Before software_health_init\n");
