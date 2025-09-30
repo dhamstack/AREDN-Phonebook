@@ -238,8 +238,8 @@ void check_thread_responsiveness(void) {
                 if (g_thread_health[i].is_responsive) {
                     // First time detecting unresponsiveness
                     g_thread_health[i].is_responsive = false;
-                    LOG_ERROR("Thread %s unresponsive for %ld seconds",
-                             g_thread_health[i].name, silence);
+                    LOG_ERROR("Thread %s unresponsive for %lld seconds",
+                             g_thread_health[i].name, (long long)silence);
                 }
             } else {
                 g_thread_health[i].is_responsive = true;
