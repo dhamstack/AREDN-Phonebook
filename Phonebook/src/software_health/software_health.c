@@ -585,6 +585,8 @@ void cleanup_old_errors(void) {
 void periodic_health_check(void) {
     if (!health_enabled) return;
 
+    LOG_DEBUG("Periodic health check running.");
+
     // Update memory monitoring
     monitor_memory_usage();
 
