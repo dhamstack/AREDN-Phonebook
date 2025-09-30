@@ -133,6 +133,28 @@ void* mesh_monitor_thread(void *arg) {
                         // Calculate metrics
                         probe_result_t result;
                         if (calculate_probe_metrics(neighbors[i].ip, &result) == 0) {
+                            // Get hop-by-hop path information (Phase 2)
+                            neighbor_info_t path_hops[MAX_HOPS];
+                            int hop_count = get_path_hops(neighbors[i].ip, path_hops, MAX_HOPS);
+
+                            if (hop_count > 0) {
+                                result.hop_count = hop_count;
+                                // Copy hop information into result
+                                for (int h = 0; h < hop_count && h < MAX_HOPS; h++) {
+                                    strncpy(result.hops[h].node, path_hops[h].node, sizeof(result.hops[h].node) - 1);
+                                    strncpy(result.hops[h].interface, path_hops[h].interface, sizeof(result.hops[h].interface) - 1);
+                                    strncpy(result.hops[h].link_type, classify_link_type(path_hops[h].interface),
+                                           sizeof(result.hops[h].link_type) - 1);
+                                    result.hops[h].lq = path_hops[h].lq;
+                                    result.hops[h].nlq = path_hops[h].nlq;
+                                    result.hops[h].etx = path_hops[h].etx;
+                                    result.hops[h].rtt_ms = 0.0;  // Per-hop RTT not available without per-hop probing
+                                }
+                                // Copy destination node name
+                                strncpy(result.dst_node, neighbors[i].node, sizeof(result.dst_node) - 1);
+                                LOG_DEBUG("Path to %s: %d hops", neighbors[i].ip, hop_count);
+                            }
+
                             // Store in history
                             pthread_mutex_lock(&history_mutex);
                             memcpy(&probe_history[probe_history_index], &result, sizeof(probe_result_t));

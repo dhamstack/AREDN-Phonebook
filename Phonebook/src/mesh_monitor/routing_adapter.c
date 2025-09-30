@@ -282,14 +282,149 @@ int get_neighbors(neighbor_info_t *neighbors, int max_neighbors) {
     }
 }
 
+// Parse OLSR jsoninfo routes endpoint
+static int get_olsr_route(const char *dst_ip, route_info_t *route) {
+    static char http_buffer[HTTP_BUFFER_SIZE];
+
+    // Query OLSR jsoninfo routes endpoint
+    if (http_get_olsr_jsoninfo("routes", http_buffer, sizeof(http_buffer)) != 0) {
+        LOG_DEBUG("Failed to query OLSR routes");
+        return -1;
+    }
+
+    // Find the route to dst_ip in JSON
+    char search_pattern[64];
+    snprintf(search_pattern, sizeof(search_pattern), "\"destination\":\"%s\"", dst_ip);
+
+    const char *route_entry = strstr(http_buffer, search_pattern);
+    if (!route_entry) {
+        // Try with CIDR notation (destination might be 10.x.x.x/32)
+        snprintf(search_pattern, sizeof(search_pattern), "\"destination\":\"%s/", dst_ip);
+        route_entry = strstr(http_buffer, search_pattern);
+        if (!route_entry) {
+            LOG_DEBUG("No route found for %s", dst_ip);
+            return -1;
+        }
+    }
+
+    // Extract gateway IP
+    const char *gateway_field = strstr(route_entry, "\"gateway\"");
+    if (gateway_field && gateway_field < route_entry + 500) {
+        const char *ip_start = strchr(gateway_field, ':');
+        if (ip_start) {
+            ip_start++;
+            while (*ip_start == ' ' || *ip_start == '\t' || *ip_start == '"') ip_start++;
+
+            int i = 0;
+            while (i < 15 && *ip_start && *ip_start != '"' && *ip_start != ',') {
+                route->next_hop_ip[i++] = *ip_start++;
+            }
+            route->next_hop_ip[i] = '\0';
+        }
+    }
+
+    // Extract metric (ETX)
+    const char *metric_field = strstr(route_entry, "\"metric\"");
+    if (metric_field && metric_field < route_entry + 500) {
+        const char *value_start = strchr(metric_field, ':');
+        if (value_start) {
+            route->etx = atof(value_start + 1);
+        }
+    }
+
+    // Extract hop count
+    const char *hops_field = strstr(route_entry, "\"hops\"");
+    if (hops_field && hops_field < route_entry + 500) {
+        const char *value_start = strchr(hops_field, ':');
+        if (value_start) {
+            route->hop_count = atoi(value_start + 1);
+        }
+    }
+
+    strncpy(route->dst_ip, dst_ip, sizeof(route->dst_ip) - 1);
+
+    LOG_DEBUG("Route to %s: next_hop=%s, hops=%d, etx=%.2f",
+              dst_ip, route->next_hop_ip, route->hop_count, route->etx);
+
+    return 0;
+}
+
 int get_route(const char *dst_ip, route_info_t *route) {
     if (!adapter_initialized || !dst_ip || !route) {
         return -1;
     }
 
-    // TODO: Query routing daemon for specific route
-    LOG_DEBUG("Route query for %s (stub implementation)", dst_ip);
-    return -1;  // Not found
+    memset(route, 0, sizeof(route_info_t));
+
+    switch (current_daemon) {
+        case ROUTING_OLSR:
+            return get_olsr_route(dst_ip, route);
+        case ROUTING_BABEL:
+            LOG_DEBUG("Babel route query not implemented");
+            return -1;
+        default:
+            LOG_ERROR("Invalid routing daemon type");
+            return -1;
+    }
+}
+
+// Get hop-by-hop path using OLSR topology
+static int get_olsr_path_hops(const char *dst_ip, neighbor_info_t *hops, int max_hops) {
+    // Get the route first to know the path
+    route_info_t route;
+    if (get_olsr_route(dst_ip, &route) != 0) {
+        LOG_DEBUG("No route found for path analysis to %s", dst_ip);
+        return 0;
+    }
+
+    // If it's a direct neighbor (1 hop), return it
+    if (route.hop_count <= 1) {
+        memset(&hops[0], 0, sizeof(neighbor_info_t));
+        strncpy(hops[0].ip, dst_ip, sizeof(hops[0].ip) - 1);
+        strncpy(hops[0].node, dst_ip, sizeof(hops[0].node) - 1);
+        hops[0].etx = route.etx;
+        LOG_DEBUG("Direct neighbor path: %s (1 hop)", dst_ip);
+        return 1;
+    }
+
+    // For multi-hop paths, query OLSR topology
+    static char http_buffer[HTTP_BUFFER_SIZE];
+    if (http_get_olsr_jsoninfo("topology", http_buffer, sizeof(http_buffer)) != 0) {
+        LOG_DEBUG("Failed to query OLSR topology");
+        return 0;
+    }
+
+    // Build path from topology data
+    // Start from our next hop (gateway) and follow the path
+    int hop_count = 0;
+    char current_node[16];
+    strncpy(current_node, route.next_hop_ip, sizeof(current_node) - 1);
+
+    // Add first hop (next_hop/gateway)
+    memset(&hops[hop_count], 0, sizeof(neighbor_info_t));
+    strncpy(hops[hop_count].ip, current_node, sizeof(hops[hop_count].ip) - 1);
+    strncpy(hops[hop_count].node, current_node, sizeof(hops[hop_count].node) - 1);
+    strncpy(hops[hop_count].interface, "unknown", sizeof(hops[hop_count].interface) - 1);
+    hop_count++;
+
+    // Follow the path through topology until we reach destination
+    while (hop_count < max_hops && strcmp(current_node, dst_ip) != 0) {
+        // Find topology entry where lastHopIP == current_node and destinationIP moves closer to dst_ip
+        // This is a simplified approach - full implementation would need dijkstra or similar
+
+        // For now, just add the final destination
+        if (hop_count == 1) {
+            memset(&hops[hop_count], 0, sizeof(neighbor_info_t));
+            strncpy(hops[hop_count].ip, dst_ip, sizeof(hops[hop_count].ip) - 1);
+            strncpy(hops[hop_count].node, dst_ip, sizeof(hops[hop_count].node) - 1);
+            hops[hop_count].etx = route.etx;
+            hop_count++;
+        }
+        break;
+    }
+
+    LOG_DEBUG("Path to %s: %d hops", dst_ip, hop_count);
+    return hop_count;
 }
 
 int get_path_hops(const char *dst_ip, neighbor_info_t *hops, int max_hops) {
@@ -297,7 +432,16 @@ int get_path_hops(const char *dst_ip, neighbor_info_t *hops, int max_hops) {
         return -1;
     }
 
-    // TODO: Query routing daemon for hop-by-hop path
-    LOG_DEBUG("Path hops query for %s (stub implementation)", dst_ip);
-    return 0;  // No hops found
+    memset(hops, 0, sizeof(neighbor_info_t) * max_hops);
+
+    switch (current_daemon) {
+        case ROUTING_OLSR:
+            return get_olsr_path_hops(dst_ip, hops, max_hops);
+        case ROUTING_BABEL:
+            LOG_DEBUG("Babel path query not implemented");
+            return 0;
+        default:
+            LOG_ERROR("Invalid routing daemon type");
+            return -1;
+    }
 }
