@@ -52,7 +52,9 @@ jobs:
         run: |
           cd sdk
           make defconfig
-          echo "Cleaning previous build artifacts..."
+          echo "Aggressively cleaning all build artifacts..."
+          rm -rf build_dir/target-*/aredn-phonebook* || true
+          rm -rf bin/packages/*/base/aredn-phonebook* || true
           make package/aredn-phonebook/clean V=s
           echo "Testing development build compilation..."
           if ! make package/aredn-phonebook/compile V=s -j1; then
