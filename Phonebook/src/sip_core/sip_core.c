@@ -373,16 +373,13 @@ void send_response_to_registered(int sockfd,
 
 void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                                   const struct sockaddr_in *cliaddr, socklen_t cli_len) {
-    gemini_debug_log("GEMINI_DEBUG: process_incoming_sip_message called\n");
     char first_line[MAX_SIP_MSG_LEN];
     get_first_line(buffer, first_line, sizeof(first_line));
 
     if (n < 10 || strlen(first_line) == 0) {
-        gemini_debug_log("GEMINI_DEBUG: Invalid SIP message format or empty first line. Ignoring.\n");
         return;
     }
 
-    gemini_debug_log("GEMINI_DEBUG: Extracting SIP headers\n");
     char via_hdr[MAX_CONTACT_URI_LEN]     = "";
     char from_hdr[MAX_CONTACT_URI_LEN]    = "";
     char to_hdr[MAX_CONTACT_URI_LEN]      = "";
@@ -396,17 +393,14 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
     extract_sip_header(buffer, "Call-ID:", call_id_hdr, sizeof(call_id_hdr));
     extract_sip_header(buffer, "CSeq:", cseq_hdr, sizeof(cseq_hdr));
     extract_sip_header(buffer, "Contact:", contact_hdr, sizeof(contact_hdr));
-    gemini_debug_log("GEMINI_DEBUG: SIP headers extracted. Call-ID: %s, CSeq: %s\n", call_id_hdr, cseq_hdr);
 
 
     if (strncmp(first_line, "SIP/2.0", 7) == 0) {
-        gemini_debug_log("GEMINI_DEBUG: Received SIP Response\n");
         LOG_INFO("Received SIP Response: %s", first_line);
 
                     CallSession *session = find_call_session_by_callid(call_id_hdr);
                     if (session) {
                         LOG_DEBUG("Matching session found for response: %s", session->call_id);
-                        gemini_debug_log("GEMINI_DEBUG: Sending SIP message to original caller\n");
                         send_sip_message(sockfd, &session->original_caller_addr, sizeof(session->original_caller_addr), buffer);
                         LOG_DEBUG("Proxied response for Call-ID %s to original caller (%s:%d).",
                                     session->call_id, sockaddr_to_ip_str(&session->original_caller_addr),
@@ -519,7 +513,6 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                 }
 
                 if (!resolved) {
-                    gemini_debug_log("GEMINI_DEBUG: INVITE failed: Callee %s hostname '%s' could not be resolved or invalid IP.\n", to_user_id, hostname_to_resolve);
                     send_response_to_registered(sockfd, from_user_id, cliaddr, cli_len,
                                                 "SIP/2.0 404 Not Found", call_id_hdr, cseq_hdr,
                                                 from_hdr, to_hdr, via_hdr, NULL, NULL, NULL);
@@ -529,7 +522,6 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
 
                 CallSession *session = create_call_session();
                 if (!session) {
-                    gemini_debug_log("GEMINI_DEBUG: INVITE failed: Max call sessions reached. Sending 503 Service Unavailable.\n");
                     send_response_to_registered(sockfd,
                                                 from_user_id,
                                                 cliaddr, cli_len,
@@ -549,10 +541,8 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                 memcpy(&session->original_caller_addr, cliaddr, cli_len);
                 memcpy(&session->callee_addr, &resolved_callee_addr, sizeof(resolved_callee_addr)); // Copy resolved address
 
-                gemini_debug_log("GEMINI_DEBUG: Callee '%s' target: %s:%d\n",
                             to_user_id, sockaddr_to_ip_str(&session->callee_addr), ntohs(session->callee_addr.sin_port));
 
-                gemini_debug_log("GEMINI_DEBUG: Sending 100 Trying for INVITE.\n");
                 send_response_to_registered(sockfd,
                                             from_user_id,
                                             cliaddr, cli_len,
@@ -561,7 +551,6 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                                             from_hdr, to_hdr, via_hdr,
                                             NULL,
                                             NULL, NULL);
-                gemini_debug_log("GEMINI_DEBUG: Sent 100 Trying for Call-ID %s.\n", session->call_id);
                 session->state = CALL_STATE_INVITE_SENT;
 
                 char new_request_line_uri[MAX_CONTACT_URI_LEN];
@@ -571,14 +560,11 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                 char proxied_invite[MAX_SIP_MSG_LEN];
                 reconstruct_invite_message(buffer, new_request_line_uri, proxied_invite, sizeof(proxied_invite));
 
-                gemini_debug_log("GEMINI_DEBUG: Proxying INVITE for Call-ID %s from %s to %s.\n",
                             session->call_id, from_user_id, to_user_id);
                 send_sip_message(sockfd, &session->callee_addr, sizeof(session->callee_addr), proxied_invite);
-                gemini_debug_log("GEMINI_DEBUG: Proxied INVITE for Call-ID %s from %s to %s.\n",
                             session->call_id, from_user_id, to_user_id);
 
             } else {
-                gemini_debug_log("GEMINI_DEBUG: INVITE failed: Callee '%s' not found or not active. Sending 404 Not Found.\n", to_user_id);
                 send_response_to_registered(sockfd,
                                             from_user_id,
                                             cliaddr, cli_len,
@@ -589,7 +575,6 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
             }
 
         } else if (strcmp(method, "BYE") == 0) {
-            gemini_debug_log("GEMINI_DEBUG: Received BYE for Call-ID %s.\n", call_id_hdr);
             CallSession *session = find_call_session_by_callid(call_id_hdr);
             if (session) {
                 session->state = CALL_STATE_TERMINATING;
@@ -600,20 +585,16 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
 
                 if (is_caller_sending_bye) {
                     memcpy(&other_party_addr, &session->callee_addr, sizeof(other_party_addr));
-                    gemini_debug_log("GEMINI_DEBUG: Caller (%s:%d) sent BYE. Proxying to callee (%s:%d).\n",
                                 sockaddr_to_ip_str(cliaddr), ntohs(cliaddr->sin_port),
                                 sockaddr_to_ip_str(&other_party_addr), ntohs(other_party_addr.sin_port));
                 } else {
                     memcpy(&other_party_addr, &session->original_caller_addr, sizeof(other_party_addr));
-                    gemini_debug_log("GEMINI_DEBUG: Callee (%s:%d) sent BYE. Proxying to caller (%s:%d).\n",
                                 sockaddr_to_ip_str(cliaddr), ntohs(cliaddr->sin_port),
                                 sockaddr_to_ip_str(&other_party_addr), ntohs(other_party_addr.sin_port));
                 }
 
-                gemini_debug_log("GEMINI_DEBUG: Proxying BYE message.\n");
                 send_sip_message(sockfd, &other_party_addr, sizeof(other_party_addr), buffer);
 
-                gemini_debug_log("GEMINI_DEBUG: Sending 200 OK for BYE.\n");
                 send_response_to_registered(sockfd,
                                             from_user_id,
                                             cliaddr, cli_len,
@@ -621,10 +602,8 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                                             call_id_hdr, cseq_hdr,
                                             from_hdr, to_hdr, via_hdr,
                                             NULL, NULL, NULL);
-                gemini_debug_log("GEMINI_DEBUG: BYE processed and session %s terminated.\n", session->call_id);
                 terminate_call_session(session);
             } else {
-                gemini_debug_log("GEMINI_DEBUG: BYE failed: No matching call session for Call-ID %s. Sending 481 Call/Transaction Does Not Exist.\n", call_id_hdr);
                 send_response_to_registered(sockfd,
                                             from_user_id,
                                             cliaddr, cli_len,
@@ -635,19 +614,15 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
             }
 
         } else if (strcmp(method, "CANCEL") == 0) {
-            gemini_debug_log("GEMINI_DEBUG: Received CANCEL for Call-ID %s.\n", call_id_hdr);
             CallSession *session = find_call_session_by_callid(call_id_hdr);
             if (session &&
                (session->state == CALL_STATE_INVITE_SENT ||
                 session->state == CALL_STATE_RINGING)) {
 
-                gemini_debug_log("GEMINI_DEBUG: Proxying CANCEL to callee.\n");
                 send_sip_message(sockfd, &session->callee_addr, sizeof(session->callee_addr), buffer);
-                gemini_debug_log("GEMINI_DEBUG: Proxied CANCEL for Call-ID %s to callee (%s:%d).\n",
                             session->call_id, sockaddr_to_ip_str(&session->callee_addr),
                             ntohs(session->callee_addr.sin_port));
 
-                gemini_debug_log("GEMINI_DEBUG: Sending 200 OK for CANCEL.\n");
                 send_response_to_registered(sockfd,
                                             from_user_id,
                                             cliaddr, cli_len,
@@ -655,10 +630,8 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                                             call_id_hdr, cseq_hdr,
                                             from_hdr, to_hdr, via_hdr,
                                             NULL, NULL, NULL);
-                gemini_debug_log("GEMINI_DEBUG: CANCEL processed and session %s terminated.\n", session->call_id);
                 terminate_call_session(session);
             } else {
-                gemini_debug_log("GEMINI_DEBUG: CANCEL failed: No matching call session or invalid state for Call-ID %s. Sending 481 Call/Transaction Does Not Exist.\n", call_id_hdr);
                 send_response_to_registered(sockfd,
                                             from_user_id,
                                             cliaddr, cli_len,
@@ -669,7 +642,6 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
             }
 
         } else if (strcmp(method, "OPTIONS") == 0) {
-            gemini_debug_log("GEMINI_DEBUG: Received OPTIONS from %s:%d. Responding 200 OK.\n", sockaddr_to_ip_str(cliaddr), ntohs(cliaddr->sin_port));
             send_response_to_registered(sockfd,
                                         from_user_id,
                                         cliaddr, cli_len,
@@ -681,18 +653,13 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                                         NULL);
 
         } else if (strcmp(method, "ACK") == 0) {
-            gemini_debug_log("GEMINI_DEBUG: Received ACK for Call-ID %s.\n", call_id_hdr);
             CallSession *session = find_call_session_by_callid(call_id_hdr);
             if (session && session->state == CALL_STATE_ESTABLISHED) {
-                gemini_debug_log("GEMINI_DEBUG: Proxying ACK to callee.\n");
                 send_sip_message(sockfd, &session->callee_addr, sizeof(session->callee_addr), buffer);
-                gemini_debug_log("GEMINI_DEBUG: Proxied ACK for Call-ID %s to callee.\n", session->call_id);
             } else {
-                gemini_debug_log("GEMINI_DEBUG: Received ACK for no matching session or invalid state: Call-ID %s.\n", call_id_hdr);
             }
         }
         else {
-            gemini_debug_log("GEMINI_DEBUG: Received unhandled SIP method: %s from %s:%d. Responding 501 Not Implemented.\n",
                         method, sockaddr_to_ip_str(cliaddr), ntohs(cliaddr->sin_port));
             send_response_to_registered(sockfd,
                                         from_user_id,

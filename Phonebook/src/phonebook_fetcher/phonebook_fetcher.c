@@ -68,7 +68,6 @@ static bool initial_population_done = false;
 
 void *phonebook_fetcher_thread(void *arg) {
     (void)arg;
-    gemini_debug_log("GEMINI_DEBUG: phonebook_fetcher_thread started\n");
     LOG_INFO("Phonebook fetcher started. Checking for existing phonebook data.");
 
     // Emergency boot sequence: Load existing phonebook immediately if available
@@ -102,12 +101,10 @@ void *phonebook_fetcher_thread(void *arg) {
         char new_csv_hash[HASH_LENGTH + 1]; // HASH_LENGTH from common.h
         char last_good_csv_hash[HASH_LENGTH + 1];
 
-        gemini_debug_log("GEMINI_DEBUG: Before CSV download\n");
         if (csv_processor_download_csv() != 0) {
             LOG_ERROR("CSV download failed. Skipping this cycle.");
             goto end_fetcher_cycle;
         }
-        gemini_debug_log("GEMINI_DEBUG: After CSV download\n");
         // Calculate hash of downloaded temp file (in RAM)
         if (csv_processor_calculate_file_conceptual_hash(PB_CSV_TEMP_PATH, new_csv_hash, sizeof(new_csv_hash)) != 0) {
             LOG_ERROR("Failed to calculate hash for downloaded CSV. Skipping this cycle.");
@@ -154,18 +151,15 @@ void *phonebook_fetcher_thread(void *arg) {
             LOG_INFO("CSV successfully copied to persistent storage with minimal flash wear.");
         }
 
-        gemini_debug_log("GEMINI_DEBUG: Before populating users from CSV\n");
         LOG_INFO("Populating SIP users from CSV for phonebook update.");
         populate_registered_users_from_csv(PB_CSV_PATH);
         LOG_INFO("SIP user database populated from CSV. Total directory entries: %d.", num_directory_entries); // num_directory_entries from common.h
         initial_population_done = true;
 
-        gemini_debug_log("GEMINI_DEBUG: Before XML conversion\n");
         LOG_INFO("Initiating XML conversion...");
         char fetched_xml_temp_path[MAX_CONFIG_PATH_LEN];
         if (csv_processor_convert_csv_to_xml_and_get_path(fetched_xml_temp_path, sizeof(fetched_xml_temp_path)) == 0) {
             LOG_INFO("XML conversion successful.");
-            gemini_debug_log("GEMINI_DEBUG: After XML conversion (successful)\n");
 
             if (publish_phonebook_xml(fetched_xml_temp_path) == 0) {
                 // Only update hash in flash if we haven't already written this hash

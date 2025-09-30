@@ -296,7 +296,6 @@ void *passive_safety_thread(void *arg) {
         cleanup_orphaned_phonebook_files();
 
         // Health monitoring periodic checks
-        gemini_debug_log("GEMINI_DEBUG: passive_safety_thread calling periodic_health_check\n");
         if (is_software_health_enabled()) {
             periodic_health_check();
         }

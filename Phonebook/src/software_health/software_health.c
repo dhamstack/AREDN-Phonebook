@@ -113,7 +113,6 @@ static int setup_crash_handlers(void) {
 //=============================================================================
 
 int software_health_init(void) {
-    gemini_debug_log("GEMINI_DEBUG: software_health_init called\n");
     LOG_INFO("Initializing software health monitoring");
 
     pthread_mutex_lock(&g_health_mutex);
@@ -592,9 +591,6 @@ void cleanup_old_errors(void) {
 void periodic_health_check(void) {
     if (!health_enabled) return;
 
-    gemini_debug_log("GEMINI_DEBUG: periodic_health_check called\n");
-    LOG_DEBUG("Periodic health check running.");
-
     // Update memory monitoring
     monitor_memory_usage();
 
@@ -717,53 +713,35 @@ static float get_cpu_usage_percent(void) {
 //=============================================================================
 
 void populate_agent_health(agent_health_t* health) {
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health called\n");
-    if (!health || !health_enabled) {
-        gemini_debug_log("GEMINI_DEBUG: populate_agent_health early return (health=%p, enabled=%d)\n", health, health_enabled);
-        return;
-    }
+    if (!health || !health_enabled) return;
 
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health calling memset\n");
     memset(health, 0, sizeof(agent_health_t));
 
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health acquiring mutex\n");
     pthread_mutex_lock(&g_health_mutex);
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health mutex acquired\n");
 
     // Schema and type
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health setting schema and type\n");
     strncpy(health->schema, "meshmon.v1", sizeof(health->schema) - 1);
     strncpy(health->type, "agent_health", sizeof(health->type) - 1);
 
     // Node identifier (get from hostname or config)
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health getting hostname\n");
     char hostname[64] = {0};
     if (gethostname(hostname, sizeof(hostname) - 1) == 0) {
         strncpy(health->node, hostname, sizeof(health->node) - 1);
     } else {
         strncpy(health->node, "unknown", sizeof(health->node) - 1);
     }
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health hostname: %s\n", health->node);
 
     // Timestamp
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health getting timestamp\n");
     get_iso8601_timestamp(health->sent_at, sizeof(health->sent_at));
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health timestamp: %s\n", health->sent_at);
 
     // System metrics
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health getting CPU usage\n");
     health->cpu_pct = get_cpu_usage_percent();
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health CPU: %.1f%%\n", health->cpu_pct);
-
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health getting memory usage\n");
     health->mem_mb = (float)(g_memory_health.current_rss) / 1024.0 / 1024.0;
     health->queue_len = 0; // TODO: Implement network probe queue tracking
     health->uptime_seconds = time(NULL) - g_process_health.process_start_time;
     health->restart_count = g_process_health.restart_count;
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health memory: %.1f MB\n", health->mem_mb);
 
     // Thread responsiveness check
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health checking thread responsiveness\n");
     health->threads_responsive = true;
     for (int i = 0; i < MAX_THREADS; i++) {
         if (g_thread_health[i].tid != 0 && !g_thread_health[i].is_responsive) {
@@ -772,9 +750,7 @@ void populate_agent_health(agent_health_t* health) {
         }
     }
 
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health calculating health score\n");
     health->health_score = calculate_health_score();
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health health score: %.1f\n", health->health_score);
 
     // Checks object
     health->checks.memory_stable = !g_memory_health.leak_suspected;
@@ -783,18 +759,14 @@ void populate_agent_health(agent_health_t* health) {
     health->checks.phonebook_current = true; // TODO: Add phonebook freshness check
 
     // SIP service object
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health setting SIP service data\n");
     health->sip_service.active_calls = 0; // TODO: Get from call_sessions
     health->sip_service.registered_users = num_registered_users;
 
     // Monitoring object
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health setting monitoring data\n");
     health->monitoring.probe_queue_depth = 0; // TODO: Implement probe queue tracking
     strncpy(health->monitoring.last_probe_sent, "N/A", sizeof(health->monitoring.last_probe_sent) - 1);
 
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health releasing mutex\n");
     pthread_mutex_unlock(&g_health_mutex);
-    gemini_debug_log("GEMINI_DEBUG: populate_agent_health completed\n");
 }
 
 //=============================================================================
@@ -802,11 +774,9 @@ void populate_agent_health(agent_health_t* health) {
 //=============================================================================
 
 char* agent_health_to_json_string(const agent_health_t* health) {
-    gemini_debug_log("GEMINI_DEBUG: agent_health_to_json_string called\n");
     if (!health) return NULL;
 
     // Allocate buffer for JSON (2KB should be sufficient)
-    gemini_debug_log("GEMINI_DEBUG: Allocating memory for JSON buffer\n");
     char* json = (char*)malloc(2048);
     if (!json) return NULL;
 
@@ -863,20 +833,12 @@ char* agent_health_to_json_string(const agent_health_t* health) {
 }
 
 void export_health_to_json(const char* filepath) {
-    gemini_debug_log("GEMINI_DEBUG: export_health_to_json called with filepath: %s\n", filepath);
-    if (!health_enabled || !filepath) {
-        gemini_debug_log("GEMINI_DEBUG: export_health_to_json early return (enabled=%d, filepath=%p)\n", health_enabled, filepath);
-        return;
-    }
+    if (!health_enabled || !filepath) return;
 
-    gemini_debug_log("GEMINI_DEBUG: export_health_to_json creating health struct\n");
     agent_health_t health;
-    gemini_debug_log("GEMINI_DEBUG: export_health_to_json calling populate_agent_health\n");
     populate_agent_health(&health);
-    gemini_debug_log("GEMINI_DEBUG: export_health_to_json populate_agent_health returned\n");
 
     char* json = agent_health_to_json_string(&health);
-    gemini_debug_log("GEMINI_DEBUG: agent_health_to_json_string returned %p (NULL if failed)\n", json);
     if (!json) {
         LOG_ERROR("Failed to allocate memory for health JSON");
         return;
@@ -888,26 +850,22 @@ void export_health_to_json(const char* filepath) {
 
     FILE* f = fopen(temp_path, "w");
     if (!f) {
-        gemini_debug_log("GEMINI_DEBUG: Failed to open %s for writing\n", temp_path);
         LOG_ERROR("Failed to open %s for writing: %s", temp_path, strerror(errno));
         free(json);
         return;
     }
 
-    gemini_debug_log("GEMINI_DEBUG: Writing health JSON to %s\n", temp_path);
     fprintf(f, "%s\n", json);
     fclose(f);
     free(json);
 
     // Atomic rename
     if (rename(temp_path, filepath) != 0) {
-        gemini_debug_log("GEMINI_DEBUG: Failed to rename %s to %s\n", temp_path, filepath);
         LOG_ERROR("Failed to rename %s to %s: %s", temp_path, filepath, strerror(errno));
         unlink(temp_path);
         return;
     }
 
-    gemini_debug_log("GEMINI_DEBUG: Health data exported to %s successfully\n", filepath);
     LOG_DEBUG("Health data exported to %s", filepath);
 }
 
