@@ -27,6 +27,7 @@ static void trim_whitespace(char *str) {
 
 
 RegisteredUser* find_registered_user(const char *user_id) {
+    gemini_debug_log("GEMINI_DEBUG: find_registered_user called for user_id: %s\n", user_id);
     pthread_mutex_lock(&registered_users_mutex);
     for (int i = 0; i < MAX_REGISTERED_USERS; i++) {
         // Only consider active users for find_registered_user logic
@@ -46,6 +47,8 @@ RegisteredUser* find_registered_user(const char *user_id) {
 RegisteredUser* add_or_update_registered_user(const char *user_id,
                                           const char *display_name,
                                           int expires) {
+    gemini_debug_log("GEMINI_DEBUG: add_or_update_registered_user called for user '%s' (Display: '%s'), expires %d.\n",
+                user_id, display_name, expires);
     LOG_DEBUG("add_or_update_registered_user called for user '%s' (Display: '%s'), expires %d.",
                 user_id, display_name, expires);
 

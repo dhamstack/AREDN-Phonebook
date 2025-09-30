@@ -55,6 +55,7 @@ static char* trim_line_whitespace(char *str) {
 
 void *status_updater_thread(void *arg) {
     (void)arg;
+    gemini_debug_log("GEMINI_DEBUG: status_updater_thread started\n");
     LOG_INFO("Status updater started. Entering main loop.");
 
     struct timespec ts;
@@ -81,6 +82,7 @@ void *status_updater_thread(void *arg) {
 
         LOG_INFO("Starting new update cycle.");
 
+        gemini_debug_log("GEMINI_DEBUG: Before checking for phonebook changes\n");
         if (wait_status == 0) {
             LOG_INFO("Triggered by Phonebook Fetcher signal.");
         } else if (wait_status == ETIMEDOUT) {
@@ -88,6 +90,7 @@ void *status_updater_thread(void *arg) {
         } else {
             LOG_ERROR("pthread_cond_timedwait failed: %s", strerror(wait_status));
         }
+        gemini_debug_log("GEMINI_DEBUG: After checking for phonebook changes\n");
 
         pthread_mutex_lock(&phonebook_file_mutex);
         FILE *f_input_xml = fopen(PB_XML_PUBLIC_PATH, "r");
@@ -229,6 +232,13 @@ void *status_updater_thread(void *arg) {
         }
 
         LOG_INFO("Finished update cycle.");
+
+        gemini_debug_log("GEMINI_DEBUG: Before updating user status\n");
+        // This is where the user status is implicitly updated by the XML generation
+        // and subsequent publish_phonebook_xml call.
+        // The actual user status update logic is within the loop that reads the XML.
+        // For now, we'll just log before and after the main processing loop.
+        gemini_debug_log("GEMINI_DEBUG: After updating user status\n");
     }
 
     LOG_INFO("Status updater exiting.");
