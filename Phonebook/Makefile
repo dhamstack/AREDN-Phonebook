@@ -49,6 +49,7 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/config_loader/config_loader.c \
 		$(PKG_BUILD_DIR)/passive_safety/passive_safety.c \
 		$(PKG_BUILD_DIR)/software_health/software_health.c \
+		$(PKG_BUILD_DIR)/debug_logger/debug_logger.c \
 		-lpthread
 endef
 
