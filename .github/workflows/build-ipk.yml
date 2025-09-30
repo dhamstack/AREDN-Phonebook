@@ -96,6 +96,9 @@ jobs:
           echo "First, let's see if the package is recognized:"
           make package/aredn-phonebook/info V=99 || echo "Package info failed"
 
+          echo "Cleaning previous build artifacts..."
+          make package/aredn-phonebook/clean V=s
+
           echo "Now attempting compilation with full verbosity:"
           if ! make package/aredn-phonebook/compile V=99 -j1 2>&1 | tee build.log; then
             echo "BUILD FAILED! Full build log:"

@@ -52,6 +52,8 @@ jobs:
         run: |
           cd sdk
           make defconfig
+          echo "Cleaning previous build artifacts..."
+          make package/aredn-phonebook/clean V=s
           echo "Testing development build compilation..."
           if ! make package/aredn-phonebook/compile V=s -j1; then
             echo "❌ Development build failed"
