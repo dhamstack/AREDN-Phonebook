@@ -168,6 +168,9 @@ void log_init(const char* app_name);
 void log_shutdown(void);
 void log_message(int level, const char* app_name_in, const char* module_name_in, const char *format, ...);
 
+extern int g_log_level;
+void set_log_level(int level);
+
 #define LOG_ERROR(format, ...)   log_message(LOG_LEVEL_ERROR, APP_NAME, MODULE_NAME, format, ##__VA_ARGS__)
 #define LOG_WARN(format, ...)    log_message(LOG_LEVEL_WARNING, APP_NAME, MODULE_NAME, format, ##__VA_ARGS__)
 #define LOG_INFO(format, ...)    log_message(LOG_LEVEL_INFO, APP_NAME, MODULE_NAME, format, ##__VA_ARGS__)

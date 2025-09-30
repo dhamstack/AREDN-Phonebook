@@ -10,8 +10,13 @@
 
 #define MODULE_NAME "LOG" // Corrected MODULE_NAME
 
-// Define the desired compile-time log level here.
-#define LOG_COMPILE_LEVEL LOG_LEVEL_INFO
+int g_log_level = LOG_LEVEL_INFO; // Default to INFO
+
+void set_log_level(int level) {
+    if (level >= LOG_LEVEL_NONE && level <= LOG_LEVEL_DEBUG) {
+        g_log_level = level;
+    }
+}
 
 void log_init(const char* app_name) {
     openlog(app_name, LOG_PID | LOG_CONS | LOG_NDELAY, LOG_DAEMON);
@@ -22,14 +27,8 @@ void log_shutdown(void) {
 }
 
 void log_message(int level, const char* app_name_in, const char* module_name_in, const char *format, ...) {
-    if (LOG_COMPILE_LEVEL == LOG_LEVEL_NONE) {
-        if (level != LOG_LEVEL_ERROR && level != LOG_LEVEL_WARNING) {
-            return;
-        }
-    } else {
-        if (level > LOG_COMPILE_LEVEL) {
-            return;
-        }
+    if (level > g_log_level) {
+        return;
     }
 
     int syslog_level;

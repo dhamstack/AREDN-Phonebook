@@ -1,5 +1,6 @@
 // config_loader.c
 #include "config_loader.h" // This includes common.h
+#include "../log_manager/log_manager.h" // Include for set_log_level
 #include <stdio.h>
 #include <string.h>
 #include <strings.h> // For strcasecmp
@@ -165,6 +166,23 @@ int load_configuration(const char *config_filepath) {
             LOG_DEBUG("Config: HEALTH_ENDPOINT = %s", g_health_config.health_endpoint ? "true" : "false");
         } else {
             LOG_WARN("Unknown configuration key: '%s'. Skipping.", key);
+        } else if (strcmp(key, "LOG_LEVEL") == 0) {
+            int parsed_level = LOG_LEVEL_INFO; // Default to INFO
+            if (strcasecmp(value, "ERROR") == 0) {
+                parsed_level = LOG_LEVEL_ERROR;
+            } else if (strcasecmp(value, "WARNING") == 0) {
+                parsed_level = LOG_LEVEL_WARNING;
+            } else if (strcasecmp(value, "INFO") == 0) {
+                parsed_level = LOG_LEVEL_INFO;
+            } else if (strcasecmp(value, "DEBUG") == 0) {
+                parsed_level = LOG_LEVEL_DEBUG;
+            } else if (strcasecmp(value, "NONE") == 0) {
+                parsed_level = LOG_LEVEL_NONE;
+            } else {
+                LOG_WARN("Invalid LOG_LEVEL value '%s'. Using default INFO.", value);
+            }
+            set_log_level(parsed_level);
+            LOG_DEBUG("Config: LOG_LEVEL = %s", value);
         }
     }
     fclose(fp);
