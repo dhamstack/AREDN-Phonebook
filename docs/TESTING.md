@@ -358,10 +358,14 @@ cat /tmp/meshmon_network.json | grep routing_daemon
 # Check if OLSR is running
 ps | grep olsrd
 
-# Test OLSR jsoninfo API directly
-curl http://127.0.0.1:9090/neighbors
-curl http://127.0.0.1:9090/routes
-curl http://127.0.0.1:9090/topology
+# Test OLSR jsoninfo API directly (limit output to avoid flooding)
+curl -s http://127.0.0.1:9090/neighbors
+curl -s http://127.0.0.1:9090/routes | head -20
+curl -s http://127.0.0.1:9090/topology | head -20
+
+# Get OLSR summary
+echo "Total routes: $(curl -s http://127.0.0.1:9090/routes | grep -c destinationIP)"
+echo "Direct neighbors: $(curl -s http://127.0.0.1:9090/neighbors | grep -c neighborIP)"
 
 # Check if mesh monitor is querying OLSR
 logread | grep "OLSR"
@@ -376,12 +380,30 @@ ps | grep babeld
 # Check if Babel control socket exists
 ls -la /var/run/babeld.sock
 
-# Test Babel commands manually (if available)
-echo "dump" | nc -U /var/run/babeld.sock
+# If socket doesn't exist, check Babel config for local-port
+cat /etc/babel.conf | grep -E "local-port|enable-timestamps"
 
-# Check if mesh monitor is querying Babel
+# Test Babel commands manually (requires control socket)
+# Note: Babel needs 'local-port /var/run/babeld.sock' in config
+echo "dump" | nc -U /var/run/babeld.sock 2>/dev/null || echo "Babel control socket not available"
+
+# Alternative: Check if Babel is detected even without socket
 logread | grep "Babel"
 ```
+
+**Note about Babel:** AREDN's default Babel configuration may not enable the control socket (`/var/run/babeld.sock`). The mesh monitor will detect Babel is running via the PID file (`/var/run/babeld.pid`) but won't be able to query routing tables without the control socket. This is a known limitation - Babel support requires the control socket to be configured in `/etc/babel.conf`:
+
+```conf
+# Add to /etc/babel.conf for full Babel support
+local-port /var/run/babeld.sock
+enable-timestamps true
+```
+
+Without the control socket, the mesh monitor will:
+- ✅ Detect Babel is running
+- ✅ Report `routing_daemon: "babel"`
+- ❌ Cannot query neighbors or routes
+- ❌ Phase 2 hop-by-hop analysis not available
 
 ### 7. Test Phase 2 Path Analysis
 
@@ -536,11 +558,15 @@ ls -la /var/run/babeld.pid
 logread | grep "ROUTING_ADAPTER"
 
 # Manually test OLSR (if installed)
-curl http://127.0.0.1:9090/neighbors
+curl -s http://127.0.0.1:9090/neighbors | head -10
 
 # Manually test Babel (if installed)
 ls -la /var/run/babeld.sock
+# If socket missing, Babel control socket is not configured
+cat /etc/babel.conf | grep local-port
 ```
+
+**Common Issue:** Babel is running but socket is missing. This is normal on AREDN - Babel's control socket is not enabled by default. The monitor will detect Babel but cannot query routing tables. OLSR works out of the box because it uses HTTP jsoninfo API.
 
 ### Network JSON Not Created
 
