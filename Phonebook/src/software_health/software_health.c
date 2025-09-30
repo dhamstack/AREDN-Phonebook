@@ -772,9 +772,11 @@ void populate_agent_health(agent_health_t* health) {
 //=============================================================================
 
 char* agent_health_to_json_string(const agent_health_t* health) {
+    gemini_debug_log("GEMINI_DEBUG: agent_health_to_json_string called\n");
     if (!health) return NULL;
 
     // Allocate buffer for JSON (2KB should be sufficient)
+    gemini_debug_log("GEMINI_DEBUG: Allocating memory for JSON buffer\n");
     char* json = (char*)malloc(2048);
     if (!json) return NULL;
 
