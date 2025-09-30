@@ -838,6 +838,7 @@ void export_health_to_json(const char* filepath) {
     populate_agent_health(&health);
 
     char* json = agent_health_to_json_string(&health);
+    gemini_debug_log("GEMINI_DEBUG: agent_health_to_json_string returned %p (NULL if failed)\n", json);
     if (!json) {
         LOG_ERROR("Failed to allocate memory for health JSON");
         return;
