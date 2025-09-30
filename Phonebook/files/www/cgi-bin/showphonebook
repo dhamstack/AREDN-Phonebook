@@ -1,7 +1,5 @@
 #!/bin/sh
 
-echo "GEMINI_DEBUG: showphonebook CGI script started" > /dev/stderr
-
 # AREDN Phonebook - Show Phonebook Webhook
 # Returns current phonebook contents as JSON
 
@@ -13,15 +11,11 @@ echo ""
 # Phonebook XML file path
 XML_FILE="/www/arednstack/phonebook_generic_direct.xml"
 
-echo "GEMINI_DEBUG: Checking for $XML_FILE" > /dev/stderr
 # Check if phonebook file exists
 if [ ! -f "$XML_FILE" ]; then
-    echo "GEMINI_DEBUG: $XML_FILE not found" > /dev/stderr
     echo '{"status":"error","message":"Phonebook not available","timestamp":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}'
     exit 0
 fi
-
-echo "GEMINI_DEBUG: $XML_FILE found, processing content" > /dev/stderr
 # Get file modification time
 LAST_UPDATED=$(stat -c %Y "$XML_FILE" 2>/dev/null)
 if [ -n "$LAST_UPDATED" ]; then

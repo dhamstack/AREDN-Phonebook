@@ -1,7 +1,5 @@
 #!/bin/sh
 
-echo "GEMINI_DEBUG: crash CGI script started" > /dev/stderr
-
 # AREDN Phonebook Crash History Endpoint (meshmon.v1 schema)
 # Returns JSON array of recent crashes (last 5)
 
@@ -9,15 +7,12 @@ echo "Content-Type: application/json"
 echo "Cache-Control: no-cache"
 echo ""
 
-echo "GEMINI_DEBUG: Checking for /tmp/meshmon_crashes.json" > /dev/stderr
 # Check if crash history JSON file exists
 if [ ! -f "/tmp/meshmon_crashes.json" ]; then
-    echo "GEMINI_DEBUG: /tmp/meshmon_crashes.json not found" > /dev/stderr
     # No crashes recorded yet - return empty array
     echo '[]'
     exit 0
 fi
 
-echo "GEMINI_DEBUG: /tmp/meshmon_crashes.json found, catting content" > /dev/stderr
 # Simply cat the pre-generated JSON from software_health module
 cat /tmp/meshmon_crashes.json
