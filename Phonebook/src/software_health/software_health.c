@@ -113,6 +113,7 @@ static int setup_crash_handlers(void) {
 //=============================================================================
 
 int software_health_init(void) {
+    printf("GEMINI_DEBUG: software_health_init called\n");
     LOG_INFO("Initializing software health monitoring");
 
     pthread_mutex_lock(&g_health_mutex);
@@ -585,6 +586,7 @@ void cleanup_old_errors(void) {
 void periodic_health_check(void) {
     if (!health_enabled) return;
 
+    printf("GEMINI_DEBUG: periodic_health_check called\n");
     LOG_DEBUG("Periodic health check running.");
 
     // Update memory monitoring
@@ -829,6 +831,7 @@ char* agent_health_to_json_string(const agent_health_t* health) {
 }
 
 void export_health_to_json(const char* filepath) {
+    printf("GEMINI_DEBUG: export_health_to_json called with filepath: %s\n", filepath);
     if (!health_enabled || !filepath) return;
 
     agent_health_t health;
@@ -846,22 +849,26 @@ void export_health_to_json(const char* filepath) {
 
     FILE* f = fopen(temp_path, "w");
     if (!f) {
+        printf("GEMINI_DEBUG: Failed to open %s for writing\n", temp_path);
         LOG_ERROR("Failed to open %s for writing: %s", temp_path, strerror(errno));
         free(json);
         return;
     }
 
+    printf("GEMINI_DEBUG: Writing health JSON to %s\n", temp_path);
     fprintf(f, "%s\n", json);
     fclose(f);
     free(json);
 
     // Atomic rename
     if (rename(temp_path, filepath) != 0) {
+        printf("GEMINI_DEBUG: Failed to rename %s to %s\n", temp_path, filepath);
         LOG_ERROR("Failed to rename %s to %s: %s", temp_path, filepath, strerror(errno));
         unlink(temp_path);
         return;
     }
 
+    printf("GEMINI_DEBUG: Health data exported to %s successfully\n", filepath);
     LOG_DEBUG("Health data exported to %s", filepath);
 }
 
