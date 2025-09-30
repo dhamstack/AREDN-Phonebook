@@ -1,5 +1,9 @@
 #!/bin/sh
 
+# MODIFIED_BY_GEMINI: This script has been modified for testing purposes.
+
+echo "GEMINI_DEBUG: health CGI script started" > /dev/stderr
+
 # AREDN Phonebook Health Endpoint (meshmon.v1 schema)
 # Returns JSON health status from monitoring system
 
@@ -7,11 +11,14 @@ echo "Content-Type: application/json"
 echo "Cache-Control: no-cache"
 echo ""
 
+echo "GEMINI_DEBUG: Checking for /tmp/meshmon_health.json" > /dev/stderr
 # Check if health JSON file exists
 if [ ! -f "/tmp/meshmon_health.json" ]; then
+    echo "GEMINI_DEBUG: /tmp/meshmon_health.json not found" > /dev/stderr
     echo '{"error":"Health data not available","message":"Health monitoring may not be initialized yet"}'
     exit 1
 fi
 
+echo "GEMINI_DEBUG: /tmp/meshmon_health.json found, catting content" > /dev/stderr
 # Simply cat the pre-generated JSON from software_health module
 cat /tmp/meshmon_health.json
