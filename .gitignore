@@ -37,4 +37,8 @@ docs/implementation/
 
 # IPK build artifacts and extracted contents
 ipk files/
-ipk-contents/openwrt-sdk.tar.xz
+ipk-contents/
+
+# OpenWrt SDK (large file)
+openwrt-sdk.tar.xz
+*.tar.xz
