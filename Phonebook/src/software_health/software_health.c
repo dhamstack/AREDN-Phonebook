@@ -10,6 +10,9 @@ static inline float fmax_simple(float a, float b) {
     return (a > b) ? a : b;
 }
 
+// Forward declarations for static functions
+static void add_crash_to_history(const crash_report_t* report);
+
 // Global health state definitions
 process_health_t g_process_health = {0};
 thread_health_t g_thread_health[MAX_THREADS] = {0};
@@ -779,7 +782,7 @@ char* agent_health_to_json_string(const agent_health_t* health) {
         "  \"cpu_pct\": %.1f,\n"
         "  \"mem_mb\": %.1f,\n"
         "  \"queue_len\": %d,\n"
-        "  \"uptime_seconds\": %ld,\n"
+        "  \"uptime_seconds\": %lld,\n"
         "  \"restart_count\": %d,\n"
         "  \"threads_responsive\": %s,\n"
         "  \"health_score\": %.1f,\n"
@@ -805,7 +808,7 @@ char* agent_health_to_json_string(const agent_health_t* health) {
         health->cpu_pct,
         health->mem_mb,
         health->queue_len,
-        health->uptime_seconds,
+        (long long)health->uptime_seconds,
         health->restart_count,
         health->threads_responsive ? "true" : "false",
         health->health_score,
@@ -924,7 +927,7 @@ char* crash_report_to_json_string(const crash_report_t* report) {
         "  \"signal_name\": \"%s\",\n"
         "  \"reason\": \"%s\",\n"
         "  \"restart_count\": %d,\n"
-        "  \"uptime_before_crash\": %ld\n"
+        "  \"uptime_before_crash\": %lld\n"
         "}",
         report->schema,
         report->type,
@@ -935,7 +938,7 @@ char* crash_report_to_json_string(const crash_report_t* report) {
         report->signal_name,
         report->reason,
         report->restart_count,
-        report->uptime_before_crash
+        (long long)report->uptime_before_crash
     );
 
     return json;
