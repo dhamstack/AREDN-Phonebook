@@ -36,7 +36,7 @@ docs/implementation/
 *.tmp.*
 
 # IPK build artifacts and extracted contents
-ipk files/
+ipk-files/
 ipk-contents/
 
 # OpenWrt SDK (large file)
