@@ -20,6 +20,7 @@ process_health_t g_process_health = {0};
 thread_health_t g_thread_health[MAX_THREADS] = {0};
 memory_health_t g_memory_health = {0};
 error_tracker_t g_error_tracker = {0};
+node_static_info_t g_node_info = {0};
 pthread_mutex_t g_health_mutex = PTHREAD_MUTEX_INITIALIZER;
 crash_report_t g_crash_history[MAX_CRASH_HISTORY] = {0};
 int g_crash_history_count = 0;
@@ -153,6 +154,9 @@ int software_health_init(void) {
 
     // Try to load previous health state if available
     load_health_state_from_storage();
+
+    // Fetch node static information (non-blocking, don't fail if unavailable)
+    fetch_node_static_info();
 
     LOG_INFO("Software health monitoring initialized (PID: %d, Initial RSS: %zu MB)",
              g_process_health.process_pid,
@@ -738,6 +742,21 @@ void populate_agent_health(agent_health_t* health) {
     // Routing daemon
     strncpy(health->routing_daemon, get_routing_daemon_name(), sizeof(health->routing_daemon) - 1);
 
+    // Static node information
+    if (g_node_info.fetched) {
+        strncpy(health->lat, g_node_info.lat, sizeof(health->lat) - 1);
+        strncpy(health->lon, g_node_info.lon, sizeof(health->lon) - 1);
+        strncpy(health->grid_square, g_node_info.grid_square, sizeof(health->grid_square) - 1);
+        strncpy(health->hardware_model, g_node_info.hardware_model, sizeof(health->hardware_model) - 1);
+        strncpy(health->firmware_version, g_node_info.firmware_version, sizeof(health->firmware_version) - 1);
+    } else {
+        strncpy(health->lat, "unknown", sizeof(health->lat) - 1);
+        strncpy(health->lon, "unknown", sizeof(health->lon) - 1);
+        strncpy(health->grid_square, "unknown", sizeof(health->grid_square) - 1);
+        strncpy(health->hardware_model, "unknown", sizeof(health->hardware_model) - 1);
+        strncpy(health->firmware_version, "unknown", sizeof(health->firmware_version) - 1);
+    }
+
     // System metrics
     health->cpu_pct = get_cpu_usage_percent();
     health->mem_mb = (float)(g_memory_health.current_rss) / 1024.0 / 1024.0;
@@ -780,17 +799,22 @@ void populate_agent_health(agent_health_t* health) {
 char* agent_health_to_json_string(const agent_health_t* health) {
     if (!health) return NULL;
 
-    // Allocate buffer for JSON (2KB should be sufficient)
-    char* json = (char*)malloc(2048);
+    // Allocate buffer for JSON (3KB to accommodate static node info)
+    char* json = (char*)malloc(3072);
     if (!json) return NULL;
 
-    snprintf(json, 2048,
+    snprintf(json, 3072,
         "{\n"
         "  \"schema\": \"%s\",\n"
         "  \"type\": \"%s\",\n"
         "  \"node\": \"%s\",\n"
         "  \"sent_at\": \"%s\",\n"
         "  \"routing_daemon\": \"%s\",\n"
+        "  \"lat\": \"%s\",\n"
+        "  \"lon\": \"%s\",\n"
+        "  \"grid_square\": \"%s\",\n"
+        "  \"hardware_model\": \"%s\",\n"
+        "  \"firmware_version\": \"%s\",\n"
         "  \"cpu_pct\": %.1f,\n"
         "  \"mem_mb\": %.1f,\n"
         "  \"queue_len\": %d,\n"
@@ -818,6 +842,11 @@ char* agent_health_to_json_string(const agent_health_t* health) {
         health->node,
         health->sent_at,
         health->routing_daemon,
+        health->lat,
+        health->lon,
+        health->grid_square,
+        health->hardware_model,
+        health->firmware_version,
         health->cpu_pct,
         health->mem_mb,
         health->queue_len,
@@ -1039,4 +1068,107 @@ void export_crash_to_json(const char* filepath) {
     }
 
     LOG_DEBUG("Crash history exported to %s", filepath);
+}
+
+//=============================================================================
+// Node Static Information Fetcher
+//=============================================================================
+
+// Simple JSON value extractor (looks for "key":"value" patterns)
+static int extract_json_string(const char *json, const char *key, char *value, size_t value_size) {
+    char search_pattern[128];
+    snprintf(search_pattern, sizeof(search_pattern), "\"%s\"", key);
+
+    const char *key_pos = strstr(json, search_pattern);
+    if (!key_pos) return -1;
+
+    // Find the colon after the key
+    const char *colon = strchr(key_pos, ':');
+    if (!colon) return -1;
+
+    // Skip whitespace and opening quote
+    const char *value_start = colon + 1;
+    while (*value_start == ' ' || *value_start == '\t' || *value_start == '"') {
+        value_start++;
+    }
+
+    // Find the closing quote or comma/brace
+    const char *value_end = value_start;
+    while (*value_end && *value_end != '"' && *value_end != ',' && *value_end != '}' && *value_end != '\n') {
+        value_end++;
+    }
+
+    size_t len = value_end - value_start;
+    if (len >= value_size) len = value_size - 1;
+
+    memcpy(value, value_start, len);
+    value[len] = '\0';
+
+    return 0;
+}
+
+int fetch_node_static_info(void) {
+    LOG_INFO("Fetching node static information from sysinfo.json");
+
+    // Use wget to fetch sysinfo.json from localhost
+    const char *cmd = "wget -qO- http://127.0.0.1:8080/cgi-bin/sysinfo.json 2>/dev/null";
+    FILE *fp = popen(cmd, "r");
+    if (!fp) {
+        LOG_ERROR("Failed to execute wget for sysinfo.json");
+        return -1;
+    }
+
+    // Read the entire JSON response
+    char json_buffer[4096];
+    size_t total_read = 0;
+    size_t bytes_read;
+
+    while ((bytes_read = fread(json_buffer + total_read, 1, sizeof(json_buffer) - total_read - 1, fp)) > 0) {
+        total_read += bytes_read;
+        if (total_read >= sizeof(json_buffer) - 1) break;
+    }
+    json_buffer[total_read] = '\0';
+
+    int status = pclose(fp);
+
+    if (status != 0 || total_read == 0) {
+        LOG_WARN("Failed to fetch sysinfo.json (status=%d, bytes=%zu)", status, total_read);
+        return -1;
+    }
+
+    // Parse the JSON response
+    pthread_mutex_lock(&g_health_mutex);
+
+    // Extract fields
+    if (extract_json_string(json_buffer, "lat", g_node_info.lat, sizeof(g_node_info.lat)) != 0) {
+        strncpy(g_node_info.lat, "unknown", sizeof(g_node_info.lat) - 1);
+    }
+
+    if (extract_json_string(json_buffer, "lon", g_node_info.lon, sizeof(g_node_info.lon)) != 0) {
+        strncpy(g_node_info.lon, "unknown", sizeof(g_node_info.lon) - 1);
+    }
+
+    if (extract_json_string(json_buffer, "grid_square", g_node_info.grid_square, sizeof(g_node_info.grid_square)) != 0) {
+        strncpy(g_node_info.grid_square, "unknown", sizeof(g_node_info.grid_square) - 1);
+    }
+
+    // For hardware_model, look in node_details object
+    if (extract_json_string(json_buffer, "model", g_node_info.hardware_model, sizeof(g_node_info.hardware_model)) != 0) {
+        strncpy(g_node_info.hardware_model, "unknown", sizeof(g_node_info.hardware_model) - 1);
+    }
+
+    // For firmware_version, look in node_details object
+    if (extract_json_string(json_buffer, "firmware_version", g_node_info.firmware_version, sizeof(g_node_info.firmware_version)) != 0) {
+        strncpy(g_node_info.firmware_version, "unknown", sizeof(g_node_info.firmware_version) - 1);
+    }
+
+    g_node_info.fetched = true;
+
+    pthread_mutex_unlock(&g_health_mutex);
+
+    LOG_INFO("Node info: lat=%s, lon=%s, grid=%s, model=%s, fw=%s",
+             g_node_info.lat, g_node_info.lon, g_node_info.grid_square,
+             g_node_info.hardware_model, g_node_info.firmware_version);
+
+    return 0;
 }

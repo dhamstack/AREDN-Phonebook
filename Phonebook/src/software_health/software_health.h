@@ -60,6 +60,16 @@ typedef struct {
     int error_counts[24];            // Hourly error buckets
 } error_tracker_t;
 
+// Static node information (cached from sysinfo.json)
+typedef struct {
+    char lat[16];                    // Latitude (decimal format)
+    char lon[16];                    // Longitude (decimal format)
+    char grid_square[16];            // Amateur radio grid square
+    char hardware_model[64];         // Hardware model
+    char firmware_version[32];       // Firmware version
+    bool fetched;                    // True if data has been fetched
+} node_static_info_t;
+
 // Health summary for reporting (extended for monitoring)
 typedef struct {
     bool is_healthy;                 // Overall health status
@@ -80,6 +90,14 @@ typedef struct {
     char node[64];                   // Node identifier (e.g., "W6ABC-1")
     char sent_at[32];                // ISO 8601 timestamp
     char routing_daemon[16];         // "olsr", "babel", "none", "unknown"
+
+    // Static node information (from sysinfo.json)
+    char lat[16];                    // Latitude (decimal format)
+    char lon[16];                    // Longitude (decimal format)
+    char grid_square[16];            // Amateur radio grid square
+    char hardware_model[64];         // Hardware model
+    char firmware_version[32];       // Firmware version
+
     float cpu_pct;                   // CPU usage percentage
     float mem_mb;                    // Memory usage in MB
     int queue_len;                   // Network probe queue length
@@ -131,6 +149,7 @@ extern process_health_t g_process_health;
 extern thread_health_t g_thread_health[MAX_THREADS];
 extern memory_health_t g_memory_health;
 extern error_tracker_t g_error_tracker;
+extern node_static_info_t g_node_info;
 extern pthread_mutex_t g_health_mutex;
 extern crash_report_t g_crash_history[MAX_CRASH_HISTORY];
 extern int g_crash_history_count;
@@ -192,5 +211,8 @@ void load_health_state_from_storage(void);
 const char* get_thread_name(int thread_id);
 int get_thread_id_by_name(const char* name);
 void format_uptime(time_t uptime, char* buffer, size_t buffer_size);
+
+// Node static information
+int fetch_node_static_info(void);
 
 #endif // SOFTWARE_HEALTH_H
