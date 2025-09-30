@@ -541,8 +541,6 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                 memcpy(&session->original_caller_addr, cliaddr, cli_len);
                 memcpy(&session->callee_addr, &resolved_callee_addr, sizeof(resolved_callee_addr)); // Copy resolved address
 
-                            to_user_id, sockaddr_to_ip_str(&session->callee_addr), ntohs(session->callee_addr.sin_port));
-
                 send_response_to_registered(sockfd,
                                             from_user_id,
                                             cliaddr, cli_len,
@@ -560,9 +558,7 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                 char proxied_invite[MAX_SIP_MSG_LEN];
                 reconstruct_invite_message(buffer, new_request_line_uri, proxied_invite, sizeof(proxied_invite));
 
-                            session->call_id, from_user_id, to_user_id);
                 send_sip_message(sockfd, &session->callee_addr, sizeof(session->callee_addr), proxied_invite);
-                            session->call_id, from_user_id, to_user_id);
 
             } else {
                 send_response_to_registered(sockfd,
@@ -585,12 +581,8 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
 
                 if (is_caller_sending_bye) {
                     memcpy(&other_party_addr, &session->callee_addr, sizeof(other_party_addr));
-                                sockaddr_to_ip_str(cliaddr), ntohs(cliaddr->sin_port),
-                                sockaddr_to_ip_str(&other_party_addr), ntohs(other_party_addr.sin_port));
                 } else {
                     memcpy(&other_party_addr, &session->original_caller_addr, sizeof(other_party_addr));
-                                sockaddr_to_ip_str(cliaddr), ntohs(cliaddr->sin_port),
-                                sockaddr_to_ip_str(&other_party_addr), ntohs(other_party_addr.sin_port));
                 }
 
                 send_sip_message(sockfd, &other_party_addr, sizeof(other_party_addr), buffer);
@@ -620,8 +612,6 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                 session->state == CALL_STATE_RINGING)) {
 
                 send_sip_message(sockfd, &session->callee_addr, sizeof(session->callee_addr), buffer);
-                            session->call_id, sockaddr_to_ip_str(&session->callee_addr),
-                            ntohs(session->callee_addr.sin_port));
 
                 send_response_to_registered(sockfd,
                                             from_user_id,
@@ -660,7 +650,6 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
             }
         }
         else {
-                        method, sockaddr_to_ip_str(cliaddr), ntohs(cliaddr->sin_port));
             send_response_to_registered(sockfd,
                                         from_user_id,
                                         cliaddr, cli_len,
