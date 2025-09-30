@@ -23,7 +23,7 @@ endef
 
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
-	$(CP) ./src/* $(PKG_BUILD_DIR)/
+	$(CP) -r ./src/* $(PKG_BUILD_DIR)/
 	mkdir -p $(PKG_BUILD_DIR)/files/etc
 	$(CP) ./files/etc/sipserver.conf $(PKG_BUILD_DIR)/files/etc/
 endef
