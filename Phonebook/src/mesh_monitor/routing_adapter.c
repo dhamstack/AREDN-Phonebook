@@ -219,15 +219,15 @@ static int parse_olsr_neighbors_json(const char *json, neighbor_info_t *neighbor
                     }
                     int j = 0;
                     while (j < 63 && *name_start && *name_start != '"' && *name_start != ',') {
-                        neighbors[count].node_name[j++] = *name_start++;
+                        neighbors[count].node[j++] = *name_start++;
                     }
-                    neighbors[count].node_name[j] = '\0';
+                    neighbors[count].node[j] = '\0';
                 }
             }
 
             // If no hostname, use IP as node name
-            if (neighbors[count].node_name[0] == '\0') {
-                strncpy(neighbors[count].node_name, ip_buffer, sizeof(neighbors[count].node_name) - 1);
+            if (neighbors[count].node[0] == '\0') {
+                strncpy(neighbors[count].node, ip_buffer, sizeof(neighbors[count].node) - 1);
             }
 
             // Default interface (OLSR doesn't always provide this easily)

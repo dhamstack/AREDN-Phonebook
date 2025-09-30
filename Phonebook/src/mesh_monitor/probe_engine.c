@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <errno.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 static int probe_socket = -1;
 static mesh_monitor_config_t probe_config;
