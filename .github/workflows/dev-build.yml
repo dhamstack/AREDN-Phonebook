@@ -76,7 +76,7 @@ jobs:
           fi
 
           echo "Testing development build compilation..."
-          if ! make package/aredn-phonebook/compile V=s -j1; then
+          if ! make package/aredn-phonebook/compile V=s -j1 BUILD_SHA=${{ github.sha }}; then
             echo "❌ Development build failed"
             exit 1
           else
