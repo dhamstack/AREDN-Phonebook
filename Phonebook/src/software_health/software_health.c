@@ -3,8 +3,12 @@
 #include "software_health.h"
 #include "../config_loader/config_loader.h"
 #include "../log_manager/log_manager.h"
-#include <math.h>
 #include <signal.h>
+
+// Simple max function to avoid math library dependency
+static inline float fmax_simple(float a, float b) {
+    return (a > b) ? a : b;
+}
 
 // Global health state definitions
 process_health_t g_process_health = {0};
@@ -477,7 +481,7 @@ float calculate_health_score(void) {
     // Deduct for high error rates (1 point per error per hour)
     score -= get_hourly_error_rate();
 
-    return fmax(0.0, score);
+    return fmax_simple(0.0, score);
 }
 
 bool is_system_healthy(void) {
