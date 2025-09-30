@@ -1,5 +1,4 @@
 #!/bin/sh
-# MODIFIED_BY_GEMINI: This script has been modified for testing purposes.
 
 # AREDN Phonebook Version Endpoint
 # Returns version information in JSON format
