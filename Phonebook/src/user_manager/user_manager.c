@@ -46,7 +46,6 @@ RegisteredUser* find_registered_user(const char *user_id) {
 RegisteredUser* add_or_update_registered_user(const char *user_id,
                                           const char *display_name,
                                           int expires) {
-                user_id, display_name, expires);
     LOG_DEBUG("add_or_update_registered_user called for user '%s' (Display: '%s'), expires %d.",
                 user_id, display_name, expires);
 
