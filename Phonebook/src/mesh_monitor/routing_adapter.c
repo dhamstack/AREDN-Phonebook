@@ -24,6 +24,11 @@
 static routing_daemon_t current_daemon = ROUTING_AUTO;
 static bool adapter_initialized = false;
 
+// Forward declarations for Babel functions
+static int get_babel_neighbors(neighbor_info_t *neighbors, int max_neighbors);
+static int get_babel_route(const char *dst_ip, route_info_t *route);
+static int get_babel_path_hops(const char *dst_ip, neighbor_info_t *hops, int max_hops);
+
 // Detect which routing daemon is running
 static routing_daemon_t detect_routing_daemon(void) {
     // Check for OLSR jsoninfo plugin
