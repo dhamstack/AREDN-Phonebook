@@ -28,3 +28,9 @@ Thumbs.db
 
 # Log files
 *.log
+
+# Transitory implementation documents (will be deleted after completion)
+docs/implementation/
+
+# Temporary files
+*.tmp.*
