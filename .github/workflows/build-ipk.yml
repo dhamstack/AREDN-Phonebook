@@ -53,6 +53,7 @@ jobs:
 
       - name: Inject AREDN-Phonebook package
         run: |
+          rm -rf sdk/package/aredn-phonebook
           mkdir -p sdk/package/aredn-phonebook
           cp -r Phonebook/* sdk/package/aredn-phonebook/
 

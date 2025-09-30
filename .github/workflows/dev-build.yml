@@ -47,6 +47,7 @@ jobs:
           echo "Checking for any pre-existing aredn-phonebook files in SDK..."
           find sdk -name "*aredn-phonebook*" -o -name "*aredn*" 2>/dev/null || echo "No pre-existing files found"
 
+          rm -rf sdk/package/aredn-phonebook
           mkdir -p sdk/package/aredn-phonebook
           cp -r Phonebook/* sdk/package/aredn-phonebook/
 
