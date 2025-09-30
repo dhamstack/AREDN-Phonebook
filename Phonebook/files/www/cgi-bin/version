@@ -7,14 +7,18 @@ echo "Content-Type: application/json"
 echo "Cache-Control: no-cache"
 echo ""
 
-# Get version from binary if available
-if [ -f "/usr/bin/aredn-phonebook" ]; then
-    VERSION=$(/usr/bin/aredn-phonebook --version 2>/dev/null | head -1)
+# Get version from package info or binary
+VERSION="unknown"
+if [ -f "/usr/lib/opkg/info/aredn-phonebook.control" ]; then
+    VERSION=$(grep "^Version:" /usr/lib/opkg/info/aredn-phonebook.control | cut -d' ' -f2)
+fi
+
+# Try binary --version if package info not available
+if [ "$VERSION" = "unknown" ] && [ -f "/usr/bin/aredn-phonebook" ]; then
+    VERSION=$(/usr/bin/aredn-phonebook --version 2>/dev/null | head -1 | awk '{print $3}')
     if [ -z "$VERSION" ]; then
         VERSION="unknown"
     fi
-else
-    VERSION="not installed"
 fi
 
 # Get hostname

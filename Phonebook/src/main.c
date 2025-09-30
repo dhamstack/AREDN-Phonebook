@@ -55,6 +55,13 @@ const char* sockaddr_to_ip_str(const struct sockaddr_in* addr) {
 }
 
 int main(int argc, char *argv[]) {
+    // Handle --version flag
+    if (argc > 1 && (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0)) {
+        printf("%s version %s\n", APP_NAME, AREDN_PHONEBOOK_VERSION);
+        printf("Build date: %s %s\n", __DATE__, __TIME__);
+        return EXIT_SUCCESS;
+    }
+
     int sockfd;
     struct sockaddr_in servaddr, cliaddr; // Defined here
     char buffer[MAX_SIP_MSG_LEN]; // Max SIP message length
@@ -66,7 +73,8 @@ int main(int argc, char *argv[]) {
     int retval;
 
     log_init(APP_NAME); // APP_NAME is defined in common.h
-    LOG_INFO("Starting main function for %s process (PID %d).", MODULE_NAME, getpid());
+    LOG_INFO("Starting %s version %s (Build: %s %s, PID: %d)",
+             APP_NAME, AREDN_PHONEBOOK_VERSION, __DATE__, __TIME__, getpid());
 
     // --- Load configuration from file ---
     load_configuration("/etc/sipserver.conf"); // Call the loader function
@@ -79,6 +87,10 @@ int main(int argc, char *argv[]) {
             return EXIT_FAILURE;
         }
         LOG_INFO("Software health monitoring initialized successfully");
+
+        // Export initial health state immediately (don't wait for first periodic check)
+        export_health_to_json("/tmp/meshmon_health.json");
+        LOG_INFO("Initial health state exported to /tmp/meshmon_health.json");
     } else {
         LOG_INFO("Software health monitoring disabled by configuration");
     }
