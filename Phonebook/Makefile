@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=aredn-phonebook
-PKG_VERSION:=1.4.5
+PKG_VERSION:=1.5.0
 PKG_RELEASE:=1
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
@@ -61,6 +61,7 @@ define Package/aredn-phonebook/install
 	$(INSTALL_BIN) ./files/www/cgi-bin/healthcheck $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/health $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/crash $(1)/www/cgi-bin/
+	$(INSTALL_BIN) ./files/www/cgi-bin/version $(1)/www/cgi-bin/
 endef
 
 $(eval $(call BuildPackage,aredn-phonebook))
