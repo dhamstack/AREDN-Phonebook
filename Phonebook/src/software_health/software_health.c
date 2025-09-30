@@ -711,11 +711,18 @@ static float get_cpu_usage_percent(void) {
 //=============================================================================
 
 void populate_agent_health(agent_health_t* health) {
-    if (!health || !health_enabled) return;
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health called\n");
+    if (!health || !health_enabled) {
+        gemini_debug_log("GEMINI_DEBUG: populate_agent_health early return (health=%p, enabled=%d)\n", health, health_enabled);
+        return;
+    }
 
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health calling memset\n");
     memset(health, 0, sizeof(agent_health_t));
 
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health acquiring mutex\n");
     pthread_mutex_lock(&g_health_mutex);
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health mutex acquired\n");
 
     // Schema and type
     strncpy(health->schema, "meshmon.v1", sizeof(health->schema) - 1);
@@ -757,14 +764,18 @@ void populate_agent_health(agent_health_t* health) {
     health->checks.phonebook_current = true; // TODO: Add phonebook freshness check
 
     // SIP service object
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health setting SIP service data\n");
     health->sip_service.active_calls = 0; // TODO: Get from call_sessions
     health->sip_service.registered_users = num_registered_users;
 
     // Monitoring object
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health setting monitoring data\n");
     health->monitoring.probe_queue_depth = 0; // TODO: Implement probe queue tracking
     strncpy(health->monitoring.last_probe_sent, "N/A", sizeof(health->monitoring.last_probe_sent) - 1);
 
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health releasing mutex\n");
     pthread_mutex_unlock(&g_health_mutex);
+    gemini_debug_log("GEMINI_DEBUG: populate_agent_health completed\n");
 }
 
 //=============================================================================
@@ -834,10 +845,16 @@ char* agent_health_to_json_string(const agent_health_t* health) {
 
 void export_health_to_json(const char* filepath) {
     gemini_debug_log("GEMINI_DEBUG: export_health_to_json called with filepath: %s\n", filepath);
-    if (!health_enabled || !filepath) return;
+    if (!health_enabled || !filepath) {
+        gemini_debug_log("GEMINI_DEBUG: export_health_to_json early return (enabled=%d, filepath=%p)\n", health_enabled, filepath);
+        return;
+    }
 
+    gemini_debug_log("GEMINI_DEBUG: export_health_to_json creating health struct\n");
     agent_health_t health;
+    gemini_debug_log("GEMINI_DEBUG: export_health_to_json calling populate_agent_health\n");
     populate_agent_health(&health);
+    gemini_debug_log("GEMINI_DEBUG: export_health_to_json populate_agent_health returned\n");
 
     char* json = agent_health_to_json_string(&health);
     gemini_debug_log("GEMINI_DEBUG: agent_health_to_json_string returned %p (NULL if failed)\n", json);
