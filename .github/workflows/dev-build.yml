@@ -52,10 +52,14 @@ jobs:
         run: |
           cd sdk
           make defconfig
-          echo "Aggressively cleaning all build artifacts..."
+          echo "Nuclear clean - removing ALL cached artifacts..."
           rm -rf build_dir/target-*/aredn-phonebook* || true
           rm -rf bin/packages/*/base/aredn-phonebook* || true
+          rm -rf staging_dir/target-*/root-*/usr/bin/aredn-phonebook || true
+          rm -rf staging_dir/target-*/stamp/.aredn-phonebook* || true
+          rm -rf dl/aredn-phonebook* || true
           make package/aredn-phonebook/clean V=s
+          make clean V=s
           echo "Testing development build compilation..."
           if ! make package/aredn-phonebook/compile V=s -j1; then
             echo "❌ Development build failed"
