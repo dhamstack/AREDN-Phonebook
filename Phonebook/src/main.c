@@ -55,7 +55,7 @@ const char* sockaddr_to_ip_str(const struct sockaddr_in* addr) {
 }
 
 int main(int argc, char *argv[]) {
-    printf("GEMINI_DEBUG: main function started\n");
+    fprintf(stderr, "GEMINI_DEBUG: main function started\n");
     // Handle --version flag
     if (argc > 1 && (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0)) {
         printf("%s version %s\n", APP_NAME, AREDN_PHONEBOOK_VERSION);
@@ -78,12 +78,12 @@ int main(int argc, char *argv[]) {
              APP_NAME, AREDN_PHONEBOOK_VERSION, __DATE__, __TIME__, getpid());
 
     // --- Load configuration from file ---
-    printf("GEMINI_DEBUG: Before load_configuration\n");
+    fprintf(stderr, "GEMINI_DEBUG: Before load_configuration\n");
     load_configuration("/etc/sipserver.conf"); // Call the loader function
-    printf("GEMINI_DEBUG: After load_configuration\n");
+    fprintf(stderr, "GEMINI_DEBUG: After load_configuration\n");
 
     // --- Initialize software health monitoring ---
-    printf("GEMINI_DEBUG: Before software_health_init\n");
+    fprintf(stderr, "GEMINI_DEBUG: Before software_health_init\n");
     if (g_health_config.enabled) {
         LOG_INFO("Initializing software health monitoring...");
         if (software_health_init() != 0) {
@@ -98,7 +98,7 @@ int main(int argc, char *argv[]) {
     } else {
         LOG_INFO("Software health monitoring disabled by configuration");
     }
-    printf("GEMINI_DEBUG: After software_health_init\n");
+    fprintf(stderr, "GEMINI_DEBUG: After software_health_init\n");
     // --- Passive Safety: Self-correct configuration ---
     validate_and_correct_config(); // Fix common config errors automatically
 
@@ -180,7 +180,7 @@ int main(int argc, char *argv[]) {
     }
     LOG_DEBUG("Existing public XML file checked/deleted.");
 
-    printf("GEMINI_DEBUG: Before creating phonebook fetcher thread\n");
+    fprintf(stderr, "GEMINI_DEBUG: Before creating phonebook fetcher thread\n");
     LOG_INFO("Creating phonebook fetcher thread...");
     if (pthread_create(&fetcher_tid, NULL, phonebook_fetcher_thread, NULL) != 0) {
         LOG_ERROR("Failed to create phonebook fetcher thread.");
@@ -195,7 +195,7 @@ int main(int argc, char *argv[]) {
         LOG_DEBUG("Fetcher thread registered with health monitoring");
     }
 
-    printf("GEMINI_DEBUG: Before creating status updater thread\n");
+    fprintf(stderr, "GEMINI_DEBUG: Before creating status updater thread\n");
     LOG_INFO("Creating status updater thread...");
     if (pthread_create(&status_updater_tid, NULL, status_updater_thread, NULL) != 0) {
         LOG_ERROR("Failed to create status updater thread.");
@@ -210,7 +210,7 @@ int main(int argc, char *argv[]) {
     }
     LOG_DEBUG("Updater thread TID: %lu", (unsigned long)status_updater_tid);
 
-    printf("GEMINI_DEBUG: Before creating passive safety thread\n");
+    fprintf(stderr, "GEMINI_DEBUG: Before creating passive safety thread\n");
     LOG_INFO("Creating passive safety thread...");
     if (pthread_create(&g_passive_safety_tid, NULL, passive_safety_thread, NULL) != 0) {
         LOG_ERROR("Failed to create passive safety thread.");
@@ -229,7 +229,7 @@ int main(int argc, char *argv[]) {
     init_call_sessions();
     LOG_DEBUG("Call sessions table initialized.");
 
-    printf("GEMINI_DEBUG: Before creating SIP UDP socket\n");
+    fprintf(stderr, "GEMINI_DEBUG: Before creating SIP UDP socket\n");
     LOG_INFO("Creating SIP UDP socket...");
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         LOG_ERROR("Socket creation failed.");
@@ -248,7 +248,7 @@ int main(int argc, char *argv[]) {
     servaddr.sin_port = htons(SIP_PORT);
     LOG_DEBUG("Server address struct prepared (port: %d).", SIP_PORT);
 
-    printf("GEMINI_DEBUG: Before binding to UDP port\n");
+    fprintf(stderr, "GEMINI_DEBUG: Before binding to UDP port\n");
     LOG_INFO("Attempting to bind to UDP port %d...", SIP_PORT);
     if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
         LOG_ERROR("Socket bind failed on port %d.", SIP_PORT);
@@ -258,7 +258,7 @@ int main(int argc, char *argv[]) {
 
     LOG_INFO("AREDN Phonebook SIP Server listening on UDP port %d", SIP_PORT);
     LOG_INFO("Entering main SIP message processing loop.");
-    printf("GEMINI_DEBUG: Entering main SIP message processing loop\n");
+    fprintf(stderr, "GEMINI_DEBUG: Entering main SIP message processing loop\n");
 
     while (1) { // Changed from while(keep_running) to while(1)
         // Health Monitoring: Update main thread heartbeat
