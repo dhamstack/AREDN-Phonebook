@@ -43,7 +43,7 @@ The enhanced system maintains backward compatibility while adding optional monit
 - [x] Routing daemon auto-detection (OLSR/Babel)
 - [x] OLSR jsoninfo HTTP client
 - [x] Babel Unix domain socket client
-- [x] Neighbor discovery from routing tables
+- [x] Agent discovery from OLSR topology (replaces neighbor-only mode)
 - [x] UDP probe engine (sender and responder)
 - [x] RFC3550 metrics calculation (RTT, jitter, packet loss)
 - [x] Network JSON export with meshmon.v1 schema
@@ -190,13 +190,14 @@ enabled = 1
 mode = lightweight        # lightweight | full | disabled
 
 # Network status measurement
-network_status_interval_s = 40  # How often to measure network status (UDP probes)
-probe_window_s = 5              # Duration of each probe burst
-neighbor_targets = 2            # Neighbors to probe per cycle
-rotating_peer = 1               # Additional non-neighbor target
-max_probe_kbps = 80             # Bandwidth limit per probe
-probe_port = 40050              # UDP port for probes
-dscp_ef = 1                     # Mark probes with DSCP EF (voice-like)
+network_status_interval_s = 40      # How often to measure network status (UDP probes)
+probe_window_s = 5                  # Duration of each probe burst
+agent_discovery_interval_s = 3600   # Agent discovery scan interval (1 hour)
+agent_discovery_timeout_s = 2       # Timeout per discovery probe
+max_discovered_agents = 100         # Maximum agents to cache
+max_probe_kbps = 80                 # Bandwidth limit per probe
+probe_port = 40050                  # UDP port for probes
+dscp_ef = 1                         # Mark probes with DSCP EF (voice-like)
 
 # Phonebook health status monitoring
 phonebook_health_update_s = 60        # How often passive_safety updates /tmp/meshmon_health.json
@@ -219,8 +220,40 @@ collector_url =                 # Optional: external collector endpoint
 ### 4.2 Monitoring Modes
 
 - **Disabled:** No monitoring overhead (default for low-memory nodes)
-- **Lightweight:** Neighbor-only probes, minimal metrics
+- **Lightweight:** Agent discovery with basic metrics
 - **Full:** Complete path analysis with hop-by-hop metrics
+
+### 4.3 Agent Discovery Strategy
+
+**Purpose:** Discover all nodes with agents (phonebook servers or probe responders) mesh-wide, not just direct neighbors.
+
+**Why:** For emergency SIP communications, we need to know reachability to all potential call destinations, regardless of hop count.
+
+**Discovery Process:**
+1. **Topology Query** (every 1 hour):
+   - Query OLSR: `GET http://127.0.0.1:9090/topology`
+   - Extract all unique node IPs from mesh topology
+
+2. **Agent Detection** (one-time per discovered node):
+   - Send ONE test probe (UDP packet) to each IP
+   - Wait up to 2 seconds for echo response
+   - If responds: node has agent (phonebook or responder)
+
+3. **Cache Management** (**RAM only - `/tmp/`**):
+   - Save discovered agents to `/tmp/aredn_agent_cache.txt` (tmpfs)
+   - Zero flash memory writes
+   - Cache cleared on reboot → fresh discovery
+
+4. **Regular Monitoring** (every 40s):
+   - Probe only cached agent list
+   - Measure RTT, jitter, packet loss
+   - Update network status JSON
+
+**Benefits:**
+- ✅ Discovers all agents mesh-wide (2-hop, 3-hop, etc.)
+- ✅ Auto-updates as new agents come online
+- ✅ Minimal overhead (~1KB/hour for discovery)
+- ✅ Zero flash wear (tmpfs only)
 
 ---
 

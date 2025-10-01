@@ -15,9 +15,10 @@ AREDN Phonebook is a SIP proxy server that provides directory services and optio
 - 🔧 **Passive Safety**: Self-healing with automatic error recovery
 
 ### 📡 Network Monitoring (Optional - Enabled by Default)
-- 📊 **Network Probing**: RFC3550-compliant RTT, jitter, packet loss measurements
+- 🔍 **Agent Discovery**: Auto-discovers all phonebook servers and responders mesh-wide via OLSR topology
+- 📊 **Network Probing**: RFC3550-compliant RTT, jitter, packet loss measurements to discovered agents
 - 🛣️ **Hop-by-Hop Analysis**: Path quality metrics with ETX, LQ, NLQ per hop
-- 🔍 **Link Classification**: Identifies RF, tunnel, ethernet, bridge links
+- 🔗 **Link Classification**: Identifies RF, tunnel, ethernet, bridge links
 - 🗺️ **Geographic Data**: Reports node location (lat/lon/grid square) from AREDN
 - 🖥️ **Hardware Info**: Tracks device model and firmware version
 - 🔄 **Multi-Protocol**: Supports both OLSR and Babel routing daemons
@@ -162,7 +163,7 @@ curl http://localhost/arednstack/phonebook_generic_direct.xml
 ✅ **Phase 1 - Network Monitoring** (Complete)
 - UDP probe engine with RFC3550 metrics
 - OLSR and Babel routing daemon support
-- Neighbor discovery and probing
+- Agent discovery from mesh topology (auto-discovers all phonebook servers and responders)
 
 ✅ **Phase 2 - Path Analysis** (Complete)
 - Hop-by-hop path reconstruction
