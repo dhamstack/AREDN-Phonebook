@@ -46,4 +46,7 @@ const char* get_routing_daemon_name(void);
 // Get raw OLSR jsoninfo data (for agent discovery)
 int http_get_olsr_jsoninfo(const char *endpoint, char *buffer, size_t buffer_size);
 
+// Generic HTTP GET to localhost (for AREDN APIs)
+int http_get_localhost(const char *host, int port, const char *path, char *buffer, size_t buffer_size);
+
 #endif // ROUTING_ADAPTER_H

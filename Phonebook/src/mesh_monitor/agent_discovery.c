@@ -10,10 +10,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
-#include <errno.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <ctype.h>
 
 // Global state (RAM only)
@@ -24,7 +20,6 @@ static bool discovery_initialized = false;
 static pthread_mutex_t discovery_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Forward declarations
-static int http_get_aredn_sysinfo(const char *params, char *buffer, size_t buffer_size);
 static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], char names[][64], int max_ips);
 static bool is_numeric_name(const char *name);
 static bool test_agent_probe(const char *ip);
@@ -83,8 +78,8 @@ int perform_agent_discovery_scan(void) {
     char sysinfo_json[65536];
     memset(sysinfo_json, 0, sizeof(sysinfo_json));
 
-    // Query AREDN sysinfo API for all hosts
-    if (http_get_aredn_sysinfo("hosts=1", sysinfo_json, sizeof(sysinfo_json)) != 0) {
+    // Query AREDN sysinfo API for all hosts using shared HTTP function
+    if (http_get_localhost("127.0.0.1", 8080, "/cgi-bin/sysinfo.json?hosts=1", sysinfo_json, sizeof(sysinfo_json)) != 0) {
         LOG_ERROR("Failed to query AREDN sysinfo for agent discovery");
         return -1;
     }
@@ -229,79 +224,6 @@ int save_agent_cache(void) {
 //=============================================================================
 // Helper Functions
 //=============================================================================
-
-static int http_get_aredn_sysinfo(const char *params, char *buffer, size_t buffer_size) {
-    int sockfd;
-    struct sockaddr_in serv_addr;
-    struct timeval timeout;
-    char request[512];
-    ssize_t bytes_received = 0;
-
-    // Create socket
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-        LOG_ERROR("Failed to create socket for AREDN sysinfo: %s", strerror(errno));
-        return -1;
-    }
-
-    // Set receive timeout
-    timeout.tv_sec = 10;
-    timeout.tv_usec = 0;
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-
-    // Setup server address (localnode.local.mesh:8080)
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(8080);
-
-    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
-        LOG_ERROR("Invalid AREDN sysinfo address");
-        close(sockfd);
-        return -1;
-    }
-
-    // Connect to server
-    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        LOG_ERROR("Failed to connect to AREDN sysinfo: %s", strerror(errno));
-        close(sockfd);
-        return -1;
-    }
-
-    // Send HTTP GET request to /cgi-bin/sysinfo.json?hosts=1
-    snprintf(request, sizeof(request),
-             "GET /cgi-bin/sysinfo.json?%s HTTP/1.0\r\n"
-             "Host: localnode.local.mesh\r\n"
-             "Connection: close\r\n\r\n",
-             params);
-
-    if (send(sockfd, request, strlen(request), 0) < 0) {
-        LOG_ERROR("Failed to send HTTP request to AREDN sysinfo: %s", strerror(errno));
-        close(sockfd);
-        return -1;
-    }
-
-    // Read response
-    memset(buffer, 0, buffer_size);
-    bytes_received = recv(sockfd, buffer, buffer_size - 1, 0);
-
-    close(sockfd);
-
-    if (bytes_received < 0) {
-        LOG_ERROR("Failed to receive HTTP response from AREDN sysinfo: %s", strerror(errno));
-        return -1;
-    }
-
-    buffer[bytes_received] = '\0';
-
-    // Strip HTTP headers - find double newline
-    char *json_start = strstr(buffer, "\r\n\r\n");
-    if (json_start) {
-        json_start += 4;
-        memmove(buffer, json_start, strlen(json_start) + 1);
-    }
-
-    return 0;
-}
 
 static bool is_numeric_name(const char *name) {
     if (!name || *name == '\0') {

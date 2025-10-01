@@ -84,7 +84,8 @@ void routing_adapter_shutdown(void) {
 }
 
 // Simple HTTP GET request to OLSR jsoninfo (exported for agent discovery)
-int http_get_olsr_jsoninfo(const char *endpoint, char *buffer, size_t buffer_size) {
+// Generic HTTP GET to localhost
+int http_get_localhost(const char *host, int port, const char *path, char *buffer, size_t buffer_size) {
     int sockfd;
     struct sockaddr_in serv_addr;
     struct timeval timeout;
@@ -94,7 +95,7 @@ int http_get_olsr_jsoninfo(const char *endpoint, char *buffer, size_t buffer_siz
     // Create socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
-        LOG_ERROR("Failed to create socket for OLSR jsoninfo: %s", strerror(errno));
+        LOG_ERROR("Failed to create socket for HTTP GET: %s", strerror(errno));
         return -1;
     }
 
@@ -106,27 +107,27 @@ int http_get_olsr_jsoninfo(const char *endpoint, char *buffer, size_t buffer_siz
     // Setup server address
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(OLSR_JSONINFO_PORT);
+    serv_addr.sin_port = htons(port);
 
-    if (inet_pton(AF_INET, OLSR_JSONINFO_HOST, &serv_addr.sin_addr) <= 0) {
-        LOG_ERROR("Invalid OLSR jsoninfo address");
+    if (inet_pton(AF_INET, host, &serv_addr.sin_addr) <= 0) {
+        LOG_ERROR("Invalid HTTP address: %s", host);
         close(sockfd);
         return -1;
     }
 
     // Connect to server
     if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        LOG_DEBUG("Failed to connect to OLSR jsoninfo (daemon may not be running): %s", strerror(errno));
+        LOG_DEBUG("Failed to connect to %s:%d: %s", host, port, strerror(errno));
         close(sockfd);
         return -1;
     }
 
     // Send HTTP GET request
     snprintf(request, sizeof(request),
-             "GET /%s HTTP/1.0\r\n"
+             "GET %s HTTP/1.0\r\n"
              "Host: %s\r\n"
              "Connection: close\r\n\r\n",
-             endpoint, OLSR_JSONINFO_HOST);
+             path, host);
 
     if (send(sockfd, request, strlen(request), 0) < 0) {
         LOG_ERROR("Failed to send HTTP request: %s", strerror(errno));
@@ -161,6 +162,12 @@ int http_get_olsr_jsoninfo(const char *endpoint, char *buffer, size_t buffer_siz
     }
 
     return 0;
+}
+
+int http_get_olsr_jsoninfo(const char *endpoint, char *buffer, size_t buffer_size) {
+    char path[256];
+    snprintf(path, sizeof(path), "/%s", endpoint);
+    return http_get_localhost(OLSR_JSONINFO_HOST, OLSR_JSONINFO_PORT, path, buffer, buffer_size);
 }
 
 // Simple JSON parser for OLSR neighbors (no external JSON library)
