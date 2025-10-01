@@ -109,10 +109,16 @@ int http_get_localhost(const char *host, int port, const char *path, char *buffe
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
 
+    // Try to resolve hostname (supports both IPs and DNS names)
     if (inet_pton(AF_INET, host, &serv_addr.sin_addr) <= 0) {
-        LOG_ERROR("Invalid HTTP address: %s", host);
-        close(sockfd);
-        return -1;
+        // Not a valid IP, try DNS resolution
+        struct hostent *server = gethostbyname(host);
+        if (server == NULL) {
+            LOG_ERROR("Failed to resolve hostname: %s", host);
+            close(sockfd);
+            return -1;
+        }
+        memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
     }
 
     // Connect to server
