@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <ctype.h>
 
 // Global state (RAM only)
 static discovered_agent_t agent_cache[MAX_DISCOVERED_AGENTS];
@@ -24,7 +25,8 @@ static pthread_mutex_t discovery_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Forward declarations
 static int http_get_aredn_sysinfo(const char *params, char *buffer, size_t buffer_size);
-static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips);
+static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], char names[][64], int max_ips);
+static bool is_numeric_name(const char *name);
 static bool test_agent_probe(const char *ip);
 static int add_agent_to_cache(const char *ip, const char *node);
 
@@ -87,9 +89,10 @@ int perform_agent_discovery_scan(void) {
         return -1;
     }
 
-    // Parse unique IPs from hosts array
+    // Parse unique IPs and names from hosts array
     char unique_ips[MAX_DISCOVERED_AGENTS][INET_ADDRSTRLEN];
-    int ip_count = parse_hosts_ips(sysinfo_json, unique_ips, MAX_DISCOVERED_AGENTS);
+    char node_names[MAX_DISCOVERED_AGENTS][64];
+    int ip_count = parse_hosts_ips(sysinfo_json, unique_ips, node_names, MAX_DISCOVERED_AGENTS);
 
     if (ip_count == 0) {
         LOG_WARN("No IPs found in AREDN hosts");
@@ -118,15 +121,21 @@ int perform_agent_discovery_scan(void) {
         }
 
         if (!already_cached) {
+            // Skip nodes with numeric-only names (telephones)
+            if (is_numeric_name(node_names[i])) {
+                LOG_DEBUG("Skipping node %s (%s) - numeric name indicates telephone", unique_ips[i], node_names[i]);
+                continue;
+            }
+
             // Test if this node has an agent
-            LOG_INFO("Agent discovery progress: %d/%d - testing %s", i+1, ip_count, unique_ips[i]);
+            LOG_INFO("Agent discovery progress: %d/%d - testing %s (%s)", i+1, ip_count, unique_ips[i], node_names[i]);
             if (test_agent_probe(unique_ips[i])) {
-                if (add_agent_to_cache(unique_ips[i], unique_ips[i]) == 0) {
+                if (add_agent_to_cache(unique_ips[i], node_names[i]) == 0) {
                     new_agents++;
-                    LOG_INFO("Discovered new agent at %s", unique_ips[i]);
+                    LOG_INFO("Discovered new agent at %s (%s)", unique_ips[i], node_names[i]);
                 }
             } else {
-                LOG_DEBUG("No agent response from %s", unique_ips[i]);
+                LOG_DEBUG("No agent response from %s (%s)", unique_ips[i], node_names[i]);
             }
         }
     }
@@ -294,8 +303,23 @@ static int http_get_aredn_sysinfo(const char *params, char *buffer, size_t buffe
     return 0;
 }
 
-static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips) {
-    if (!json || !ips) {
+static bool is_numeric_name(const char *name) {
+    if (!name || *name == '\0') {
+        return false;
+    }
+
+    // Check if the name contains only digits
+    for (const char *p = name; *p != '\0'; p++) {
+        if (!isdigit((unsigned char)*p)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], char names[][64], int max_ips) {
+    if (!json || !ips || !names) {
         return 0;
     }
 
@@ -317,50 +341,80 @@ static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], int ma
 
     pos = array_start + 1;
 
-    // Parse all IPs from hosts array
+    // Parse all IPs and names from hosts array
     while (count < max_ips && pos && *pos) {
-        // Look for "ip" field
-        const char *ip_field = strstr(pos, "\"ip\"");
-
-        if (!ip_field) {
+        // Look for the start of an object
+        const char *obj_start = strchr(pos, '{');
+        if (!obj_start) {
             break;
         }
 
-        // Extract IP value
-        const char *ip_start = strchr(ip_field, ':');
-        if (ip_start) {
-            ip_start = strchr(ip_start, '"');
-            if (ip_start) {
-                ip_start++;
-                const char *ip_end = strchr(ip_start, '"');
-                if (ip_end && (ip_end - ip_start) < INET_ADDRSTRLEN) {
-                    char ip_buffer[INET_ADDRSTRLEN];
-                    size_t ip_len = ip_end - ip_start;
-                    memcpy(ip_buffer, ip_start, ip_len);
-                    ip_buffer[ip_len] = '\0';
+        // Find the end of this object
+        const char *obj_end = strchr(obj_start, '}');
+        if (!obj_end) {
+            break;
+        }
 
-                    // Check if IP is unique (should be, but verify)
-                    bool is_unique = true;
-                    for (int i = 0; i < count; i++) {
-                        if (strcmp(ips[i], ip_buffer) == 0) {
-                            is_unique = false;
-                            break;
-                        }
+        // Extract name field within this object
+        const char *name_field = obj_start;
+        while (name_field < obj_end) {
+            name_field = strstr(name_field, "\"name\"");
+            if (name_field && name_field < obj_end) {
+                break;
+            }
+            name_field = NULL;
+            break;
+        }
+
+        // Extract ip field within this object
+        const char *ip_field = obj_start;
+        while (ip_field < obj_end) {
+            ip_field = strstr(ip_field, "\"ip\"");
+            if (ip_field && ip_field < obj_end) {
+                break;
+            }
+            ip_field = NULL;
+            break;
+        }
+
+        if (name_field && ip_field) {
+            // Extract name value
+            const char *name_start = strchr(name_field, ':');
+            if (name_start) {
+                name_start = strchr(name_start, '"');
+                if (name_start) {
+                    name_start++;
+                    const char *name_end = strchr(name_start, '"');
+                    if (name_end && (name_end - name_start) < 64) {
+                        size_t name_len = name_end - name_start;
+                        memcpy(names[count], name_start, name_len);
+                        names[count][name_len] = '\0';
                     }
+                }
+            }
 
-                    if (is_unique) {
-                        strncpy(ips[count], ip_buffer, INET_ADDRSTRLEN - 1);
-                        ips[count][INET_ADDRSTRLEN - 1] = '\0';
+            // Extract IP value
+            const char *ip_start = strchr(ip_field, ':');
+            if (ip_start) {
+                ip_start = strchr(ip_start, '"');
+                if (ip_start) {
+                    ip_start++;
+                    const char *ip_end = strchr(ip_start, '"');
+                    if (ip_end && (ip_end - ip_start) < INET_ADDRSTRLEN) {
+                        size_t ip_len = ip_end - ip_start;
+                        memcpy(ips[count], ip_start, ip_len);
+                        ips[count][ip_len] = '\0';
+
                         count++;
                     }
                 }
             }
         }
 
-        pos = ip_field + 1;
+        pos = obj_end + 1;
     }
 
-    LOG_DEBUG("Parsed %d unique IPs from AREDN hosts", count);
+    LOG_DEBUG("Parsed %d unique IPs and names from AREDN hosts", count);
     return count;
 }
 
