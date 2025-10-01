@@ -302,3 +302,17 @@ void populate_registered_users_from_csv(const char *filepath) {
 void load_directory_from_xml(const char *filepath) {
     LOG_WARN("load_directory_from_xml is deprecated for populating registered_users and should not be called for SIP server's user database. This function is retained for compatibility but its effect on registered_users is now ignored.");
 }
+
+int get_registered_user_count() {
+    int count = 0;
+    pthread_mutex_lock(&registered_users_mutex);
+    for (int i = 0; i < MAX_REGISTERED_USERS; i++) {
+        if (registered_users[i].user_id[0] != '\0' &&
+            registered_users[i].is_active &&
+            !registered_users[i].is_known_from_directory) {
+            count++;
+        }
+    }
+    pthread_mutex_unlock(&registered_users_mutex);
+    return count;
+}

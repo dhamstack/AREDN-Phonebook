@@ -12,5 +12,6 @@ RegisteredUser* add_csv_user_to_registered_users_table(const char *user_id_numer
 void init_registered_users_table();
 void populate_registered_users_from_csv(const char *filepath);
 void load_directory_from_xml(const char *filepath); // Deprecated but retained prototype
+int get_registered_user_count();
 
 #endif // USER_MANAGER_H

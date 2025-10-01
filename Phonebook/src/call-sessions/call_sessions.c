@@ -58,3 +58,13 @@ void init_call_sessions() {
     LOG_INFO("Initialized call session table (max %d sessions).",
                 MAX_CALL_SESSIONS);
 }
+
+int get_active_call_count() {
+    int count = 0;
+    for (int i = 0; i < MAX_CALL_SESSIONS; i++) {
+        if (call_sessions[i].in_use) {
+            count++;
+        }
+    }
+    return count;
+}

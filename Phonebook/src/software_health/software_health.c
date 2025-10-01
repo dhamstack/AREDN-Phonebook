@@ -5,6 +5,8 @@
 #include "../config_loader/config_loader.h"
 #include "../log_manager/log_manager.h"
 #include "../mesh_monitor/routing_adapter.h"
+#include "../call-sessions/call_sessions.h"
+#include "../user_manager/user_manager.h"
 #include <signal.h>
 
 // Simple max function to avoid math library dependency
@@ -782,8 +784,8 @@ void populate_agent_health(agent_health_t* health) {
     health->checks.phonebook_current = true; // TODO: Add phonebook freshness check
 
     // SIP service object
-    health->sip_service.active_calls = 0; // TODO: Get from call_sessions
-    health->sip_service.registered_users = num_registered_users;
+    health->sip_service.active_calls = get_active_call_count();
+    health->sip_service.registered_users = get_registered_user_count();
 
     // Monitoring object
     health->monitoring.probe_queue_depth = 0; // TODO: Implement probe queue tracking
