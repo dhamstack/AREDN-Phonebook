@@ -317,7 +317,7 @@ static bool test_agent_probe(const char *ip) {
     if (calculate_probe_metrics(ip, &result) == 0) {
         // Check if we actually got responses (loss < 100%)
         if (result.loss_pct < 100.0) {
-            LOG_INFO("Agent test successful for %s (loss: %.1f%%, rtt: %.1fms)", ip, result.loss_pct, result.avg_rtt_ms);
+            LOG_INFO("Agent test successful for %s (loss: %.1f%%, rtt: %.1fms)", ip, result.loss_pct, result.rtt_ms_avg);
             return true;
         } else {
             LOG_DEBUG("Agent test failed for %s (100%% packet loss)", ip);
