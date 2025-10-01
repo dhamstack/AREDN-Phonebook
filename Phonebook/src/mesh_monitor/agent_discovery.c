@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <ctype.h>
+#include <netdb.h>
 
 // Global state (RAM only)
 static discovered_agent_t agent_cache[MAX_DISCOVERED_AGENTS];
@@ -22,6 +23,7 @@ static pthread_mutex_t discovery_mutex = PTHREAD_MUTEX_INITIALIZER;
 // Forward declarations
 static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], char names[][64], int max_ips);
 static bool is_numeric_name(const char *name);
+static bool is_node_reachable(const char *nodename);
 static bool test_agent_probe(const char *ip);
 static int add_agent_to_cache(const char *ip, const char *node);
 
@@ -74,12 +76,12 @@ int perform_agent_discovery_scan(void) {
     LOG_INFO("Starting agent discovery scan");
     time_t scan_start = time(NULL);
 
-    // Query AREDN sysinfo hosts (all active nodes in mesh)
+    // Query AREDN sysinfo hosts (all nodes in mesh)
     char sysinfo_json[65536];
     memset(sysinfo_json, 0, sizeof(sysinfo_json));
 
-    // Query AREDN sysinfo API for all hosts using shared HTTP function
-    if (http_get_localhost("127.0.0.1", 8080, "/cgi-bin/sysinfo.json?hosts=1", sysinfo_json, sizeof(sysinfo_json)) != 0) {
+    // Use localnode.local.mesh (same as phonebook does)
+    if (http_get_localhost("localnode.local.mesh", 8080, "/cgi-bin/sysinfo.json?hosts=1", sysinfo_json, sizeof(sysinfo_json)) != 0) {
         LOG_ERROR("Failed to query AREDN sysinfo for agent discovery");
         return -1;
     }
@@ -122,8 +124,15 @@ int perform_agent_discovery_scan(void) {
                 continue;
             }
 
+            // Check if node is reachable via DNS (same as phonebook does)
+            LOG_INFO("Agent discovery progress: %d/%d - checking %s (%s)", i+1, ip_count, unique_ips[i], node_names[i]);
+            if (!is_node_reachable(node_names[i])) {
+                LOG_DEBUG("Node %s (%s) not reachable via DNS, skipping", node_names[i], unique_ips[i]);
+                continue;
+            }
+
             // Test if this node has an agent
-            LOG_INFO("Agent discovery progress: %d/%d - testing %s (%s)", i+1, ip_count, unique_ips[i], node_names[i]);
+            LOG_INFO("Testing %s (%s) for agent probe response", unique_ips[i], node_names[i]);
             if (test_agent_probe(unique_ips[i])) {
                 if (add_agent_to_cache(unique_ips[i], node_names[i]) == 0) {
                     new_agents++;
@@ -238,6 +247,29 @@ static bool is_numeric_name(const char *name) {
     }
 
     return true;
+}
+
+static bool is_node_reachable(const char *nodename) {
+    if (!nodename || *nodename == '\0') {
+        return false;
+    }
+
+    // Build FQDN: <nodename>.local.mesh (same as phonebook does)
+    char hostname[256];
+    snprintf(hostname, sizeof(hostname), "%s.%s", nodename, AREDN_MESH_DOMAIN);
+
+    // Try to resolve via DNS (same as status_updater)
+    struct addrinfo hints = {.ai_family = AF_INET, .ai_socktype = SOCK_DGRAM};
+    struct addrinfo *res = NULL;
+
+    int status = getaddrinfo(hostname, NULL, &hints, &res);
+
+    if (status == 0) {
+        freeaddrinfo(res);
+        return true;
+    }
+
+    return false;
 }
 
 static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], char names[][64], int max_ips) {
