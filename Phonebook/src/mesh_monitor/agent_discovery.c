@@ -10,6 +10,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 // Global state (RAM only)
 static discovered_agent_t agent_cache[MAX_DISCOVERED_AGENTS];
@@ -19,7 +23,8 @@ static bool discovery_initialized = false;
 static pthread_mutex_t discovery_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Forward declarations
-static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips);
+static int http_get_aredn_sysinfo(const char *params, char *buffer, size_t buffer_size);
+static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips);
 static bool test_agent_probe(const char *ip);
 static int add_agent_to_cache(const char *ip, const char *node);
 
@@ -72,26 +77,26 @@ int perform_agent_discovery_scan(void) {
     LOG_INFO("Starting agent discovery scan");
     time_t scan_start = time(NULL);
 
-    // Query OLSR routes (all reachable nodes)
-    char routes_json[65536];
-    memset(routes_json, 0, sizeof(routes_json));
+    // Query AREDN sysinfo hosts (all active nodes in mesh)
+    char sysinfo_json[65536];
+    memset(sysinfo_json, 0, sizeof(sysinfo_json));
 
-    // Use routing_adapter http_get function (now public)
-    if (http_get_olsr_jsoninfo("routes", routes_json, sizeof(routes_json)) != 0) {
-        LOG_ERROR("Failed to query OLSR routes for agent discovery");
+    // Query AREDN sysinfo API for all hosts
+    if (http_get_aredn_sysinfo("hosts=1", sysinfo_json, sizeof(sysinfo_json)) != 0) {
+        LOG_ERROR("Failed to query AREDN sysinfo for agent discovery");
         return -1;
     }
 
-    // Parse unique destination IPs from routes
+    // Parse unique IPs from hosts array
     char unique_ips[MAX_DISCOVERED_AGENTS][INET_ADDRSTRLEN];
-    int ip_count = parse_routes_ips(routes_json, unique_ips, MAX_DISCOVERED_AGENTS);
+    int ip_count = parse_hosts_ips(sysinfo_json, unique_ips, MAX_DISCOVERED_AGENTS);
 
     if (ip_count == 0) {
-        LOG_WARN("No IPs found in OLSR routes");
+        LOG_WARN("No IPs found in AREDN hosts");
         return 0;
     }
 
-    LOG_INFO("Found %d reachable nodes in routes table, testing for agents", ip_count);
+    LOG_INFO("Found %d active nodes in mesh, testing for agents", ip_count);
 
     // Test each IP for agent response
     pthread_mutex_lock(&discovery_mutex);
@@ -216,7 +221,80 @@ int save_agent_cache(void) {
 // Helper Functions
 //=============================================================================
 
-static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips) {
+static int http_get_aredn_sysinfo(const char *params, char *buffer, size_t buffer_size) {
+    int sockfd;
+    struct sockaddr_in serv_addr;
+    struct timeval timeout;
+    char request[512];
+    ssize_t bytes_received = 0;
+
+    // Create socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        LOG_ERROR("Failed to create socket for AREDN sysinfo: %s", strerror(errno));
+        return -1;
+    }
+
+    // Set receive timeout
+    timeout.tv_sec = 10;
+    timeout.tv_usec = 0;
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    // Setup server address (localnode.local.mesh:8080)
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(8080);
+
+    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+        LOG_ERROR("Invalid AREDN sysinfo address");
+        close(sockfd);
+        return -1;
+    }
+
+    // Connect to server
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        LOG_ERROR("Failed to connect to AREDN sysinfo: %s", strerror(errno));
+        close(sockfd);
+        return -1;
+    }
+
+    // Send HTTP GET request to /cgi-bin/sysinfo.json?hosts=1
+    snprintf(request, sizeof(request),
+             "GET /cgi-bin/sysinfo.json?%s HTTP/1.0\r\n"
+             "Host: localnode.local.mesh\r\n"
+             "Connection: close\r\n\r\n",
+             params);
+
+    if (send(sockfd, request, strlen(request), 0) < 0) {
+        LOG_ERROR("Failed to send HTTP request to AREDN sysinfo: %s", strerror(errno));
+        close(sockfd);
+        return -1;
+    }
+
+    // Read response
+    memset(buffer, 0, buffer_size);
+    bytes_received = recv(sockfd, buffer, buffer_size - 1, 0);
+
+    close(sockfd);
+
+    if (bytes_received < 0) {
+        LOG_ERROR("Failed to receive HTTP response from AREDN sysinfo: %s", strerror(errno));
+        return -1;
+    }
+
+    buffer[bytes_received] = '\0';
+
+    // Strip HTTP headers - find double newline
+    char *json_start = strstr(buffer, "\r\n\r\n");
+    if (json_start) {
+        json_start += 4;
+        memmove(buffer, json_start, strlen(json_start) + 1);
+    }
+
+    return 0;
+}
+
+static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips) {
     if (!json || !ips) {
         return 0;
     }
@@ -224,70 +302,32 @@ static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int m
     int count = 0;
     const char *pos = json;
 
-    // Look for "routes" array in JSON
-    const char *routes_array = strstr(pos, "\"routes\"");
-    if (!routes_array) {
-        LOG_DEBUG("No routes array found in OLSR response");
+    // Look for "hosts" array in JSON
+    const char *hosts_array = strstr(pos, "\"hosts\"");
+    if (!hosts_array) {
+        LOG_DEBUG("No hosts array found in AREDN sysinfo response");
         return 0;
     }
 
     // Find the opening bracket
-    const char *array_start = strchr(routes_array, '[');
+    const char *array_start = strchr(hosts_array, '[');
     if (!array_start) {
         return 0;
     }
 
     pos = array_start + 1;
 
-    // Parse all unique destination IPs from routes (only /32 host routes)
+    // Parse all IPs from hosts array
     while (count < max_ips && pos && *pos) {
-        // Look for "destination" field
-        const char *dest_field = strstr(pos, "\"destination\"");
+        // Look for "ip" field
+        const char *ip_field = strstr(pos, "\"ip\"");
 
-        if (!dest_field) {
+        if (!ip_field) {
             break;
         }
 
-        // Look for "genmask" field after destination to check if it's a host route
-        // Find the next route entry to limit our search scope
-        const char *next_dest = strstr(dest_field + 1, "\"destination\"");
-        const char *search_limit = next_dest ? next_dest : (dest_field + 300);
-
-        const char *genmask_field = dest_field;
-        while (genmask_field < search_limit) {
-            genmask_field = strstr(genmask_field, "\"genmask\"");
-            if (genmask_field && genmask_field < search_limit) {
-                break;
-            }
-            genmask_field = NULL;
-            break;
-        }
-
-        if (genmask_field) {
-            // Extract genmask value
-            const char *genmask_value = strchr(genmask_field, ':');
-            if (genmask_value) {
-                int genmask = 0;
-                sscanf(genmask_value, ": %d", &genmask);
-
-                // Only process /32 host routes (single IPs, not subnets)
-                if (genmask != 32) {
-                    pos = dest_field + 1;
-                    continue;
-                }
-            } else {
-                // No genmask value found, skip this entry
-                pos = dest_field + 1;
-                continue;
-            }
-        } else {
-            // No genmask field found for this destination, skip
-            pos = dest_field + 1;
-            continue;
-        }
-
-        // Extract IP
-        const char *ip_start = strchr(dest_field, ':');
+        // Extract IP value
+        const char *ip_start = strchr(ip_field, ':');
         if (ip_start) {
             ip_start = strchr(ip_start, '"');
             if (ip_start) {
@@ -299,13 +339,7 @@ static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int m
                     memcpy(ip_buffer, ip_start, ip_len);
                     ip_buffer[ip_len] = '\0';
 
-                    // Skip special entries: 0.0.0.0
-                    if (strcmp(ip_buffer, "0.0.0.0") == 0) {
-                        pos = dest_field + 1;
-                        continue;
-                    }
-
-                    // Check if IP is unique
+                    // Check if IP is unique (should be, but verify)
                     bool is_unique = true;
                     for (int i = 0; i < count; i++) {
                         if (strcmp(ips[i], ip_buffer) == 0) {
@@ -323,10 +357,10 @@ static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int m
             }
         }
 
-        pos = dest_field + 1;
+        pos = ip_field + 1;
     }
 
-    LOG_DEBUG("Parsed %d unique host IPs (/32) from OLSR routes", count);
+    LOG_DEBUG("Parsed %d unique IPs from AREDN hosts", count);
     return count;
 }
 
