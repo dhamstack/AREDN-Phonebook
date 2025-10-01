@@ -249,8 +249,21 @@ static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int m
         }
 
         // Look for "genmask" field after destination to check if it's a host route
-        const char *genmask_field = strstr(dest_field, "\"genmask\"");
-        if (genmask_field && genmask_field < dest_field + 200) {
+        // Find the next route entry to limit our search scope
+        const char *next_dest = strstr(dest_field + 1, "\"destination\"");
+        const char *search_limit = next_dest ? next_dest : (dest_field + 300);
+
+        const char *genmask_field = dest_field;
+        while (genmask_field < search_limit) {
+            genmask_field = strstr(genmask_field, "\"genmask\"");
+            if (genmask_field && genmask_field < search_limit) {
+                break;
+            }
+            genmask_field = NULL;
+            break;
+        }
+
+        if (genmask_field) {
             // Extract genmask value
             const char *genmask_value = strchr(genmask_field, ':');
             if (genmask_value) {
@@ -262,7 +275,15 @@ static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int m
                     pos = dest_field + 1;
                     continue;
                 }
+            } else {
+                // No genmask value found, skip this entry
+                pos = dest_field + 1;
+                continue;
             }
+        } else {
+            // No genmask field found for this destination, skip
+            pos = dest_field + 1;
+            continue;
         }
 
         // Extract IP
