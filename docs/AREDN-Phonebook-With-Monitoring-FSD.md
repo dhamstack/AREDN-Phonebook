@@ -7,6 +7,10 @@
 
 ---
 
+> **⚠️ SCOPE NOTE:** This document describes the **agent** component only. Backend services (remote collector, historical trending, web dashboards, alerting systems) are implemented in a separate project and are not part of this codebase. The agent exposes all data via local CGI endpoints for consumption by any backend system.
+
+---
+
 ## Executive Summary
 
 AREDN Phonebook Enhanced extends the existing emergency phonebook SIP server with integrated mesh network quality monitoring. This unified solution provides:
@@ -54,14 +58,9 @@ The enhanced system maintains backward compatibility while adding optional monit
 - [x] Hop information included in network JSON
 - [x] Works with both OLSR and Babel routing daemons
 
-### 🔜 Phase 3: Future Enhancements
-- [ ] Remote collector reporting (optional)
-- [ ] Historical trending and alerting
-- [ ] Web dashboard for visualization
-- [ ] Quality correlation with SIP service failures
-- [ ] Automated remediation suggestions
+**All agent functionality is implemented and ready for production testing on AREDN networks.**
 
-**All core functionality is implemented and ready for production testing on AREDN networks.**
+**Note:** Backend features (remote collector, historical trending, web dashboard, alerting) are handled by a separate backend project and are not part of this agent codebase.
 
 ---
 
@@ -345,10 +344,12 @@ Queries existing network probe data for specific destination (does not trigger n
 
 #### 6.2.2 Remote Reporting (Optional, Centralized Monitoring)
 
-**Interface:** HTTP POST to collector
-**Endpoint:** `POST http://collector.local.mesh:5000/ingest`
+> **Note:** Remote reporting configuration is documented here for agent completeness, but the backend collector is implemented in a separate project.
+
+**Interface:** HTTP POST to collector endpoint
+**Endpoint:** `POST http://collector.local.mesh:5000/ingest` (example)
 **Frequency:** Configurable (default: health every 5min, probes every 40s)
-**Dependencies:** Requires Pi collector (AREDNmon backend)
+**Dependencies:** External backend collector (not part of this project)
 **Use cases:**
 - Mesh-wide visibility
 - Historical trend analysis
@@ -356,10 +357,10 @@ Queries existing network probe data for specific destination (does not trigger n
 - Alerting and notifications
 
 **Benefits:**
-- Centralized dashboard
-- Pattern detection across nodes
-- Long-term data retention
-- Automated alerting
+- Centralized dashboard (backend)
+- Pattern detection across nodes (backend)
+- Long-term data retention (backend)
+- Automated alerting (backend)
 
 ### 6.3 Data Flow Architecture
 
@@ -925,17 +926,12 @@ Backend collector analyzes raw data to:
 - [ ] Enhanced showphonebook endpoint
 - [ ] Memory pool sharing
 
-### Phase 3: Advanced Features
-- [ ] RFC3550 jitter calculation
-- [ ] Hop-by-hop analysis
-- [ ] Quality correlation with SIP
-- [ ] Historical trending
+### Agent Status: Production Ready
+- [x] RFC3550 jitter calculation
+- [x] Hop-by-hop analysis
+- [x] All agent features implemented
 
-### Phase 4: Testing & Optimization
-- [ ] Field testing on real AREDN network
-- [ ] Memory optimization
-- [ ] Flash write minimization
-- [ ] Documentation
+**Note:** Backend features like historical trending, quality correlation analysis, and web dashboards are handled by a separate backend project.
 
 ---
 
@@ -1315,6 +1311,8 @@ send_probe("10.124.142.47")
 
 ### B.2 Agent-to-Collector Interface (HTTP JSON API)
 
+> **⚠️ BACKEND IMPLEMENTATION:** This section documents the interface for backend implementers. The collector server, database, dashboards, and alerting are implemented in a separate backend project, not in this agent codebase.
+
 #### B.2.1 Overview
 
 **Purpose:** Centralized collection of health and network data from multiple agents
@@ -1323,7 +1321,7 @@ send_probe("10.124.142.47")
 **Endpoint:** `POST /ingest`
 **Content-Type:** `application/json`
 **Schema:** meshmon.v1 (see B.2.3)
-**Authentication:** None (trusted mesh network) or implement custom auth
+**Authentication:** None (trusted mesh network) or implement custom auth in backend
 
 #### B.2.2 Configuration
 
