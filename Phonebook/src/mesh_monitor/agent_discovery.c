@@ -239,13 +239,30 @@ static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int m
 
     pos = array_start + 1;
 
-    // Parse all unique destination IPs from routes
+    // Parse all unique destination IPs from routes (only /32 host routes)
     while (count < max_ips && pos && *pos) {
         // Look for "destination" field
         const char *dest_field = strstr(pos, "\"destination\"");
 
-        if (!dest_field || dest_field > pos + 1000) {
+        if (!dest_field) {
             break;
+        }
+
+        // Look for "genmask" field after destination to check if it's a host route
+        const char *genmask_field = strstr(dest_field, "\"genmask\"");
+        if (genmask_field && genmask_field < dest_field + 200) {
+            // Extract genmask value
+            const char *genmask_value = strchr(genmask_field, ':');
+            if (genmask_value) {
+                int genmask = 0;
+                sscanf(genmask_value, ": %d", &genmask);
+
+                // Only process /32 host routes (single IPs, not subnets)
+                if (genmask != 32) {
+                    pos = dest_field + 1;
+                    continue;
+                }
+            }
         }
 
         // Extract IP
@@ -261,7 +278,7 @@ static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int m
                     memcpy(ip_buffer, ip_start, ip_len);
                     ip_buffer[ip_len] = '\0';
 
-                    // Skip special entries: 0.0.0.0, local subnets, non-host routes
+                    // Skip special entries: 0.0.0.0
                     if (strcmp(ip_buffer, "0.0.0.0") == 0) {
                         pos = dest_field + 1;
                         continue;
@@ -288,7 +305,7 @@ static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int m
         pos = dest_field + 1;
     }
 
-    LOG_DEBUG("Parsed %d unique IPs from OLSR routes", count);
+    LOG_DEBUG("Parsed %d unique host IPs (/32) from OLSR routes", count);
     return count;
 }
 
