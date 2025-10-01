@@ -13,7 +13,8 @@
 #include "call-sessions/call_sessions.h" // For call session management functions
 #include "passive_safety/passive_safety.h" // For passive safety and self-healing
 #include "software_health/software_health.h" // For software health monitoring
-#include "mesh_monitor/mesh_monitor.h"  // For mesh network monitoring
+#include "mesh_monitor/mesh_monitor.h"
+#include "mesh_monitor/remote_reporter.h"  // For mesh network monitoring
 
 // Define MODULE_NAME specific to main.c
 #define MODULE_NAME "MAIN"
@@ -110,6 +111,28 @@ int main(int argc, char *argv[]) {
     if (is_software_health_enabled()) {
         export_health_to_json("/tmp/meshmon_health.json");
         LOG_INFO("Initial health state exported to /tmp/meshmon_health.json");
+    }
+
+    // --- Start remote reporter (optional) ---
+    static pthread_t remote_reporter_tid = 0;
+    extern mesh_monitor_config_t g_monitor_config;  // From mesh_monitor.c
+
+    if (g_monitor_config.network_status_report_s > 0 &&
+        strlen(g_monitor_config.collector_url) > 0) {
+
+        LOG_INFO("Starting remote reporter thread (interval=%ds, url=%s)...",
+                 g_monitor_config.network_status_report_s,
+                 g_monitor_config.collector_url);
+
+        if (pthread_create(&remote_reporter_tid, NULL,
+                          remote_reporter_thread,
+                          &g_monitor_config) != 0) {
+            LOG_ERROR("Failed to create remote reporter thread");
+        } else {
+            LOG_INFO("Remote reporter thread started successfully");
+        }
+    } else {
+        LOG_INFO("Remote reporting disabled (not configured)");
     }
 
     // --- Passive Safety: Self-correct configuration ---
@@ -309,6 +332,13 @@ int main(int argc, char *argv[]) {
     pthread_mutex_destroy(&updater_trigger_mutex);
     pthread_cond_destroy(&updater_trigger_cond);
     LOG_DEBUG("Mutexes and condition variables destroyed.");
+
+    // Shutdown remote reporter
+    if (remote_reporter_tid != 0) {
+        LOG_INFO("Shutting down remote reporter...");
+        remote_reporter_shutdown();
+        pthread_join(remote_reporter_tid, NULL);
+    }
 
     // Shutdown software health monitoring
     if (g_health_config.enabled) {

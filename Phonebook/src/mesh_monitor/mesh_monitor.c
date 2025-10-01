@@ -10,7 +10,7 @@
 #include <unistd.h>
 
 // Global state
-static mesh_monitor_config_t g_monitor_config;
+mesh_monitor_config_t g_monitor_config;  // Exposed for remote reporter
 static bool monitor_enabled = false;
 static bool monitor_running = false;
 static pthread_t responder_tid = 0;
