@@ -1,9 +1,9 @@
 #include "remote_reporter.h"
 #include "http_client.h"
 #include "../software_health/software_health.h"
+#include "../common.h"
 
 #define MODULE_NAME "REMOTE_REPORTER"
-#include "../log_manager/log_manager.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <stdio.h>

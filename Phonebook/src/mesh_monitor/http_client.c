@@ -1,7 +1,7 @@
 #include "http_client.h"
+#include "../common.h"
 
 #define MODULE_NAME "HTTP_CLIENT"
-#include "../log_manager/log_manager.h"
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <netinet/in.h>
