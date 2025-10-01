@@ -1119,6 +1119,555 @@ Phonebook/
 
 ---
 
+## Appendix B: Interface Specifications for Implementers
+
+This appendix provides complete technical specifications for the two primary interfaces in the mesh monitoring system. Use these specifications to implement:
+- **Lightweight monitoring agents** (alternative implementations)
+- **Centralized collectors** (backend aggregation systems)
+- **Integration tools** (dashboards, alerting systems)
+
+### B.1 Agent-to-Agent Interface (UDP Probe Protocol)
+
+#### B.1.1 Overview
+
+**Purpose:** Network quality measurement between mesh nodes (RTT, jitter, packet loss)
+**Transport:** UDP
+**Port:** 40050 (configurable via `probe_port` in config)
+**Protocol:** Echo request/response (similar to ICMP ping but over UDP)
+**Bi-directional:** All agents act as both probe sender and responder
+
+#### B.1.2 Probe Packet Format
+
+```c
+// Wire format (network byte order - big endian)
+typedef struct {
+    uint32_t sequence;           // Probe sequence number (0, 1, 2, ...)
+    uint32_t timestamp_sec;      // Unix timestamp seconds (when probe sent)
+    uint32_t timestamp_usec;     // Microseconds component (0-999999)
+    char src_node[64];          // Source node identifier (null-terminated)
+} probe_packet_t;
+
+// Total packet size: 76 bytes
+// - 4 bytes: sequence
+// - 4 bytes: timestamp_sec
+// - 4 bytes: timestamp_usec
+// - 64 bytes: src_node (null-terminated string)
+```
+
+**Byte Order:** All integer fields use **network byte order (big-endian)**. Use `htonl()` to convert to network byte order before sending, `ntohl()` to convert from network byte order when receiving.
+
+#### B.1.3 Protocol Flow
+
+```
+Node A (Probe Sender)                    Node B (Probe Responder)
+================                          ===================
+
+1. Get neighbor list from routing daemon
+   (OLSR jsoninfo or Babel socket)
+
+2. For each neighbor to probe:
+
+   Create probe packet:
+   - sequence = probe_number (0-9)
+   - timestamp = gettimeofday()
+   - src_node = hostname
+
+   Convert to network byte order ────────>  3. Listen on UDP port 40050
+
+   Send to neighbor:40050 ──────────────>  4. Receive probe packet
+
+   Record send_time                         Convert from network byte order
+
+                                           5. Echo packet back immediately
+                                              (no modification needed)
+
+   6. Receive echoed packet  <──────────   Send same packet back to source
+
+   Record receive_time
+
+   Calculate metrics:
+   - RTT = receive_time - send_time
+   - Store for jitter calculation
+
+7. After probe window (5s default):
+
+   Calculate final metrics:
+   - RTT_avg = average of all RTTs
+   - Jitter = average absolute difference between consecutive RTTs (RFC3550)
+   - Loss% = (probes_sent - probes_received) / probes_sent * 100
+
+8. Store results in probe_history[]
+   Export to /tmp/meshmon_network.json
+```
+
+#### B.1.4 Probe Timing
+
+**Default Configuration:**
+```ini
+network_status_interval_s = 40    # Probe cycle every 40 seconds
+probe_window_s = 5                # Wait 5 seconds for responses
+neighbor_targets = 2              # Probe 2 neighbors per cycle
+```
+
+**Typical Probe Sequence:**
+```
+T+0s:    Send 10 probes to Neighbor 1 (100ms apart = 1 second total)
+T+5s:    Calculate metrics for Neighbor 1
+T+6s:    Send 10 probes to Neighbor 2
+T+11s:   Calculate metrics for Neighbor 2
+T+12s:   Export network.json
+T+40s:   Start next probe cycle
+```
+
+#### B.1.5 Metrics Calculation (RFC3550)
+
+**RTT (Round-Trip Time):**
+```c
+// For each received probe response:
+long sec_diff = recv_time.tv_sec - sent_time.tv_sec;
+long usec_diff = recv_time.tv_usec - sent_time.tv_usec;
+float rtt_ms = (sec_diff * 1000.0) + (usec_diff / 1000.0);
+
+// Average RTT:
+rtt_ms_avg = sum(all_rtts) / count(received_probes);
+```
+
+**Jitter (Inter-arrival Jitter per RFC3550 Section 6.4.1):**
+```c
+// Simplified implementation - mean absolute difference:
+float jitter = 0.0;
+for (int i = 1; i < rtt_count; i++) {
+    float diff = rtt[i] - rtt[i-1];
+    jitter += (diff < 0 ? -diff : diff);  // Absolute value
+}
+jitter_ms = jitter / (rtt_count - 1);
+```
+
+**Packet Loss:**
+```c
+float loss_pct = 100.0 * (1.0 - (received_count / sent_count));
+```
+
+#### B.1.6 Implementation Example (Lightweight Agent)
+
+**Minimal UDP Probe Responder (Python):**
+```python
+#!/usr/bin/env python3
+import socket
+
+# Simple UDP echo responder for mesh monitoring
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(('0.0.0.0', 40050))
+
+print("Mesh probe responder listening on UDP port 40050...")
+
+while True:
+    data, addr = sock.recvfrom(1024)
+    # Echo packet back unchanged
+    sock.sendto(data, addr)
+```
+
+**Minimal Probe Sender (Python):**
+```python
+#!/usr/bin/env python3
+import socket
+import struct
+import time
+
+def send_probe(target_ip, target_port=40050):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(1.0)
+
+    # Create probe packet
+    sequence = 0
+    now = time.time()
+    timestamp_sec = int(now)
+    timestamp_usec = int((now - timestamp_sec) * 1000000)
+    src_node = socket.gethostname()[:63]  # Max 63 chars + null
+
+    # Pack to network byte order
+    packet = struct.pack('!III64s',
+                        sequence,
+                        timestamp_sec,
+                        timestamp_usec,
+                        src_node.encode('utf-8'))
+
+    # Send probe
+    send_time = time.time()
+    sock.sendto(packet, (target_ip, target_port))
+
+    # Wait for echo
+    try:
+        data, addr = sock.recvfrom(1024)
+        recv_time = time.time()
+        rtt_ms = (recv_time - send_time) * 1000
+        print(f"RTT to {target_ip}: {rtt_ms:.2f}ms")
+        return rtt_ms
+    except socket.timeout:
+        print(f"Probe to {target_ip} timed out")
+        return None
+
+# Example usage
+send_probe("10.124.142.47")
+```
+
+---
+
+### B.2 Agent-to-Collector Interface (HTTP JSON API)
+
+#### B.2.1 Overview
+
+**Purpose:** Centralized collection of health and network data from multiple agents
+**Transport:** HTTP POST
+**Port:** Configurable (default 5000 suggested)
+**Endpoint:** `POST /ingest`
+**Content-Type:** `application/json`
+**Schema:** meshmon.v1 (see B.2.3)
+**Authentication:** None (trusted mesh network) or implement custom auth
+
+#### B.2.2 Configuration
+
+```ini
+[mesh_monitor]
+# Enable remote reporting
+network_status_report_s = 40        # Report network status every 40s
+collector_url = http://collector.local.mesh:5000/ingest
+
+# (Future implementation - not in current code)
+```
+
+#### B.2.3 Message Schemas (meshmon.v1)
+
+**Schema Version:** All messages include `"schema": "meshmon.v1"`
+
+##### **Message Type 1: agent_health**
+
+Sent periodically (every 60s default) or on significant changes:
+
+```json
+{
+  "schema": "meshmon.v1",
+  "type": "agent_health",
+  "node": "HB9BLA-HAP-2",
+  "sent_at": "2025-09-30T21:04:35Z",
+  "routing_daemon": "olsr",
+  "lat": "47.47497",
+  "lon": "7.76720",
+  "grid_square": "JN37vl",
+  "hardware_model": "MikroTik RouterBOARD 952Ui-5ac2nD (hAP ac lite)",
+  "firmware_version": "3.25.8.0",
+  "cpu_pct": 2.5,
+  "mem_mb": 12.3,
+  "queue_len": 0,
+  "uptime_seconds": 18245,
+  "restart_count": 0,
+  "threads_responsive": true,
+  "health_score": 100.0,
+  "checks": {
+    "memory_stable": true,
+    "no_recent_crashes": true,
+    "sip_service_ok": true,
+    "phonebook_current": true
+  },
+  "sip_service": {
+    "active_calls": 0,
+    "registered_users": 3
+  },
+  "monitoring": {
+    "probe_queue_depth": 0,
+    "last_probe_sent": "2025-09-30T21:04:30Z"
+  }
+}
+```
+
+##### **Message Type 2: network_status**
+
+Sent after each probe cycle (every 40s default):
+
+```json
+{
+  "schema": "meshmon.v1",
+  "type": "network_status",
+  "node": "HB9BLA-HAP-2",
+  "sent_at": "2025-09-30T21:05:00Z",
+  "routing_daemon": "olsr",
+  "probe_count": 2,
+  "probes": [
+    {
+      "dst_node": "HB9EDI-ROUTER",
+      "dst_ip": "10.124.142.47",
+      "timestamp": "2025-09-30T21:04:55Z",
+      "routing_daemon": "olsr",
+      "rtt_ms_avg": 12.34,
+      "jitter_ms": 1.23,
+      "loss_pct": 0.0,
+      "hop_count": 2,
+      "path": [
+        {
+          "node": "HB9ABC-RELAY",
+          "interface": "wlan0",
+          "link_type": "RF",
+          "lq": 1.0,
+          "nlq": 0.98,
+          "etx": 1.02,
+          "rtt_ms": 0.0
+        },
+        {
+          "node": "HB9EDI-ROUTER",
+          "interface": "wlan0",
+          "link_type": "RF",
+          "lq": 0.95,
+          "nlq": 1.0,
+          "etx": 1.05,
+          "rtt_ms": 0.0
+        }
+      ]
+    }
+  ]
+}
+```
+
+##### **Message Type 3: crash_report**
+
+Sent immediately when a crash is detected:
+
+```json
+{
+  "schema": "meshmon.v1",
+  "type": "crash_report",
+  "node": "HB9BLA-HAP-2",
+  "sent_at": "2025-09-30T21:10:00Z",
+  "crash_time": "2025-09-30T21:09:58Z",
+  "signal": 11,
+  "signal_name": "SIGSEGV",
+  "reason": "Segmentation fault at 0x00000000",
+  "restart_count": 1,
+  "uptime_before_crash": 18300
+}
+```
+
+#### B.2.4 Collector Implementation Example
+
+**Minimal Collector (Python Flask):**
+
+```python
+#!/usr/bin/env python3
+from flask import Flask, request, jsonify
+from datetime import datetime
+import json
+
+app = Flask(__name__)
+
+@app.route('/ingest', methods=['POST'])
+def ingest():
+    data = request.get_json()
+
+    # Validate schema
+    if data.get('schema') != 'meshmon.v1':
+        return jsonify({'error': 'Invalid schema'}), 400
+
+    # Route by message type
+    msg_type = data.get('type')
+    node = data.get('node', 'unknown')
+
+    print(f"[{datetime.now()}] Received {msg_type} from {node}")
+
+    if msg_type == 'agent_health':
+        handle_health(data)
+    elif msg_type == 'network_status':
+        handle_network(data)
+    elif msg_type == 'crash_report':
+        handle_crash(data)
+    else:
+        return jsonify({'error': 'Unknown message type'}), 400
+
+    return jsonify({'status': 'accepted'}), 200
+
+def handle_health(data):
+    # Store in database, check health score, etc.
+    print(f"  Health Score: {data.get('health_score')}")
+    print(f"  Location: {data.get('lat')}, {data.get('lon')}")
+    # TODO: Store in InfluxDB, Prometheus, etc.
+
+def handle_network(data):
+    # Process network probes
+    for probe in data.get('probes', []):
+        print(f"  Probe to {probe['dst_ip']}: RTT={probe['rtt_ms_avg']}ms, Loss={probe['loss_pct']}%")
+    # TODO: Detect degraded paths, calculate network-wide metrics
+
+def handle_crash(data):
+    # Alert on crashes
+    print(f"  CRASH: {data.get('signal_name')} - {data.get('reason')}")
+    # TODO: Send alert, track crash patterns
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+```
+
+**Run the collector:**
+```bash
+pip3 install flask
+python3 collector.py
+```
+
+**Configure agents to report:**
+```ini
+# /etc/sipserver.conf
+[mesh_monitor]
+network_status_report_s = 40
+collector_url = http://collector.local.mesh:5000/ingest
+```
+
+#### B.2.5 Collector Best Practices
+
+**1. Message Deduplication:**
+```python
+# Track last message timestamp per node
+last_seen = {}
+
+def is_duplicate(node, sent_at):
+    key = f"{node}:{sent_at}"
+    if key in last_seen:
+        return True
+    last_seen[key] = datetime.now()
+    return False
+```
+
+**2. Time-Series Storage:**
+- **InfluxDB:** For metrics (RTT, jitter, health_score)
+- **PostgreSQL/TimescaleDB:** For structured data and queries
+- **Elasticsearch:** For log-style search and aggregation
+
+**3. Alerting Rules:**
+```python
+def check_alerts(health_data):
+    if health_data['health_score'] < 80:
+        alert(f"Low health on {health_data['node']}")
+
+    if health_data['checks']['memory_stable'] == False:
+        alert(f"Memory leak detected on {health_data['node']}")
+
+    for probe in network_data['probes']:
+        if probe['loss_pct'] > 50:
+            alert(f"High packet loss to {probe['dst_ip']}")
+```
+
+**4. Geographic Visualization:**
+```python
+# Generate GeoJSON for mapping
+def to_geojson(health_messages):
+    features = []
+    for msg in health_messages:
+        if msg['lat'] != 'unknown':
+            features.append({
+                'type': 'Feature',
+                'geometry': {
+                    'type': 'Point',
+                    'coordinates': [float(msg['lon']), float(msg['lat'])]
+                },
+                'properties': {
+                    'node': msg['node'],
+                    'health_score': msg['health_score']
+                }
+            })
+    return {'type': 'FeatureCollection', 'features': features}
+```
+
+#### B.2.6 Local CGI Access (Read-Only Query Interface)
+
+Agents also expose data via HTTP GET for local access (always available, no configuration needed):
+
+```bash
+# Get agent health
+curl http://node.local.mesh/cgi-bin/health
+
+# Get network status
+curl http://node.local.mesh/cgi-bin/network
+
+# Get crash history
+curl http://node.local.mesh/cgi-bin/crash
+```
+
+**Response Format:** Same JSON as sent to collector (meshmon.v1 schema)
+
+**Use Cases:**
+- Local troubleshooting without backend infrastructure
+- Emergency access when collector is down
+- Integration with other mesh services
+
+---
+
+### B.3 Implementation Checklist
+
+#### B.3.1 For Lightweight Agent Implementers
+
+**Minimum Requirements:**
+- [ ] UDP listener on port 40050 that echoes packets back
+- [ ] No parsing needed - just echo the exact bytes received
+- [ ] Optional: Implement probe sender for testing
+- [ ] Optional: Export metrics in meshmon.v1 JSON format
+
+**Reference Implementation:** `Phonebook/src/mesh_monitor/probe_engine.c`
+
+#### B.3.2 For Collector Implementers
+
+**Minimum Requirements:**
+- [ ] HTTP server accepting POST on `/ingest`
+- [ ] Parse JSON with `schema: "meshmon.v1"`
+- [ ] Handle three message types: `agent_health`, `network_status`, `crash_report`
+- [ ] Store or forward data as needed
+
+**Optional Enhancements:**
+- [ ] Time-series database integration (InfluxDB, Prometheus)
+- [ ] Geographic visualization (map with health scores)
+- [ ] Alerting on health degradation or crashes
+- [ ] Network topology graph generation
+- [ ] Historical trending and analysis
+
+**Reference:** Section 6 and AREDNmon-Architecture.md
+
+---
+
+### B.4 Testing Tools
+
+**Test UDP Probe Protocol:**
+```bash
+# On responder node:
+nc -ul 40050 | nc -u localhost 40050  # Echo server
+
+# On sender node:
+echo "test" | nc -u target-node.local.mesh 40050
+```
+
+**Test Collector API:**
+```bash
+# Send test health message
+curl -X POST http://collector:5000/ingest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schema": "meshmon.v1",
+    "type": "agent_health",
+    "node": "TEST-NODE",
+    "sent_at": "2025-09-30T12:00:00Z",
+    "health_score": 95.0
+  }'
+```
+
+**Validate JSON Schema:**
+```bash
+# Install jq for JSON validation
+cat /tmp/meshmon_health.json | jq .
+cat /tmp/meshmon_network.json | jq .
+```
+
+---
+
+**End of Appendix B**
+
+This appendix provides complete specifications for implementing compatible agents and collectors. All implementations following these interfaces will be interoperable with the AREDN-Phonebook monitoring ecosystem.
+
+---
+
 **End of Specification v1.0**
 
 *This enhanced specification maintains the emergency communication focus of AREDN-Phonebook while adding valuable network observability features. The modular design ensures monitoring never compromises core phonebook functionality.*
