@@ -19,7 +19,7 @@ static bool discovery_initialized = false;
 static pthread_mutex_t discovery_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Forward declarations
-static int parse_topology_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips);
+static int parse_neighbors_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips);
 static bool test_agent_probe(const char *ip);
 static int add_agent_to_cache(const char *ip, const char *node);
 
@@ -72,26 +72,26 @@ int perform_agent_discovery_scan(void) {
     LOG_INFO("Starting agent discovery scan");
     time_t scan_start = time(NULL);
 
-    // Query OLSR topology
-    char topology_json[65536];
-    memset(topology_json, 0, sizeof(topology_json));
+    // Query OLSR neighbors (active nodes only)
+    char neighbors_json[65536];
+    memset(neighbors_json, 0, sizeof(neighbors_json));
 
     // Use routing_adapter http_get function (now public)
-    if (http_get_olsr_jsoninfo("topology", topology_json, sizeof(topology_json)) != 0) {
-        LOG_ERROR("Failed to query OLSR topology for agent discovery");
+    if (http_get_olsr_jsoninfo("neighbors", neighbors_json, sizeof(neighbors_json)) != 0) {
+        LOG_ERROR("Failed to query OLSR neighbors for agent discovery");
         return -1;
     }
 
-    // Parse unique IPs from topology
+    // Parse unique IPs from neighbors
     char unique_ips[MAX_DISCOVERED_AGENTS][INET_ADDRSTRLEN];
-    int ip_count = parse_topology_ips(topology_json, unique_ips, MAX_DISCOVERED_AGENTS);
+    int ip_count = parse_neighbors_ips(neighbors_json, unique_ips, MAX_DISCOVERED_AGENTS);
 
     if (ip_count == 0) {
-        LOG_WARN("No IPs found in OLSR topology");
+        LOG_WARN("No IPs found in OLSR neighbors");
         return 0;
     }
 
-    LOG_INFO("Found %d unique nodes in topology, testing for agents", ip_count);
+    LOG_INFO("Found %d neighbor nodes, testing for agents", ip_count);
 
     // Test each IP for agent response
     pthread_mutex_lock(&discovery_mutex);
@@ -216,7 +216,7 @@ int save_agent_cache(void) {
 // Helper Functions
 //=============================================================================
 
-static int parse_topology_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips) {
+static int parse_neighbors_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips) {
     if (!json || !ips) {
         return 0;
     }
@@ -224,40 +224,32 @@ static int parse_topology_ips(const char *json, char ips[][INET_ADDRSTRLEN], int
     int count = 0;
     const char *pos = json;
 
-    // Look for "topology" array in JSON
-    const char *topology_array = strstr(pos, "\"topology\"");
-    if (!topology_array) {
-        LOG_DEBUG("No topology array found in OLSR response");
+    // Look for "neighbors" array in JSON
+    const char *neighbors_array = strstr(pos, "\"neighbors\"");
+    if (!neighbors_array) {
+        LOG_DEBUG("No neighbors array found in OLSR response");
         return 0;
     }
 
     // Find the opening bracket
-    const char *array_start = strchr(topology_array, '[');
+    const char *array_start = strchr(neighbors_array, '[');
     if (!array_start) {
         return 0;
     }
 
     pos = array_start + 1;
 
-    // Parse all unique IPs from topology
+    // Parse all unique IPs from neighbors (only ipv4Address field)
     while (count < max_ips && pos && *pos) {
-        // Look for IP address fields (lastHopIP and destinationIP)
-        const char *ip_fields[] = {"\"lastHopIP\"", "\"destinationIP\""};
-        const char *found_field = NULL;
+        // Look for ipv4Address field
+        const char *ip_field = strstr(pos, "\"ipv4Address\"");
 
-        for (int i = 0; i < 2; i++) {
-            const char *field = strstr(pos, ip_fields[i]);
-            if (field && (!found_field || field < found_field)) {
-                found_field = field;
-            }
-        }
-
-        if (!found_field || found_field > pos + 1000) {
+        if (!ip_field || ip_field > pos + 1000) {
             break;
         }
 
         // Extract IP
-        const char *ip_start = strchr(found_field, ':');
+        const char *ip_start = strchr(ip_field, ':');
         if (ip_start) {
             ip_start = strchr(ip_start, '"');
             if (ip_start) {
@@ -287,10 +279,10 @@ static int parse_topology_ips(const char *json, char ips[][INET_ADDRSTRLEN], int
             }
         }
 
-        pos = found_field + 1;
+        pos = ip_field + 1;
     }
 
-    LOG_DEBUG("Parsed %d unique IPs from OLSR topology", count);
+    LOG_DEBUG("Parsed %d unique IPs from OLSR neighbors", count);
     return count;
 }
 
