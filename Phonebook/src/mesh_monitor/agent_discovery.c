@@ -12,6 +12,8 @@
 #include <time.h>
 #include <ctype.h>
 #include <netdb.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
 
 // Global state (RAM only)
 static discovered_agent_t agent_cache[MAX_DISCOVERED_AGENTS];
@@ -23,10 +25,8 @@ static pthread_mutex_t discovery_mutex = PTHREAD_MUTEX_INITIALIZER;
 // Forward declarations
 static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], char names[][64], int max_ips);
 static bool is_numeric_name(const char *name);
-static bool is_node_reachable(const char *nodename);
-static const char* find_router_by_phone_ip(const char *phone_ip, char ips[][INET_ADDRSTRLEN], char names[][64], int count);
-static const char* extract_router_name(const char *name);
-static bool test_agent_probe(const char *ip);
+static bool is_lan_interface(const char *name);
+static bool test_agent_http_ping(const char *nodename, char *resolved_ip);
 static int add_agent_to_cache(const char *ip, const char *node);
 
 //=============================================================================
@@ -98,90 +98,54 @@ int perform_agent_discovery_scan(void) {
         return 0;
     }
 
-    LOG_INFO("Found %d hosts in mesh, discovering agents via telephone mapping", ip_count);
+    LOG_INFO("Found %d hosts in mesh, discovering agents via HTTP ping", ip_count);
 
-    // Find routers by checking reachable telephones
     pthread_mutex_lock(&discovery_mutex);
     int new_agents = 0;
     int existing_agents = 0;
-    int telephones_checked = 0;
-    int routers_found = 0;
+    int routers_tested = 0;
 
-    // Build list of candidate routers by finding reachable telephones
-    char candidate_routers[MAX_DISCOVERED_AGENTS][64];
-    char candidate_ips[MAX_DISCOVERED_AGENTS][INET_ADDRSTRLEN];
-    int candidate_count = 0;
-
+    // Test each host for agent (skip phones and LAN interfaces)
     for (int i = 0; i < ip_count; i++) {
-        // Look for telephones (numeric-only names)
+        // Skip telephones (numeric-only names)
         if (is_numeric_name(node_names[i])) {
-            telephones_checked++;
-            LOG_DEBUG("Checking telephone %s (%s) for reachability", node_names[i], unique_ips[i]);
+            LOG_DEBUG("Skipping telephone: %s", node_names[i]);
+            continue;
+        }
 
-            if (is_node_reachable(node_names[i])) {
-                // Telephone is active - find its router
-                const char *router = find_router_by_phone_ip(unique_ips[i], unique_ips, node_names, ip_count);
+        // Skip LAN interface entries (lan.*)
+        if (is_lan_interface(node_names[i])) {
+            LOG_DEBUG("Skipping LAN interface: %s", node_names[i]);
+            continue;
+        }
 
-                if (router && candidate_count < MAX_DISCOVERED_AGENTS) {
-                    // Check if router already in candidate list
-                    bool already_added = false;
-                    for (int j = 0; j < candidate_count; j++) {
-                        if (strcmp(candidate_routers[j], router) == 0) {
-                            already_added = true;
-                            break;
-                        }
-                    }
+        routers_tested++;
+        LOG_INFO("Testing %d/%d: %s for agent", routers_tested, ip_count, node_names[i]);
 
-                    if (!already_added) {
-                        strncpy(candidate_routers[candidate_count], router, 63);
-                        candidate_routers[candidate_count][63] = '\0';
-
-                        // Find router's IP
-                        for (int k = 0; k < ip_count; k++) {
-                            if (strcmp(node_names[k], router) == 0) {
-                                strncpy(candidate_ips[candidate_count], unique_ips[k], INET_ADDRSTRLEN - 1);
-                                candidate_ips[candidate_count][INET_ADDRSTRLEN - 1] = '\0';
-                                break;
-                            }
-                        }
-
-                        routers_found++;
-                        candidate_count++;
-                        LOG_INFO("Found active router %s via telephone %s", router, node_names[i]);
-                    }
+        // Test agent via HTTP ping (includes DNS resolution and reachability check)
+        char resolved_ip[INET_ADDRSTRLEN];
+        if (test_agent_http_ping(node_names[i], resolved_ip)) {
+            // Check if already in cache
+            bool already_cached = false;
+            for (int j = 0; j < agent_count; j++) {
+                if (strcmp(agent_cache[j].ip, resolved_ip) == 0) {
+                    already_cached = true;
+                    agent_cache[j].last_seen = time(NULL);
+                    agent_cache[j].is_active = true;
+                    existing_agents++;
+                    LOG_INFO("Agent %s (%s) already in cache, refreshed", node_names[i], resolved_ip);
+                    break;
                 }
             }
-        }
-    }
 
-    LOG_INFO("Checked %d telephones, found %d active routers to test", telephones_checked, routers_found);
-
-    // Now test the candidate routers for agents
-    for (int i = 0; i < candidate_count; i++) {
-        // Check if already in cache
-        bool already_cached = false;
-        for (int j = 0; j < agent_count; j++) {
-            if (strcmp(agent_cache[j].ip, candidate_ips[i]) == 0) {
-                already_cached = true;
-                agent_cache[j].last_seen = time(NULL);
-                agent_cache[j].is_active = true;
-                existing_agents++;
-                LOG_INFO("Router %s (%s) already in cache, refreshed", candidate_routers[i], candidate_ips[i]);
-                break;
-            }
-        }
-
-        if (!already_cached) {
-            // Test if this router has an agent
-            LOG_INFO("Testing router %d/%d: %s (%s) for agent probe", i+1, candidate_count, candidate_routers[i], candidate_ips[i]);
-            if (test_agent_probe(candidate_ips[i])) {
-                if (add_agent_to_cache(candidate_ips[i], candidate_routers[i]) == 0) {
+            if (!already_cached) {
+                if (add_agent_to_cache(resolved_ip, node_names[i]) == 0) {
                     new_agents++;
-                    LOG_INFO("Discovered new agent at %s (%s)", candidate_ips[i], candidate_routers[i]);
+                    LOG_INFO("Discovered new agent at %s (%s)", resolved_ip, node_names[i]);
                 }
-            } else {
-                LOG_DEBUG("No agent response from %s (%s)", candidate_ips[i], candidate_routers[i]);
             }
+        } else {
+            LOG_DEBUG("No agent response from %s", node_names[i]);
         }
     }
 
@@ -290,81 +254,54 @@ static bool is_numeric_name(const char *name) {
     return true;
 }
 
-static bool is_node_reachable(const char *nodename) {
-    if (!nodename || *nodename == '\0') {
+static bool is_lan_interface(const char *name) {
+    if (!name) return false;
+
+    // Check if name starts with "lan."
+    return (strncmp(name, "lan.", 4) == 0);
+}
+
+// Test if node has an agent via HTTP ping endpoint
+// Returns true if agent found, and fills resolved_ip with the node's IP
+static bool test_agent_http_ping(const char *nodename, char *resolved_ip) {
+    if (!nodename || !resolved_ip) {
         return false;
     }
 
-    // Build FQDN: <nodename>.local.mesh (same as phonebook does)
+    // Build FQDN: <nodename>.local.mesh
     char hostname[256];
     snprintf(hostname, sizeof(hostname), "%s.%s", nodename, AREDN_MESH_DOMAIN);
 
-    // Try to resolve via DNS (same as status_updater)
-    struct addrinfo hints = {.ai_family = AF_INET, .ai_socktype = SOCK_DGRAM};
+    // Resolve via DNS to get IP and check reachability
+    struct addrinfo hints = {.ai_family = AF_INET, .ai_socktype = SOCK_STREAM};
     struct addrinfo *res = NULL;
 
     int status = getaddrinfo(hostname, NULL, &hints, &res);
+    if (status != 0) {
+        LOG_DEBUG("DNS resolution failed for %s", hostname);
+        return false;
+    }
 
-    if (status == 0) {
-        freeaddrinfo(res);
+    // Extract IP address
+    struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
+    inet_ntop(AF_INET, &addr->sin_addr, resolved_ip, INET_ADDRSTRLEN);
+    freeaddrinfo(res);
+
+    LOG_DEBUG("Resolved %s -> %s, testing for agent", nodename, resolved_ip);
+
+    // Test HTTP ping endpoint: http://<ip>:8080/cgi-bin/ping
+    char ping_path[256];
+    snprintf(ping_path, sizeof(ping_path), "/cgi-bin/ping");
+
+    char response[512];
+    if (http_get_localhost(resolved_ip, 8080, ping_path, response, sizeof(response)) == 0) {
+        // Check if response contains "OK" or just succeeded
+        LOG_DEBUG("Agent ping successful for %s (%s)", nodename, resolved_ip);
         return true;
     }
 
+    LOG_DEBUG("Agent ping failed for %s (%s)", nodename, resolved_ip);
     return false;
-}
-
-// Extract router name from lan.* entries
-static const char* extract_router_name(const char *name) {
-    if (!name) return NULL;
-
-    // If name starts with "lan.", extract the router name
-    // Format: "lan.ROUTER-NAME.local.mesh" -> "ROUTER-NAME"
-    if (strncmp(name, "lan.", 4) == 0) {
-        static char router_name[64];
-        const char *start = name + 4; // Skip "lan."
-        const char *end = strstr(start, ".local.mesh");
-
-        if (end) {
-            size_t len = end - start;
-            if (len < sizeof(router_name)) {
-                memcpy(router_name, start, len);
-                router_name[len] = '\0';
-                return router_name;
-            }
-        }
-    }
-
-    return name; // Return as-is if not lan.* format
-}
-
-// Find router that owns a phone IP by checking for base IP (phone IP - 1 to 4)
-static const char* find_router_by_phone_ip(const char *phone_ip, char ips[][INET_ADDRSTRLEN], char names[][64], int count) {
-    if (!phone_ip) return NULL;
-
-    // Parse phone IP
-    unsigned int a, b, c, d;
-    if (sscanf(phone_ip, "%u.%u.%u.%u", &a, &b, &c, &d) != 4) {
-        return NULL;
-    }
-
-    // Router keeps first IP in range, phones get IP+1, IP+2, IP+3, IP+4
-    // So we need to check phone_ip - 1 through phone_ip - 4
-    for (int offset = 1; offset <= 5; offset++) {
-        if (d < offset) continue; // Avoid underflow
-
-        char base_ip[INET_ADDRSTRLEN];
-        snprintf(base_ip, sizeof(base_ip), "%u.%u.%u.%u", a, b, c, d - offset);
-
-        // Look for this IP in the hosts list
-        for (int i = 0; i < count; i++) {
-            if (strcmp(ips[i], base_ip) == 0) {
-                // Found the router's lan IP - extract router name
-                return extract_router_name(names[i]);
-            }
-        }
-    }
-
-    return NULL;
 }
 
 static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], char names[][64], int max_ips) {
@@ -467,40 +404,6 @@ static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], char n
     return count;
 }
 
-static bool test_agent_probe(const char *ip) {
-    if (!ip) {
-        return false;
-    }
-
-    // Send ONE probe
-    LOG_DEBUG("Sending probe to %s", ip);
-    int sent = send_probes(ip, 1, 0);
-    if (sent <= 0) {
-        LOG_DEBUG("Failed to send probe to %s", ip);
-        return false;
-    }
-
-    // Wait up to 10 seconds for response (as per updated FSD)
-    sleep(10);
-
-    // Check if we got a response by trying to calculate metrics
-    probe_result_t result;
-    memset(&result, 0, sizeof(result));
-
-    if (calculate_probe_metrics(ip, &result) == 0) {
-        // Check if we actually got responses (loss < 100%)
-        if (result.loss_pct < 100.0) {
-            LOG_INFO("Agent test successful for %s (loss: %.1f%%, rtt: %.1fms)", ip, result.loss_pct, result.rtt_ms_avg);
-            return true;
-        } else {
-            LOG_DEBUG("Agent test failed for %s (100%% packet loss)", ip);
-        }
-    } else {
-        LOG_DEBUG("Failed to calculate metrics for %s", ip);
-    }
-
-    return false;
-}
 
 static int add_agent_to_cache(const char *ip, const char *node) {
     if (!ip || agent_count >= MAX_DISCOVERED_AGENTS) {

@@ -76,6 +76,7 @@ define Package/aredn-phonebook/install
 	$(INSTALL_BIN) ./files/www/cgi-bin/crash $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/network $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/version $(1)/www/cgi-bin/
+	$(INSTALL_BIN) ./files/www/cgi-bin/ping $(1)/www/cgi-bin/
 endef
 
 $(eval $(call BuildPackage,aredn-phonebook))
