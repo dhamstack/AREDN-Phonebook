@@ -36,7 +36,12 @@ jobs:
       - name: Set up SDK URL
         id: sdk
         run: |
-          echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/${{ matrix.target.arch }}/${{ matrix.target.subtarget }}/openwrt-sdk-23.05.3-${{ matrix.target.arch }}-${{ matrix.target.subtarget }}_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
+          # ipq40xx uses musl_eabi instead of musl
+          if [ "${{ matrix.target.arch }}" = "ipq40xx" ]; then
+            echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/${{ matrix.target.arch }}/${{ matrix.target.subtarget }}/openwrt-sdk-23.05.3-${{ matrix.target.arch }}-${{ matrix.target.subtarget }}_gcc-12.3.0_musl_eabi.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
+          else
+            echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/${{ matrix.target.arch }}/${{ matrix.target.subtarget }}/openwrt-sdk-23.05.3-${{ matrix.target.arch }}-${{ matrix.target.subtarget }}_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
+          fi
 
       - name: Download and extract SDK (fresh every time)
         run: |
