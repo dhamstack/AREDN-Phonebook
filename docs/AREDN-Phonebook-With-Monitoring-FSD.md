@@ -24,46 +24,6 @@ The enhanced system maintains backward compatibility while adding optional monit
 
 ---
 
-## 🎯 Implementation Status (as of 2025-09-30)
-
-### ✅ Phase 0: Software Health Monitoring - **COMPLETE**
-- [x] Health tracking (CPU, memory, threads, crashes)
-- [x] Health scoring algorithm (0-100)
-- [x] Crash detection and reporting
-- [x] Memory leak detection
-- [x] Thread responsiveness monitoring
-- [x] Geographic location from sysinfo.json (lat/lon/grid_square)
-- [x] Hardware model and firmware version tracking
-- [x] Routing daemon identification (OLSR/Babel)
-- [x] JSON export with meshmon.v1 schema
-- [x] CGI endpoints: /cgi-bin/health, /cgi-bin/crash
-
-### ✅ Phase 1: Network Monitoring - **COMPLETE**
-- [x] Configuration parser for mesh_monitor section
-- [x] Routing daemon auto-detection (OLSR/Babel)
-- [x] OLSR jsoninfo HTTP client
-- [x] Babel Unix domain socket client
-- [x] Agent discovery from OLSR topology (replaces neighbor-only mode)
-- [x] UDP probe engine (sender and responder)
-- [x] RFC3550 metrics calculation (RTT, jitter, packet loss)
-- [x] Network JSON export with meshmon.v1 schema
-- [x] CGI endpoint: /cgi-bin/network
-- [x] Integrated into main.c and Makefile
-
-### ✅ Phase 2: Hop-by-Hop Path Analysis - **COMPLETE**
-- [x] OLSR topology parsing for path reconstruction
-- [x] Babel route table parsing for multi-hop paths
-- [x] Per-hop ETX, LQ, NLQ metrics from OLSR
-- [x] Link type classification (RF, tunnel, ethernet, bridge)
-- [x] Hop information included in network JSON
-- [x] Works with both OLSR and Babel routing daemons
-
-**All agent functionality is implemented and ready for production testing on AREDN networks.**
-
-**Note:** Backend features (remote collector, historical trending, web dashboard, alerting) are handled by a separate backend project and are not part of this agent codebase.
-
----
-
 ## 1) Architecture Overview
 
 ### 1.1 Unified Process Model
@@ -123,12 +83,6 @@ AREDN-Phonebook-Enhanced (single process)
 - 🆕 **Network Health Dashboard:** JSON API for monitoring tools
 - 🆕 **Degradation Detection:** Early warning for voice quality issues
 - 🆕 **Historical Trending:** Rolling window statistics
-
-### 2.3 Integration Benefits
-- 📊 **Unified Health View:** Phonebook + network status in one place
-- 🔄 **Correlated Metrics:** Link SIP registration failures to mesh issues
-- 💾 **Shared Infrastructure:** Reuse existing HTTP/CGI endpoints
-- 🛡️ **Emergency Priority:** Monitoring never impacts core phonebook
 
 ---
 
@@ -227,16 +181,17 @@ collector_url =                 # Optional: external collector endpoint
 
 **Purpose:** Discover all nodes with agents (phonebook servers or probe responders) mesh-wide, not just direct neighbors.
 
-**Why:** For emergency SIP communications, we need to know reachability to all potential call destinations, regardless of hop count.
+**Why:** For network management we need an overview across the entire topology.
 
 **Discovery Process:**
+
 1. **Topology Query** (every 1 hour):
    - Query OLSR: `GET http://127.0.0.1:9090/topology`
    - Extract all unique node IPs from mesh topology
 
 2. **Agent Detection** (one-time per discovered node):
-   - Send ONE test probe (UDP packet) to each IP
-   - Wait up to 2 seconds for echo response
+   - Send ONE test probe (UDP packet) to each IP (small) only to active nodes (topology)
+   - Wait up to 10 seconds for echo response
    - If responds: node has agent (phonebook or responder)
 
 3. **Cache Management** (**RAM only - `/tmp/`**):
@@ -248,12 +203,6 @@ collector_url =                 # Optional: external collector endpoint
    - Probe only cached agent list
    - Measure RTT, jitter, packet loss
    - Update network status JSON
-
-**Benefits:**
-- ✅ Discovers all agents mesh-wide (2-hop, 3-hop, etc.)
-- ✅ Auto-updates as new agents come online
-- ✅ Minimal overhead (~1KB/hour for discovery)
-- ✅ Zero flash wear (tmpfs only)
 
 ---
 

@@ -107,18 +107,21 @@ int perform_agent_discovery_scan(void) {
                 agent_cache[j].last_seen = time(NULL);
                 agent_cache[j].is_active = true;
                 existing_agents++;
+                LOG_INFO("Agent discovery progress: %d/%d - %s (cached, refreshed)", i+1, ip_count, unique_ips[i]);
                 break;
             }
         }
 
         if (!already_cached) {
             // Test if this node has an agent
-            LOG_DEBUG("Testing node %s for agent", unique_ips[i]);
+            LOG_INFO("Agent discovery progress: %d/%d - testing %s", i+1, ip_count, unique_ips[i]);
             if (test_agent_probe(unique_ips[i])) {
                 if (add_agent_to_cache(unique_ips[i], unique_ips[i]) == 0) {
                     new_agents++;
                     LOG_INFO("Discovered new agent at %s", unique_ips[i]);
                 }
+            } else {
+                LOG_DEBUG("No agent response from %s", unique_ips[i]);
             }
         }
     }
@@ -297,8 +300,10 @@ static bool test_agent_probe(const char *ip) {
     }
 
     // Send ONE probe
+    LOG_DEBUG("Sending probe to %s", ip);
     int sent = send_probes(ip, 1, 0);
     if (sent <= 0) {
+        LOG_DEBUG("Failed to send probe to %s", ip);
         return false;
     }
 
@@ -312,9 +317,13 @@ static bool test_agent_probe(const char *ip) {
     if (calculate_probe_metrics(ip, &result) == 0) {
         // Check if we actually got responses (loss < 100%)
         if (result.loss_pct < 100.0) {
-            LOG_DEBUG("Agent test successful for %s (loss: %.1f%%)", ip, result.loss_pct);
+            LOG_INFO("Agent test successful for %s (loss: %.1f%%, rtt: %.1fms)", ip, result.loss_pct, result.avg_rtt_ms);
             return true;
+        } else {
+            LOG_DEBUG("Agent test failed for %s (100%% packet loss)", ip);
         }
+    } else {
+        LOG_DEBUG("Failed to calculate metrics for %s", ip);
     }
 
     return false;
