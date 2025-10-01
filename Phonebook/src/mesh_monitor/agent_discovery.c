@@ -174,7 +174,7 @@ int load_agent_cache(void) {
     while (fgets(line, sizeof(line), fp) && agent_count < MAX_DISCOVERED_AGENTS) {
         // Parse: ip,node,timestamp
         char ip[INET_ADDRSTRLEN];
-        char node[MAX_HOSTNAME_LEN];
+        char node[64];
         long timestamp;
 
         if (sscanf(line, "%[^,],%[^,],%ld", ip, node, &timestamp) == 3) {

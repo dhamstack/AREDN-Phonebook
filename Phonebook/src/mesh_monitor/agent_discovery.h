@@ -10,7 +10,7 @@
 
 typedef struct {
     char ip[INET_ADDRSTRLEN];
-    char node[MAX_HOSTNAME_LEN];
+    char node[64];  // Same as neighbor_info_t
     time_t last_seen;
     bool is_active;
 } discovered_agent_t;
