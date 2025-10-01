@@ -43,4 +43,7 @@ const char* classify_link_type(const char *interface);
 // Get current routing daemon name
 const char* get_routing_daemon_name(void);
 
+// Get raw OLSR jsoninfo data (for agent discovery)
+int http_get_olsr_jsoninfo(const char *endpoint, char *buffer, size_t buffer_size);
+
 #endif // ROUTING_ADAPTER_H

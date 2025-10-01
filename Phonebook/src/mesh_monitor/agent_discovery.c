@@ -76,8 +76,7 @@ int perform_agent_discovery_scan(void) {
     char topology_json[65536];
     memset(topology_json, 0, sizeof(topology_json));
 
-    // Use existing routing_adapter http_get function
-    extern int http_get_olsr_jsoninfo(const char *endpoint, char *buffer, size_t buffer_size);
+    // Use routing_adapter http_get function (now public)
     if (http_get_olsr_jsoninfo("topology", topology_json, sizeof(topology_json)) != 0) {
         LOG_ERROR("Failed to query OLSR topology for agent discovery");
         return -1;

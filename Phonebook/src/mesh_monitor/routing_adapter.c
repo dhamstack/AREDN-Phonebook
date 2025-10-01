@@ -83,8 +83,8 @@ void routing_adapter_shutdown(void) {
     LOG_INFO("Routing adapter shutdown");
 }
 
-// Simple HTTP GET request to OLSR jsoninfo
-static int http_get_olsr_jsoninfo(const char *endpoint, char *buffer, size_t buffer_size) {
+// Simple HTTP GET request to OLSR jsoninfo (exported for agent discovery)
+int http_get_olsr_jsoninfo(const char *endpoint, char *buffer, size_t buffer_size) {
     int sockfd;
     struct sockaddr_in serv_addr;
     struct timeval timeout;
