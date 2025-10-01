@@ -1,6 +1,6 @@
-#define MODULE_NAME "HTTP_CLIENT"
-
 #include "http_client.h"
+
+#define MODULE_NAME "HTTP_CLIENT"
 #include "../log_manager/log_manager.h"
 #include <sys/socket.h>
 #include <sys/time.h>
