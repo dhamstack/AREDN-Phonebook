@@ -14,7 +14,7 @@ echo "========================================="
 echo ""
 
 # Check if phonebook is running
-if ! pgrep -x aredn-phonebook > /dev/null; then
+if ! pgrep aredn-phonebook > /dev/null; then
     echo "${RED}ERROR: aredn-phonebook is not running${NC}"
     exit 1
 fi
