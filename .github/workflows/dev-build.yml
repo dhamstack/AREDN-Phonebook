@@ -24,6 +24,10 @@ jobs:
         target:
           - arch: ath79
             subtarget: generic
+          - arch: x86
+            subtarget: 64
+          - arch: ipq40xx
+            subtarget: generic
 
     steps:
       - name: Checkout code
@@ -32,7 +36,7 @@ jobs:
       - name: Set up SDK URL
         id: sdk
         run: |
-          echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/ath79/generic/openwrt-sdk-23.05.3-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
+          echo "sdk_url=https://downloads.openwrt.org/releases/23.05.3/targets/${{ matrix.target.arch }}/${{ matrix.target.subtarget }}/openwrt-sdk-23.05.3-${{ matrix.target.arch }}-${{ matrix.target.subtarget }}_gcc-12.3.0_musl.Linux-x86_64.tar.xz" >> $GITHUB_OUTPUT
 
       - name: Download and extract SDK (fresh every time)
         run: |
