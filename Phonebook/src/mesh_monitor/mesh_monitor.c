@@ -5,6 +5,7 @@
 #include "routing_adapter.h"
 #include "probe_engine.h"
 #include "health_reporter.h"
+#include "agent_discovery.h"
 #include "../log_manager/log_manager.h"
 #include <string.h>
 #include <unistd.h>
@@ -56,6 +57,14 @@ int mesh_monitor_init(mesh_monitor_config_t *config) {
         return -1;
     }
 
+    // Initialize agent discovery
+    if (agent_discovery_init() != 0) {
+        LOG_ERROR("Failed to initialize agent discovery");
+        probe_engine_shutdown();
+        routing_adapter_shutdown();
+        return -1;
+    }
+
     // Start probe responder thread
     if (pthread_create(&responder_tid, NULL, probe_responder_thread, NULL) != 0) {
         LOG_ERROR("Failed to create probe responder thread");
@@ -102,29 +111,34 @@ void* mesh_monitor_thread(void *arg) {
     monitor_running = true;
 
     time_t last_probe_time = 0;
+    time_t last_discovery_time = 0;
 
     while (monitor_running) {
         time_t now = time(NULL);
+
+        // Check if it's time to run agent discovery scan (every 1 hour)
+        if (now - last_discovery_time >= 3600) {  // AGENT_DISCOVERY_INTERVAL_S
+            LOG_INFO("Running periodic agent discovery scan");
+            perform_agent_discovery_scan();
+            last_discovery_time = now;
+        }
 
         // Check if it's time to probe
         if (now - last_probe_time >= g_monitor_config.network_status_interval_s) {
             LOG_DEBUG("Starting probe cycle");
 
-            // Get neighbors from routing daemon
-            neighbor_info_t neighbors[MAX_NEIGHBORS];
-            int neighbor_count = get_neighbors(neighbors, MAX_NEIGHBORS);
+            // Get discovered agents instead of neighbors
+            discovered_agent_t agents[MAX_DISCOVERED_AGENTS];
+            int agent_count = get_discovered_agents(agents, MAX_DISCOVERED_AGENTS);
 
-            if (neighbor_count > 0) {
-                // Probe a subset of neighbors
-                int targets = (neighbor_count < g_monitor_config.neighbor_targets)
-                              ? neighbor_count
-                              : g_monitor_config.neighbor_targets;
+            if (agent_count > 0) {
+                LOG_DEBUG("Probing %d discovered agents", agent_count);
 
-                for (int i = 0; i < targets; i++) {
-                    LOG_DEBUG("Probing neighbor %s", neighbors[i].ip);
+                for (int i = 0; i < agent_count; i++) {
+                    LOG_DEBUG("Probing agent %s", agents[i].ip);
 
                     // Send probes
-                    int probes_sent = send_probes(neighbors[i].ip, 10, 100);  // 10 probes, 100ms apart
+                    int probes_sent = send_probes(agents[i].ip, 10, 100);  // 10 probes, 100ms apart
 
                     if (probes_sent > 0) {
                         // Wait for probe window to complete
@@ -132,13 +146,13 @@ void* mesh_monitor_thread(void *arg) {
 
                         // Calculate metrics
                         probe_result_t result;
-                        if (calculate_probe_metrics(neighbors[i].ip, &result) == 0) {
+                        if (calculate_probe_metrics(agents[i].ip, &result) == 0) {
                             // Record routing daemon used for this probe
                             strncpy(result.routing_daemon, get_routing_daemon_name(), sizeof(result.routing_daemon) - 1);
 
                             // Get hop-by-hop path information (Phase 2)
                             neighbor_info_t path_hops[MAX_HOPS];
-                            int hop_count = get_path_hops(neighbors[i].ip, path_hops, MAX_HOPS);
+                            int hop_count = get_path_hops(agents[i].ip, path_hops, MAX_HOPS);
 
                             if (hop_count > 0) {
                                 result.hop_count = hop_count;
@@ -154,8 +168,8 @@ void* mesh_monitor_thread(void *arg) {
                                     result.hops[h].rtt_ms = 0.0;  // Per-hop RTT not available without per-hop probing
                                 }
                                 // Copy destination node name
-                                strncpy(result.dst_node, neighbors[i].node, sizeof(result.dst_node) - 1);
-                                LOG_DEBUG("Path to %s: %d hops", neighbors[i].ip, hop_count);
+                                strncpy(result.dst_node, agents[i].node, sizeof(result.dst_node) - 1);
+                                LOG_DEBUG("Path to %s: %d hops", agents[i].ip, hop_count);
                             }
 
                             // Store in history
@@ -164,12 +178,17 @@ void* mesh_monitor_thread(void *arg) {
                             probe_history_index = (probe_history_index + 1) % PROBE_HISTORY_SIZE;
                             pthread_mutex_unlock(&history_mutex);
 
-                            LOG_DEBUG("Probe metrics calculated for %s", neighbors[i].ip);
+                            LOG_DEBUG("Probe metrics calculated for %s", agents[i].ip);
                         }
                     }
                 }
             } else {
-                LOG_DEBUG("No neighbors found to probe");
+                LOG_DEBUG("No discovered agents to probe - run discovery scan");
+                // Trigger immediate discovery if no agents found
+                if (now - last_discovery_time > 60) {  // Don't spam discovery
+                    perform_agent_discovery_scan();
+                    last_discovery_time = now;
+                }
             }
 
             // Export network status to JSON

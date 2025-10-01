@@ -54,6 +54,7 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/mesh_monitor/monitor_config.c \
 		$(PKG_BUILD_DIR)/mesh_monitor/routing_adapter.c \
 		$(PKG_BUILD_DIR)/mesh_monitor/probe_engine.c \
+		$(PKG_BUILD_DIR)/mesh_monitor/agent_discovery.c \
 		$(PKG_BUILD_DIR)/mesh_monitor/health_reporter.c \
 		$(PKG_BUILD_DIR)/mesh_monitor/http_client.c \
 		$(PKG_BUILD_DIR)/mesh_monitor/remote_reporter.c \
