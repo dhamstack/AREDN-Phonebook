@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=aredn-phonebook
-PKG_VERSION:=2.0.0
+PKG_VERSION:=2.1.0
 ifeq ($(BUILD_SHA),)
 PKG_RELEASE:=1
 else
