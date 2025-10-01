@@ -1,0 +1,92 @@
+#!/bin/sh
+# agent-discovery-status - Show agent discovery progress
+
+# Colors for terminal output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+echo "========================================="
+echo "  AREDN Agent Discovery Status"
+echo "========================================="
+echo ""
+
+# Check if phonebook is running
+if ! pgrep -x aredn-phonebook > /dev/null; then
+    echo "${RED}ERROR: aredn-phonebook is not running${NC}"
+    exit 1
+fi
+
+# Get current discovery scan progress from logs
+LAST_PROGRESS=$(logread | grep "Agent discovery progress" | tail -1)
+
+if [ -n "$LAST_PROGRESS" ]; then
+    # Extract progress (e.g., "5/100")
+    PROGRESS=$(echo "$LAST_PROGRESS" | grep -o '[0-9]\+/[0-9]\+' | head -1)
+    CURRENT=$(echo "$PROGRESS" | cut -d'/' -f1)
+    TOTAL=$(echo "$PROGRESS" | cut -d'/' -f2)
+    IP=$(echo "$LAST_PROGRESS" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+' | tail -1)
+
+    if [ -n "$CURRENT" ] && [ -n "$TOTAL" ]; then
+        PERCENT=$((CURRENT * 100 / TOTAL))
+        echo "${BLUE}Current Scan:${NC} Testing node $CURRENT of $TOTAL ($PERCENT%)"
+        echo "${BLUE}Last IP:${NC} $IP"
+
+        # Estimate time remaining (10 seconds per node)
+        REMAINING=$((TOTAL - CURRENT))
+        TIME_LEFT=$((REMAINING * 10))
+        MINUTES=$((TIME_LEFT / 60))
+        SECONDS=$((TIME_LEFT % 60))
+        echo "${BLUE}Est. Time:${NC} ${MINUTES}m ${SECONDS}s remaining"
+    else
+        echo "${YELLOW}No active scan in progress${NC}"
+    fi
+else
+    echo "${YELLOW}No discovery scan data found${NC}"
+fi
+
+echo ""
+
+# Show discovered agents from cache
+if [ -f /tmp/aredn_agent_cache.txt ]; then
+    AGENT_COUNT=$(wc -l < /tmp/aredn_agent_cache.txt)
+    echo "${GREEN}Discovered Agents:${NC} $AGENT_COUNT"
+    echo "---"
+    cat /tmp/aredn_agent_cache.txt | while read line; do
+        IP=$(echo "$line" | cut -d',' -f1)
+        NODE=$(echo "$line" | cut -d',' -f2)
+        TIMESTAMP=$(echo "$line" | cut -d',' -f3)
+        DATE=$(date -d "@$TIMESTAMP" 2>/dev/null || date -r "$TIMESTAMP" 2>/dev/null || echo "unknown")
+        echo "  ${GREEN}•${NC} $IP ($NODE) - Last seen: $DATE"
+    done
+else
+    echo "${YELLOW}No agents discovered yet${NC}"
+fi
+
+echo ""
+
+# Show recent discoveries
+RECENT=$(logread | grep "Discovered new agent" | tail -5)
+if [ -n "$RECENT" ]; then
+    echo "${GREEN}Recent Discoveries:${NC}"
+    echo "---"
+    echo "$RECENT" | while read line; do
+        IP=$(echo "$line" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+')
+        echo "  ${GREEN}✓${NC} $IP"
+    done
+    echo ""
+fi
+
+# Show last scan completion
+LAST_COMPLETE=$(logread | grep "Agent discovery complete" | tail -1)
+if [ -n "$LAST_COMPLETE" ]; then
+    echo "${BLUE}Last Completed Scan:${NC}"
+    echo "$LAST_COMPLETE" | sed 's/.*AGENT_DISCOVERY: /  /'
+    echo ""
+fi
+
+# Next scan time
+echo "${BLUE}Next Scan:${NC} Every 1 hour (3600 seconds)"
+echo ""
