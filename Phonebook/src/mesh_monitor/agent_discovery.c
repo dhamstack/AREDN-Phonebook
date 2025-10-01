@@ -19,7 +19,7 @@ static bool discovery_initialized = false;
 static pthread_mutex_t discovery_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Forward declarations
-static int parse_neighbors_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips);
+static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips);
 static bool test_agent_probe(const char *ip);
 static int add_agent_to_cache(const char *ip, const char *node);
 
@@ -72,26 +72,26 @@ int perform_agent_discovery_scan(void) {
     LOG_INFO("Starting agent discovery scan");
     time_t scan_start = time(NULL);
 
-    // Query OLSR neighbors (active nodes only)
-    char neighbors_json[65536];
-    memset(neighbors_json, 0, sizeof(neighbors_json));
+    // Query OLSR routes (all reachable nodes)
+    char routes_json[65536];
+    memset(routes_json, 0, sizeof(routes_json));
 
     // Use routing_adapter http_get function (now public)
-    if (http_get_olsr_jsoninfo("neighbors", neighbors_json, sizeof(neighbors_json)) != 0) {
-        LOG_ERROR("Failed to query OLSR neighbors for agent discovery");
+    if (http_get_olsr_jsoninfo("routes", routes_json, sizeof(routes_json)) != 0) {
+        LOG_ERROR("Failed to query OLSR routes for agent discovery");
         return -1;
     }
 
-    // Parse unique IPs from neighbors
+    // Parse unique destination IPs from routes
     char unique_ips[MAX_DISCOVERED_AGENTS][INET_ADDRSTRLEN];
-    int ip_count = parse_neighbors_ips(neighbors_json, unique_ips, MAX_DISCOVERED_AGENTS);
+    int ip_count = parse_routes_ips(routes_json, unique_ips, MAX_DISCOVERED_AGENTS);
 
     if (ip_count == 0) {
-        LOG_WARN("No IPs found in OLSR neighbors");
+        LOG_WARN("No IPs found in OLSR routes");
         return 0;
     }
 
-    LOG_INFO("Found %d neighbor nodes, testing for agents", ip_count);
+    LOG_INFO("Found %d reachable nodes in routes table, testing for agents", ip_count);
 
     // Test each IP for agent response
     pthread_mutex_lock(&discovery_mutex);
@@ -216,7 +216,7 @@ int save_agent_cache(void) {
 // Helper Functions
 //=============================================================================
 
-static int parse_neighbors_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips) {
+static int parse_routes_ips(const char *json, char ips[][INET_ADDRSTRLEN], int max_ips) {
     if (!json || !ips) {
         return 0;
     }
@@ -224,32 +224,32 @@ static int parse_neighbors_ips(const char *json, char ips[][INET_ADDRSTRLEN], in
     int count = 0;
     const char *pos = json;
 
-    // Look for "neighbors" array in JSON
-    const char *neighbors_array = strstr(pos, "\"neighbors\"");
-    if (!neighbors_array) {
-        LOG_DEBUG("No neighbors array found in OLSR response");
+    // Look for "routes" array in JSON
+    const char *routes_array = strstr(pos, "\"routes\"");
+    if (!routes_array) {
+        LOG_DEBUG("No routes array found in OLSR response");
         return 0;
     }
 
     // Find the opening bracket
-    const char *array_start = strchr(neighbors_array, '[');
+    const char *array_start = strchr(routes_array, '[');
     if (!array_start) {
         return 0;
     }
 
     pos = array_start + 1;
 
-    // Parse all unique IPs from neighbors (only ipv4Address field)
+    // Parse all unique destination IPs from routes
     while (count < max_ips && pos && *pos) {
-        // Look for ipv4Address field
-        const char *ip_field = strstr(pos, "\"ipv4Address\"");
+        // Look for "destination" field
+        const char *dest_field = strstr(pos, "\"destination\"");
 
-        if (!ip_field || ip_field > pos + 1000) {
+        if (!dest_field || dest_field > pos + 1000) {
             break;
         }
 
         // Extract IP
-        const char *ip_start = strchr(ip_field, ':');
+        const char *ip_start = strchr(dest_field, ':');
         if (ip_start) {
             ip_start = strchr(ip_start, '"');
             if (ip_start) {
@@ -260,6 +260,12 @@ static int parse_neighbors_ips(const char *json, char ips[][INET_ADDRSTRLEN], in
                     size_t ip_len = ip_end - ip_start;
                     memcpy(ip_buffer, ip_start, ip_len);
                     ip_buffer[ip_len] = '\0';
+
+                    // Skip special entries: 0.0.0.0, local subnets, non-host routes
+                    if (strcmp(ip_buffer, "0.0.0.0") == 0) {
+                        pos = dest_field + 1;
+                        continue;
+                    }
 
                     // Check if IP is unique
                     bool is_unique = true;
@@ -279,10 +285,10 @@ static int parse_neighbors_ips(const char *json, char ips[][INET_ADDRSTRLEN], in
             }
         }
 
-        pos = ip_field + 1;
+        pos = dest_field + 1;
     }
 
-    LOG_DEBUG("Parsed %d unique IPs from OLSR neighbors", count);
+    LOG_DEBUG("Parsed %d unique IPs from OLSR routes", count);
     return count;
 }
 
