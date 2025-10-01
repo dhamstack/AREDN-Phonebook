@@ -3,6 +3,7 @@
 #include "http_client.h"
 #include "../log_manager/log_manager.h"
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
