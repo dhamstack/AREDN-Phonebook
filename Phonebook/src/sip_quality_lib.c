@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #define SIP_PORT 5060
 #define RTP_PAYLOAD_TYPE 0  // PCMU
@@ -203,6 +204,8 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
                 long *sip_rtt_ms, const char *local_ip) {
     char request[2048];
     long rand_val = time(NULL);
+    const char *debug = getenv("SIP_DEBUG");
+    int is_debug = (debug && strcmp(debug, "1") == 0);
 
     snprintf(call_id_out, 64, "%ld@%s", rand_val, local_ip);
     snprintf(from_tag_out, 32, "%ld", rand_val + 1);
@@ -239,8 +242,15 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
     struct timeval invite_sent_time;
     gettimeofday(&invite_sent_time, NULL);
 
+    if (is_debug) {
+        fprintf(stderr, "[DEBUG] Sending INVITE to %s:%d\n", phone_ip, ntohs(addr->sin_port));
+        fprintf(stderr, "[DEBUG] Local IP in SDP: %s, RTP port: %d\n", local_ip, rtp_port);
+        fprintf(stderr, "[DEBUG] INVITE message:\n%s\n", request);
+    }
+
     if (sendto(sockfd, request, strlen(request), 0,
                (struct sockaddr *)addr, sizeof(*addr)) < 0) {
+        if (is_debug) fprintf(stderr, "[DEBUG] sendto() failed: %s\n", strerror(errno));
         return -1;
     }
 
@@ -257,6 +267,11 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
                               (struct sockaddr *)&from, &fromlen);
         if (len > 0) {
             response[len] = '\0';
+
+            if (is_debug) {
+                fprintf(stderr, "[DEBUG] Received SIP response (%zd bytes) from %s:\n%s\n",
+                        len, inet_ntoa(from.sin_addr), response);
+            }
 
             // Check for final responses
             if (strstr(response, "200 OK") != NULL) {
@@ -290,6 +305,10 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
             // 100 Trying or 180 Ringing - keep waiting
         } else {
             // Timeout or error
+            if (is_debug) {
+                fprintf(stderr, "[DEBUG] recvfrom() returned %zd (errno=%d: %s)\n",
+                        len, errno, strerror(errno));
+            }
             if (got_180) {
                 *status = PROBE_NO_ANSWER;
                 snprintf(status_reason, 128, "Phone rang but no answer within timeout");
@@ -535,14 +554,21 @@ int test_phone_quality(const char *phone_number, const char *phone_ip,
     // Get local IP address that can reach the phone
     char local_ip[64];
     const char *env_ip = getenv("SIP_LOCAL_IP");
+    const char *debug = getenv("SIP_DEBUG");
+    int is_debug = (debug && strcmp(debug, "1") == 0);
+
     if (env_ip && strlen(env_ip) > 0) {
         // Use environment variable if set
         strncpy(local_ip, env_ip, sizeof(local_ip) - 1);
         local_ip[sizeof(local_ip) - 1] = '\0';
+        if (is_debug) fprintf(stderr, "[DEBUG] Using SIP_LOCAL_IP: %s\n", local_ip);
     } else if (get_local_ip(phone_ip, local_ip, sizeof(local_ip)) < 0) {
         result->status = PROBE_SIP_ERROR;
         snprintf(result->status_reason, sizeof(result->status_reason), "Failed to get local IP");
+        if (is_debug) fprintf(stderr, "[DEBUG] Failed to get local IP for phone %s\n", phone_ip);
         goto cleanup;
+    } else {
+        if (is_debug) fprintf(stderr, "[DEBUG] Auto-detected local IP: %s\n", local_ip);
     }
 
     // Setup SIP address
