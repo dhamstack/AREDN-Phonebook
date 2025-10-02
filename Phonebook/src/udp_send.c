@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <time.h>
@@ -87,7 +88,7 @@ void send_sip_options(const char *phone_number, const char *phone_ip) {
         // Extract status line
         char *status_line = strtok(response, "\r\n");
         if (status_line && strstr(status_line, "200 OK")) {
-            printf("  OK - %s (RTT: %ld sec)\n", status_line, end_time - start_time);
+            printf("  OK - %s (RTT: %lld sec)\n", status_line, (long long)(end_time - start_time));
         } else if (status_line) {
             printf("  Response: %s\n", status_line);
         } else {
