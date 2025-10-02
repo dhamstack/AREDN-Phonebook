@@ -339,6 +339,30 @@ int extract_to_tag(const char *response, char *to_tag, int max_len) {
     return 0;
 }
 
+// Parse SDP to extract phone's RTP port and IP
+int parse_sdp(const char *sdp, int *rtp_port, char *ip, int ip_size) {
+    // Find m=audio line
+    const char *m_line = strstr(sdp, "m=audio ");
+    if (!m_line) return -1;
+
+    if (sscanf(m_line, "m=audio %d", rtp_port) != 1) {
+        return -1;
+    }
+
+    // Find c=IN IP4 line for connection address
+    const char *c_line = strstr(sdp, "c=IN IP4 ");
+    if (c_line) {
+        c_line += 9; // Skip "c=IN IP4 "
+        const char *end = strpbrk(c_line, " \r\n");
+        int len = end ? (end - c_line) : strlen(c_line);
+        if (len >= ip_size) len = ip_size - 1;
+        strncpy(ip, c_line, len);
+        ip[len] = '\0';
+    }
+
+    return 0;
+}
+
 // Run full media quality test
 int test_media_quality(const char *phone_number, const char *phone_ip,
                        test_stats_t *stats, int verbose) {
@@ -362,6 +386,33 @@ int test_media_quality(const char *phone_number, const char *phone_ip,
         if (sip_sock >= 0) close(sip_sock);
         if (rtp_sock >= 0) close(rtp_sock);
         if (rtcp_sock >= 0) close(rtcp_sock);
+        return -1;
+    }
+
+    // Bind RTP and RTCP sockets to the ports we advertise in SDP
+    struct sockaddr_in local_rtp, local_rtcp;
+    memset(&local_rtp, 0, sizeof(local_rtp));
+    local_rtp.sin_family = AF_INET;
+    local_rtp.sin_addr.s_addr = INADDR_ANY;
+    local_rtp.sin_port = htons(rtp_port);
+
+    memset(&local_rtcp, 0, sizeof(local_rtcp));
+    local_rtcp.sin_family = AF_INET;
+    local_rtcp.sin_addr.s_addr = INADDR_ANY;
+    local_rtcp.sin_port = htons(rtcp_port);
+
+    if (bind(rtp_sock, (struct sockaddr *)&local_rtp, sizeof(local_rtp)) < 0) {
+        if (verbose) printf("  Failed to bind RTP socket to port %d\n", rtp_port);
+        close(sip_sock);
+        close(rtp_sock);
+        close(rtcp_sock);
+        return -1;
+    }
+    if (bind(rtcp_sock, (struct sockaddr *)&local_rtcp, sizeof(local_rtcp)) < 0) {
+        if (verbose) printf("  Failed to bind RTCP socket to port %d\n", rtcp_port);
+        close(sip_sock);
+        close(rtp_sock);
+        close(rtcp_sock);
         return -1;
     }
 
@@ -405,20 +456,32 @@ int test_media_quality(const char *phone_number, const char *phone_ip,
         goto cleanup;
     }
 
+    // Parse SDP from 200 OK to get phone's RTP port and IP
+    int phone_rtp_port = 0;
+    char phone_media_ip[64] = {0};
+    strncpy(phone_media_ip, phone_ip, sizeof(phone_media_ip) - 1); // Default to phone IP
+
+    if (parse_sdp(sip_response, &phone_rtp_port, phone_media_ip, sizeof(phone_media_ip)) == 0) {
+        if (verbose) printf("  Phone RTP: %s:%d\n", phone_media_ip, phone_rtp_port);
+    } else {
+        if (verbose) printf("  Warning: Could not parse SDP, using defaults\n");
+        phone_rtp_port = rtp_port; // Fallback
+    }
+
     // Send ACK
     if (verbose) printf("  Sending ACK, starting RTP...\n");
     send_ack(sip_sock, &sip_addr, phone_number, phone_ip, call_id, from_tag, to_tag);
 
-    // Setup RTP destination (parse from SDP in response - simplified: use phone IP)
+    // Setup RTP destination using parsed SDP
     memset(&rtp_addr, 0, sizeof(rtp_addr));
     rtp_addr.sin_family = AF_INET;
-    rtp_addr.sin_port = htons(rtp_port); // Simplified
-    rtp_addr.sin_addr.s_addr = inet_addr(phone_ip);
+    rtp_addr.sin_port = htons(phone_rtp_port);
+    rtp_addr.sin_addr.s_addr = inet_addr(phone_media_ip);
 
     memset(&rtcp_addr, 0, sizeof(rtcp_addr));
     rtcp_addr.sin_family = AF_INET;
-    rtcp_addr.sin_port = htons(rtcp_port);
-    rtcp_addr.sin_addr.s_addr = inet_addr(phone_ip);
+    rtcp_addr.sin_port = htons(phone_rtp_port + 1); // RTCP is typically RTP+1
+    rtcp_addr.sin_addr.s_addr = inet_addr(phone_media_ip);
 
     // Send RTCP SR immediately
     gettimeofday(&sr_time, NULL);
