@@ -145,6 +145,32 @@ int send_probes(const char *dst_ip, int count, int interval_ms) {
         return -1;
     }
 
+    // Get our local bound address and port for return address
+    struct sockaddr_in local_addr;
+    socklen_t addr_len = sizeof(local_addr);
+    if (getsockname(probe_socket, (struct sockaddr *)&local_addr, &addr_len) < 0) {
+        LOG_ERROR("Failed to get local socket address: %s", strerror(errno));
+        return -1;
+    }
+
+    // If bound to INADDR_ANY, determine actual source IP by connecting
+    char return_ip_str[16];
+    if (local_addr.sin_addr.s_addr == INADDR_ANY) {
+        // Use ip route to determine source IP
+        struct sockaddr_in test_addr;
+        int test_sock = socket(AF_INET, SOCK_DGRAM, 0);
+        if (test_sock >= 0) {
+            memcpy(&test_addr, &dst_addr, sizeof(test_addr));
+            connect(test_sock, (struct sockaddr *)&test_addr, sizeof(test_addr));
+            getsockname(test_sock, (struct sockaddr *)&local_addr, &addr_len);
+            close(test_sock);
+        }
+    }
+    inet_ntop(AF_INET, &local_addr.sin_addr, return_ip_str, sizeof(return_ip_str));
+    uint16_t return_port = ntohs(local_addr.sin_port);
+
+    LOG_INFO("[TRACE-RETURN] Will request echoes to %s:%d", return_ip_str, return_port);
+
     int sent = 0;
     for (int i = 0; i < count; i++) {
         probe_packet_t packet;
@@ -157,6 +183,8 @@ int send_probes(const char *dst_ip, int count, int interval_ms) {
         packet.timestamp_sec = htonl(now.tv_sec);
         packet.timestamp_usec = htonl(now.tv_usec);
         strncpy(packet.src_node, local_node, sizeof(packet.src_node) - 1);
+        strncpy(packet.return_ip, return_ip_str, sizeof(packet.return_ip) - 1);
+        packet.return_port = htons(return_port);
 
         ssize_t n = sendto(probe_socket, &packet, sizeof(packet), 0,
                            (struct sockaddr *)&dst_addr, sizeof(dst_addr));
@@ -225,13 +253,27 @@ void* probe_responder_thread(void *arg) {
             continue;  // Invalid packet size
         }
 
-        // Echo the packet back
+        // Extract return address from packet payload (not from IP header)
+        probe_packet_t *pkt = (probe_packet_t *)buffer;
+        struct sockaddr_in return_addr;
+        memset(&return_addr, 0, sizeof(return_addr));
+        return_addr.sin_family = AF_INET;
+
+        // Convert return IP string to binary
+        if (inet_pton(AF_INET, pkt->return_ip, &return_addr.sin_addr) <= 0) {
+            LOG_ERROR("Invalid return IP in packet: %s", pkt->return_ip);
+            continue;
+        }
+        return_addr.sin_port = pkt->return_port;  // Already in network byte order
+
+        // Echo the packet back using embedded return address
         if (recv_count % 10 == 1) {  // Log first of every 10
-            LOG_INFO("[TRACE-ECHO] Echoing to %s:%d",
+            LOG_INFO("[TRACE-ECHO] Using embedded return address: %s:%d (src_addr was %s:%d)",
+                     pkt->return_ip, ntohs(pkt->return_port),
                      inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
         }
         ssize_t sent = sendto(responder_socket, buffer, n, 0,
-                              (struct sockaddr *)&src_addr, addr_len);
+                              (struct sockaddr *)&return_addr, sizeof(return_addr));
 
         if (sent < 0) {
             LOG_ERROR("Failed to echo probe: %s (errno=%d)", strerror(errno), errno);

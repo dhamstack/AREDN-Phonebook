@@ -4,12 +4,14 @@
 #include "mesh_monitor.h"
 #include "routing_adapter.h"
 
-// Probe packet structure (simple UDP echo)
+// Probe packet structure with explicit return address
 typedef struct {
     uint32_t sequence;
     uint32_t timestamp_sec;
     uint32_t timestamp_usec;
     char src_node[64];
+    char return_ip[16];      // Explicit return IP address (e.g., "10.47.245.209")
+    uint16_t return_port;    // Explicit return port (network byte order)
 } __attribute__((packed)) probe_packet_t;
 
 // Initialize probe engine
