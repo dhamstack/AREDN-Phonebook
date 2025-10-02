@@ -23,8 +23,8 @@ void send_sip_options(const char *phone_number, const char *phone_ip) {
     char response[4096];
     socklen_t addr_len = sizeof(recv_addr);
     ssize_t recv_len;
-    struct timeval tv;
-    time_t start_time, end_time;
+    struct timeval tv, start_time, end_time;
+    long rtt_ms;
 
     // Create UDP socket
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -67,7 +67,7 @@ void send_sip_options(const char *phone_number, const char *phone_ip) {
     printf("Testing %s (%s)...\n", phone_number, phone_ip);
 
     // Send OPTIONS request
-    start_time = time(NULL);
+    gettimeofday(&start_time, NULL);
     if (sendto(sockfd, request, strlen(request), 0,
                (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("sendto failed");
@@ -78,19 +78,23 @@ void send_sip_options(const char *phone_number, const char *phone_ip) {
     // Wait for response
     recv_len = recvfrom(sockfd, response, sizeof(response) - 1, 0,
                         (struct sockaddr *)&recv_addr, &addr_len);
-    end_time = time(NULL);
+    gettimeofday(&end_time, NULL);
 
     if (recv_len < 0) {
         printf("  X No response (timeout after %d seconds)\n", RESPONSE_TIMEOUT);
     } else {
         response[recv_len] = '\0';
 
+        // Calculate RTT in milliseconds
+        rtt_ms = (end_time.tv_sec - start_time.tv_sec) * 1000 +
+                 (end_time.tv_usec - start_time.tv_usec) / 1000;
+
         // Extract status line
         char *status_line = strtok(response, "\r\n");
         if (status_line && strstr(status_line, "200 OK")) {
-            printf("  OK - %s (RTT: %lld sec)\n", status_line, (long long)(end_time - start_time));
+            printf("  OK - %s (RTT: %ld ms)\n", status_line, rtt_ms);
         } else if (status_line) {
-            printf("  Response: %s\n", status_line);
+            printf("  Response: %s (RTT: %ld ms)\n", status_line, rtt_ms);
         } else {
             printf("  Invalid response\n");
         }
