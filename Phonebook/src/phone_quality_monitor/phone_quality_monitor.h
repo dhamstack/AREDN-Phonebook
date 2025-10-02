@@ -18,7 +18,7 @@ typedef struct {
     char phone_number[32];
     char phone_ip[64];
     time_t last_test_time;
-    probe_result_t last_result;
+    voip_probe_result_t last_result;
     int valid;  // 1 if record contains data, 0 if empty
 } phone_quality_record_t;
 
@@ -27,7 +27,7 @@ typedef struct {
     int enabled;
     int test_interval_sec;     // How often to test each phone
     int cycle_delay_sec;       // Delay between testing different phones
-    probe_config_t probe_config;
+    voip_probe_config_t probe_config;
 } quality_monitor_config_t;
 
 // Context passed to monitor thread

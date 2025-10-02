@@ -44,11 +44,11 @@ void print_usage(const char *prog) {
 }
 
 void print_result(const char *phone_number, const char *phone_ip,
-                  const probe_result_t *result) {
+                  const voip_probe_result_t *result) {
     printf("\n=== Phone %s (%s) ===\n", phone_number, phone_ip);
-    printf("Status: %s\n", probe_status_str(result->status));
+    printf("Status: %s\n", voip_probe_status_str(result->status));
 
-    if (result->status == PROBE_SUCCESS) {
+    if (result->status == VOIP_PROBE_SUCCESS) {
         printf("  Media RTT:    %ld ms\n", result->media_rtt_ms);
         printf("  Jitter:       %.2f ms\n", result->jitter_ms);
         printf("  Loss:         %.1f%% (%u/%u packets)\n",
@@ -70,8 +70,8 @@ const char* lookup_ip(const char *phone_number) {
 }
 
 int test_one_phone(const char *phone_number, const char *phone_ip,
-                   probe_config_t *config) {
-    probe_result_t result;
+                   voip_probe_config_t *config) {
+    voip_probe_result_t result;
 
     printf("Testing %s (%s)...\n", phone_number, phone_ip);
     fflush(stdout);
@@ -80,10 +80,10 @@ int test_one_phone(const char *phone_number, const char *phone_ip,
 
     print_result(phone_number, phone_ip, &result);
 
-    return (result.status == PROBE_SUCCESS) ? 0 : 1;
+    return (result.status == VOIP_PROBE_SUCCESS) ? 0 : 1;
 }
 
-int test_all_phones(probe_config_t *config) {
+int test_all_phones(voip_probe_config_t *config) {
     int failed = 0;
 
     for (int i = 0; default_phones[i].number; i++) {
@@ -101,7 +101,7 @@ int test_all_phones(probe_config_t *config) {
 }
 
 int main(int argc, char *argv[]) {
-    probe_config_t config = get_default_config();
+    voip_probe_config_t config = get_default_config();
     const char *phone_number = NULL;
     const char *phone_ip = NULL;
     int test_all = 0;

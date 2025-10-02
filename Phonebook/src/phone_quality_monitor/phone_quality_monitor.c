@@ -81,7 +81,7 @@ void quality_monitor_stop(void) {
 
 // Store quality test result
 static void store_quality_result(const char *phone_number, const char *phone_ip,
-                                 const probe_result_t *result) {
+                                 const voip_probe_result_t *result) {
     pthread_mutex_lock(&g_records_mutex);
 
     // Find existing record or empty slot
@@ -111,7 +111,7 @@ static void store_quality_result(const char *phone_number, const char *phone_ip,
         strncpy(g_quality_records[slot].phone_ip, phone_ip,
                 sizeof(g_quality_records[slot].phone_ip) - 1);
         g_quality_records[slot].last_test_time = time(NULL);
-        memcpy(&g_quality_records[slot].last_result, result, sizeof(probe_result_t));
+        memcpy(&g_quality_records[slot].last_result, result, sizeof(voip_probe_result_t));
         g_quality_records[slot].valid = 1;
     } else {
         LOG_WARN("Quality records full, cannot store result for %s", phone_number);
@@ -187,7 +187,7 @@ static void write_quality_json(void) {
                 r->phone_number,
                 r->phone_ip,
                 (long)r->last_test_time,
-                probe_status_str(r->last_result.status),
+                voip_probe_status_str(r->last_result.status),
                 r->last_result.media_rtt_ms,
                 r->last_result.jitter_ms,
                 r->last_result.loss_fraction * 100.0,
@@ -227,12 +227,23 @@ void* quality_monitor_thread(void *arg) {
 
         for (int i = 0; i < MAX_REGISTERED_USERS && test_count < user_count; i++) {
             if (registered_users[i].user_id[0] != '\0') {
+                // Resolve phone IP via DNS (user_id.local.mesh)
+                char hostname[256];
+                snprintf(hostname, sizeof(hostname), "%s.local.mesh", registered_users[i].user_id);
+
+                struct hostent *he = gethostbyname(hostname);
+                if (he == NULL || he->h_addr_list[0] == NULL) {
+                    // Skip if DNS resolution fails
+                    continue;
+                }
+
+                struct in_addr addr;
+                memcpy(&addr, he->h_addr_list[0], sizeof(struct in_addr));
+                const char *ip = inet_ntoa(addr);
+
                 strncpy(users_to_test[test_count].phone_number,
                         registered_users[i].user_id,
                         sizeof(users_to_test[test_count].phone_number) - 1);
-
-                // Get IP from registered contact
-                const char *ip = inet_ntoa(registered_users[i].contact_addr.sin_addr);
                 strncpy(users_to_test[test_count].phone_ip, ip,
                         sizeof(users_to_test[test_count].phone_ip) - 1);
 
@@ -245,7 +256,7 @@ void* quality_monitor_thread(void *arg) {
 
         // Test each phone
         for (int i = 0; i < test_count && g_monitor_running; i++) {
-            probe_result_t result;
+            voip_probe_result_t result;
 
             LOG_INFO("Testing phone %s (%s)...",
                      users_to_test[i].phone_number, users_to_test[i].phone_ip);
@@ -263,7 +274,7 @@ void* quality_monitor_thread(void *arg) {
             store_quality_result(users_to_test[i].phone_number,
                                 users_to_test[i].phone_ip, &result);
 
-            if (result.status == PROBE_SUCCESS) {
+            if (result.status == VOIP_PROBE_SUCCESS) {
                 LOG_INFO("Phone %s: RTT=%ld ms, Jitter=%.2f ms, Loss=%.1f%%",
                          users_to_test[i].phone_number,
                          result.media_rtt_ms, result.jitter_ms,
@@ -271,7 +282,7 @@ void* quality_monitor_thread(void *arg) {
             } else {
                 LOG_WARN("Phone %s: Test failed - %s (%s)",
                          users_to_test[i].phone_number,
-                         probe_status_str(result.status),
+                         voip_probe_status_str(result.status),
                          result.status_reason);
             }
 

@@ -114,7 +114,7 @@ static int send_rtcp_sr(int sockfd, struct sockaddr_in *addr, uint32_t ssrc,
 }
 
 // Parse RTCP RR and extract metrics - FIXED RTT calculation
-static int parse_rtcp_rr(uint8_t *buf, int len, probe_result_t *result, uint32_t lsr,
+static int parse_rtcp_rr(uint8_t *buf, int len, voip_probe_result_t *result, uint32_t lsr,
                   struct timeval *sr_sent_time) {
     if (len < sizeof(rtcp_rr_t)) return -1;
 
@@ -200,7 +200,7 @@ static int get_local_ip(const char *dest_ip, char *local_ip, int local_ip_size) 
 static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_number,
                 const char *phone_ip, int rtp_port, char *call_id_out,
                 char *from_tag_out, char *response, int response_size,
-                int timeout_ms, probe_status_t *status, char *status_reason,
+                int timeout_ms, voip_probe_status_t *status, char *status_reason,
                 long *sip_rtt_ms, const char *local_ip) {
     char request[2048];
     long rand_val = time(NULL);
@@ -283,19 +283,19 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
                 *sip_rtt_ms = (ok_recv_time.tv_sec - invite_sent_time.tv_sec) * 1000 +
                              (ok_recv_time.tv_usec - invite_sent_time.tv_usec) / 1000;
 
-                *status = PROBE_SUCCESS;
+                *status = VOIP_PROBE_SUCCESS;
                 snprintf(status_reason, 128, "Call answered successfully");
                 return 0;  // Success
             }
             if (strstr(response, "486 Busy") != NULL) {
-                *status = PROBE_BUSY;
+                *status = VOIP_PROBE_BUSY;
                 snprintf(status_reason, 128, "Phone busy (486)");
                 return -1;
             }
             if (strstr(response, "603 Decline") != NULL ||
                 strstr(response, "404 Not Found") != NULL ||
                 strstr(response, "487 Request Terminated") != NULL) {
-                *status = PROBE_SIP_ERROR;
+                *status = VOIP_PROBE_SIP_ERROR;
                 snprintf(status_reason, 128, "SIP error response");
                 return -1;
             }
@@ -310,10 +310,10 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
                         len, errno, strerror(errno));
             }
             if (got_180) {
-                *status = PROBE_NO_ANSWER;
+                *status = VOIP_PROBE_NO_ANSWER;
                 snprintf(status_reason, 128, "Phone rang but no answer within timeout");
             } else {
-                *status = PROBE_SIP_TIMEOUT;
+                *status = VOIP_PROBE_SIP_TIMEOUT;
                 snprintf(status_reason, 128, "No SIP response within %dms", timeout_ms);
             }
             return -1;
@@ -493,14 +493,14 @@ static void drain_rtp_packets(int rtp_sock, rtp_stats_t *stats) {
 // Internal core implementation
 static int test_phone_quality_internal(int external_sip_sock, const char *phone_number,
                                        const char *phone_ip, const char *server_ip,
-                                       probe_result_t *result, const probe_config_t *config) {
+                                       voip_probe_result_t *result, const voip_probe_config_t *config) {
     // Use defaults if config not provided
-    probe_config_t default_config = get_default_config();
+    voip_probe_config_t default_config = get_default_config();
     if (!config) config = &default_config;
 
     // Initialize result
     memset(result, 0, sizeof(*result));
-    result->status = PROBE_SIP_ERROR;
+    result->status = VOIP_PROBE_SIP_ERROR;
     snprintf(result->status_reason, sizeof(result->status_reason), "Not started");
 
     int sip_sock, rtp_sock, rtcp_sock;
@@ -582,7 +582,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
         local_ip[sizeof(local_ip) - 1] = '\0';
         if (is_debug) fprintf(stderr, "[DEBUG] Using SIP_LOCAL_IP: %s\n", local_ip);
     } else if (get_local_ip(phone_ip, local_ip, sizeof(local_ip)) < 0) {
-        result->status = PROBE_SIP_ERROR;
+        result->status = VOIP_PROBE_SIP_ERROR;
         snprintf(result->status_reason, sizeof(result->status_reason), "Failed to get local IP");
         if (is_debug) fprintf(stderr, "[DEBUG] Failed to get local IP for phone %s\n", phone_ip);
         goto cleanup;
@@ -608,7 +608,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
 
     // Extract To tag
     if (extract_to_tag(sip_response, to_tag, sizeof(to_tag)) < 0) {
-        result->status = PROBE_SIP_ERROR;
+        result->status = VOIP_PROBE_SIP_ERROR;
         snprintf(result->status_reason, sizeof(result->status_reason), "No To tag in 200 OK");
         goto cleanup;
     }
@@ -706,7 +706,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     // Calculate LOCAL RTP-based metrics
     if (rtp_stats.initialized && rtp_stats.packets_received >= 5) {
         // SUCCESS: We received enough RTP packets
-        result->status = PROBE_SUCCESS;
+        result->status = VOIP_PROBE_SUCCESS;
 
         // Store SIP RTT in media_rtt_ms field
         result->media_rtt_ms = sip_rtt_ms;
@@ -725,7 +725,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
                  rtp_stats.packets_received);
     } else {
         // FAILURE: Not enough RTP packets received
-        result->status = PROBE_NO_RR;
+        result->status = VOIP_PROBE_NO_RR;
         snprintf(result->status_reason, sizeof(result->status_reason),
                  "No/insufficient RTP received from phone (%u packets, need 5)",
                  rtp_stats.packets_received);
@@ -738,25 +738,25 @@ cleanup:
     if (sip_sock_created) close(sip_sock);  // Only close if we created it
     close(rtp_sock);
     close(rtcp_sock);
-    return (result->status == PROBE_SUCCESS) ? 0 : -1;
+    return (result->status == VOIP_PROBE_SUCCESS) ? 0 : -1;
 }
 
 // Public API: Standalone mode (creates own socket)
 int test_phone_quality(const char *phone_number, const char *phone_ip,
-                       probe_result_t *result, const probe_config_t *config) {
+                       voip_probe_result_t *result, const voip_probe_config_t *config) {
     return test_phone_quality_internal(-1, phone_number, phone_ip, NULL, result, config);
 }
 
 // Public API: Integrated mode (uses existing socket and server IP)
 int test_phone_quality_with_socket(int sip_sock, const char *phone_number,
                                    const char *phone_ip, const char *server_ip,
-                                   probe_result_t *result, const probe_config_t *config) {
+                                   voip_probe_result_t *result, const voip_probe_config_t *config) {
     return test_phone_quality_internal(sip_sock, phone_number, phone_ip, server_ip, result, config);
 }
 
 // Get default configuration
-probe_config_t get_default_config(void) {
-    probe_config_t config;
+voip_probe_config_t get_default_config(void) {
+    voip_probe_config_t config;
     config.burst_duration_ms = 1200;
     config.rtp_ptime_ms = 40;
     config.rtcp_wait_ms = 2000;
@@ -765,14 +765,14 @@ probe_config_t get_default_config(void) {
 }
 
 // Get status name as string
-const char* probe_status_str(probe_status_t status) {
+const char* voip_probe_status_str(voip_probe_status_t status) {
     switch (status) {
-        case PROBE_SUCCESS:     return "SUCCESS";
-        case PROBE_BUSY:        return "BUSY";
-        case PROBE_NO_RR:       return "NO_RR";
-        case PROBE_SIP_TIMEOUT: return "SIP_TIMEOUT";
-        case PROBE_SIP_ERROR:   return "SIP_ERROR";
-        case PROBE_NO_ANSWER:   return "NO_ANSWER";
+        case VOIP_PROBE_SUCCESS:     return "SUCCESS";
+        case VOIP_PROBE_BUSY:        return "BUSY";
+        case VOIP_PROBE_NO_RR:       return "NO_RR";
+        case VOIP_PROBE_SIP_TIMEOUT: return "SIP_TIMEOUT";
+        case VOIP_PROBE_SIP_ERROR:   return "SIP_ERROR";
+        case VOIP_PROBE_NO_ANSWER:   return "NO_ANSWER";
         default:                return "UNKNOWN";
     }
 }
