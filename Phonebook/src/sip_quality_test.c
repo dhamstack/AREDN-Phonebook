@@ -246,14 +246,32 @@ int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_number,
         return -1;
     }
 
-    // Wait for 200 OK
+    // Wait for responses (may get 100 Trying, 180 Ringing, then 200 OK)
     struct sockaddr_in from;
     socklen_t fromlen = sizeof(from);
-    ssize_t len = recvfrom(sockfd, response, response_size - 1, 0,
-                          (struct sockaddr *)&from, &fromlen);
-    if (len > 0) {
-        response[len] = '\0';
-        return (strstr(response, "200 OK") != NULL) ? 0 : -1;
+    int attempts = 0;
+
+    while (attempts < 10) {  // Try up to 10 responses
+        ssize_t len = recvfrom(sockfd, response, response_size - 1, 0,
+                              (struct sockaddr *)&from, &fromlen);
+        if (len > 0) {
+            response[len] = '\0';
+
+            // Check for final responses
+            if (strstr(response, "200 OK") != NULL) {
+                return 0;  // Success
+            }
+            if (strstr(response, "486 Busy") != NULL ||
+                strstr(response, "603 Decline") != NULL ||
+                strstr(response, "404 Not Found") != NULL) {
+                return -1;  // Phone rejected
+            }
+            // 100 Trying or 180 Ringing - keep waiting
+            attempts++;
+        } else {
+            // Timeout or error
+            return -1;
+        }
     }
     return -1;
 }
@@ -359,15 +377,31 @@ int test_media_quality(const char *phone_number, const char *phone_ip,
 
     // Send INVITE
     if (verbose) printf("  Sending INVITE...\n");
-    if (send_invite(sip_sock, &sip_addr, phone_number, phone_ip, rtp_port,
-                    call_id, from_tag, sip_response, sizeof(sip_response)) < 0) {
-        if (verbose) printf("  INVITE failed\n");
+    int invite_result = send_invite(sip_sock, &sip_addr, phone_number, phone_ip, rtp_port,
+                                    call_id, from_tag, sip_response, sizeof(sip_response));
+    if (invite_result < 0) {
+        if (verbose) {
+            printf("  INVITE failed\n");
+            if (strlen(sip_response) > 0) {
+                printf("  Response received:\n");
+                char *line = strtok(sip_response, "\r\n");
+                while (line && strlen(line) > 0) {
+                    printf("    %s\n", line);
+                    line = strtok(NULL, "\r\n");
+                }
+            } else {
+                printf("  No response (timeout)\n");
+            }
+        }
         goto cleanup;
     }
 
     // Extract To tag
     if (extract_to_tag(sip_response, to_tag, sizeof(to_tag)) < 0) {
-        if (verbose) printf("  No To tag in response\n");
+        if (verbose) {
+            printf("  No To tag in response\n");
+            printf("  Response was:\n%s\n", sip_response);
+        }
         goto cleanup;
     }
 
