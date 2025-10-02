@@ -1,18 +1,35 @@
 #!/bin/sh
-# SIP OPTIONS receiver and responder
-# Usage: test-udp-receive [port]
+# SIP OPTIONS receiver and responder - simulates a phone
+# Usage: test-udp-receive <phone_ip> [port]
 
-PORT="${1:-5060}"
+if [ -z "$1" ]; then
+    echo "Usage: test-udp-receive <phone_ip> [port]"
+    echo "Example: test-udp-receive 10.51.55.238"
+    echo "         (simulates a phone at 10.51.55.238:5060)"
+    exit 1
+fi
 
-# Get our LAN IP and hostname
-LAN_IP=$(ip -4 addr show br-lan | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+PHONE_IP="$1"
+PORT="${2:-5060}"
+
+# Get hostname
 HOSTNAME=$(cat /proc/sys/kernel/hostname)
 
-echo "=== SIP OPTIONS Receiver Test ==="
-echo "Listening on: $LAN_IP:$PORT"
+# Add the phone IP as an alias to br-lan (if not already there)
+ip addr show br-lan | grep -q "$PHONE_IP" || {
+    echo "Adding $PHONE_IP as alias to br-lan..."
+    ip addr add $PHONE_IP/32 dev br-lan
+}
+
+echo "=== SIP OPTIONS Receiver Test (Phone Simulator) ==="
+echo "Phone IP: $PHONE_IP:$PORT"
+echo "Node: $HOSTNAME"
 echo "Will respond with SIP 200 OK to OPTIONS requests"
 echo "Press Ctrl+C to stop"
 echo ""
+
+# Cleanup on exit
+trap "echo ''; echo 'Removing IP alias...'; ip addr del $PHONE_IP/32 dev br-lan 2>/dev/null; exit" INT TERM
 
 # Listen for SIP packets and respond
 while true; do
@@ -42,15 +59,15 @@ while true; do
         SRC_IP=$(echo "$VIA" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1)
 
         if [ -n "$SRC_IP" ]; then
-            # Create SIP 200 OK response
+            # Create SIP 200 OK response from phone IP
             SIP_RESPONSE="SIP/2.0 200 OK
 Via:$VIA
 From:$FROM
 To:$TO
 Call-ID: $CALLID
 CSeq: $CSEQ
-Contact: <sip:phonebook@${LAN_IP}:${PORT}>
-User-Agent: AREDN-Phonebook-Test/1.0
+Contact: <sip:phone@${PHONE_IP}:${PORT}>
+User-Agent: AREDN-Test-Phone/1.0
 Allow: INVITE, ACK, CANCEL, OPTIONS, BYE
 Content-Length: 0
 

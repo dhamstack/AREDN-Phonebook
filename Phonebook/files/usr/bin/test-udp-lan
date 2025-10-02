@@ -1,28 +1,37 @@
 #!/bin/sh
-# SIP OPTIONS test - continuous SIP health checks
-# Usage: test-udp-lan <destination_ip> [interval_ms]
+# SIP OPTIONS test - continuous SIP health checks from simulated phone
+# Usage: test-udp-lan <source_phone_ip> <destination_phone_ip> [interval_ms]
 
-if [ -z "$1" ]; then
-    echo "Usage: test-udp-lan <destination_ip> [interval_ms]"
-    echo "Example: test-udp-lan 10.51.55.233 1000"
-    echo "         (sends SIP OPTIONS every 1000ms until Ctrl+C)"
+if [ -z "$2" ]; then
+    echo "Usage: test-udp-lan <source_phone_ip> <destination_phone_ip> [interval_ms]"
+    echo "Example: test-udp-lan 10.197.143.20 10.51.55.238 1000"
+    echo "         (10.197.143.20 sends OPTIONS to 10.51.55.238 every 1000ms)"
     exit 1
 fi
 
-DST="$1"
-INTERVAL="${2:-1000}"  # Default 1000ms for SIP
+SRC="$1"
+DST="$2"
+INTERVAL="${3:-1000}"  # Default 1000ms for SIP
 PORT=5060  # SIP port
 
-# Get our LAN IP and hostname
-SRC=$(ip -4 addr show br-lan | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+# Get hostname
 HOSTNAME=$(cat /proc/sys/kernel/hostname)
 
-echo "=== SIP OPTIONS Test ==="
-echo "Source: $SRC ($HOSTNAME)"
-echo "Destination: $DST:$PORT"
+# Add source IP as alias to br-lan (if not already there)
+ip addr show br-lan | grep -q "$SRC" || {
+    echo "Adding $SRC as alias to br-lan..."
+    ip addr add $SRC/32 dev br-lan
+}
+
+echo "=== SIP OPTIONS Test (Phone-to-Phone) ==="
+echo "Source Phone: $SRC ($HOSTNAME)"
+echo "Destination Phone: $DST:$PORT"
 echo "Interval: ${INTERVAL}ms"
 echo "Press Ctrl+C to stop"
 echo ""
+
+# Cleanup on exit
+trap "echo ''; echo 'Removing IP alias...'; ip addr del $SRC/32 dev br-lan 2>/dev/null; exit" INT TERM
 
 # Test basic connectivity first
 echo "Testing connectivity..."
