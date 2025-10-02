@@ -579,13 +579,27 @@ int test_media_quality(const char *phone_number, const char *phone_ip,
     setsockopt(rtcp_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     uint8_t rtcp_buf[512];
-    ssize_t rtcp_len = recvfrom(rtcp_sock, rtcp_buf, sizeof(rtcp_buf), 0, NULL, NULL);
+    struct sockaddr_in rtcp_from;
+    socklen_t rtcp_from_len = sizeof(rtcp_from);
+    ssize_t rtcp_len = recvfrom(rtcp_sock, rtcp_buf, sizeof(rtcp_buf), 0,
+                                (struct sockaddr *)&rtcp_from, &rtcp_from_len);
     if (rtcp_len > 0) {
+        if (verbose) {
+            printf("  Received %ld bytes RTCP from %s:%d\n",
+                   (long)rtcp_len,
+                   inet_ntoa(rtcp_from.sin_addr),
+                   ntohs(rtcp_from.sin_port));
+            printf("  RTCP packet type: %u\n", rtcp_buf[1]);
+        }
         parse_rtcp_rr(rtcp_buf, rtcp_len, stats, lsr, &sr_time);
         if (verbose && stats->rtcp_rr_received) {
             printf("  Got RTCP RR: jitter=%u samples, loss=%u pkts\n",
                    stats->jitter_samples, stats->cum_packets_lost);
+        } else if (verbose) {
+            printf("  RTCP packet was not an RR or parse failed\n");
         }
+    } else {
+        if (verbose) printf("  No RTCP received (timeout or error)\n");
     }
 
     // Send BYE
