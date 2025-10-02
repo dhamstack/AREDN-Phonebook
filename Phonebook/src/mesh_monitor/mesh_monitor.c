@@ -107,7 +107,7 @@ void* mesh_monitor_thread(void *arg) {
         return NULL;
     }
 
-    LOG_INFO("Mesh monitor thread started");
+    LOG_INFO("[TRACE-1] Mesh monitor thread started");
     monitor_running = true;
 
     // Start with timestamps in the past to trigger immediate first probe/discovery
@@ -115,11 +115,12 @@ void* mesh_monitor_thread(void *arg) {
     time_t last_probe_time = now - g_monitor_config.network_status_interval_s - 1;  // Ensure immediate trigger
     time_t last_discovery_time = now;  // Skip discovery, use cached agents
 
-    LOG_INFO("Initialized: will probe immediately (last_probe_time=%ld, now=%ld, interval=%d)",
+    LOG_INFO("[TRACE-2] Initialized: will probe immediately (last_probe_time=%ld, now=%ld, interval=%d)",
              last_probe_time, now, g_monitor_config.network_status_interval_s);
 
     while (monitor_running) {
         time_t now = time(NULL);
+        LOG_DEBUG("[TRACE-3] Loop iteration: now=%ld", now);
 
         // Check if it's time to run agent discovery scan (every 1 hour)
         // TEMPORARILY DISABLED for testing - using cached agents only
@@ -130,27 +131,31 @@ void* mesh_monitor_thread(void *arg) {
         }
 
         // Check if it's time to probe
-        LOG_DEBUG("Probe check: now=%ld, last_probe=%ld, diff=%ld, interval=%d",
+        LOG_INFO("[TRACE-4] Probe check: now=%ld, last_probe=%ld, diff=%ld, interval=%d",
                   now, last_probe_time, now - last_probe_time, g_monitor_config.network_status_interval_s);
         if (now - last_probe_time >= g_monitor_config.network_status_interval_s) {
-            LOG_INFO("Starting probe cycle");
+            LOG_INFO("[TRACE-5] Starting probe cycle");
 
             // Get discovered agents instead of neighbors
             discovered_agent_t agents[MAX_DISCOVERED_AGENTS];
+            LOG_INFO("[TRACE-6] Calling get_discovered_agents()...");
             int agent_count = get_discovered_agents(agents, MAX_DISCOVERED_AGENTS);
 
-            LOG_INFO("get_discovered_agents() returned %d agents", agent_count);
+            LOG_INFO("[TRACE-7] get_discovered_agents() returned %d agents", agent_count);
 
             if (agent_count > 0) {
-                LOG_INFO("Probing %d discovered agents", agent_count);
+                LOG_INFO("[TRACE-8] Probing %d discovered agents", agent_count);
 
                 for (int i = 0; i < agent_count; i++) {
-                    LOG_DEBUG("Probing agent %s", agents[i].ip);
+                    LOG_INFO("[TRACE-9] Probing agent %d: %s", i, agents[i].ip);
 
-                    // Send probes
+                    // Send probes (UDP echo test packets)
+                    LOG_INFO("[TRACE-10] Calling send_probes() to send UDP packets to %s...", agents[i].ip);
                     int probes_sent = send_probes(agents[i].ip, 10, 100);  // 10 probes, 100ms apart
+                    LOG_INFO("[TRACE-11] send_probes() sent %d UDP packets", probes_sent);
 
                     if (probes_sent > 0) {
+                        LOG_INFO("[TRACE-12] Probes sent successfully, waiting for responses...");
                         // Wait for probe window to complete
                         sleep(g_monitor_config.probe_window_s);
 
