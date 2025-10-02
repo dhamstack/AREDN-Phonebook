@@ -181,11 +181,17 @@ static int get_local_ip(const char *dest_ip, char *local_ip, int local_ip_size) 
         return -1;
     }
 
-    close(sock);
-
+    // Convert IP to string before closing socket
     const char *ip_str = inet_ntoa(local_addr.sin_addr);
+    if (!ip_str) {
+        close(sock);
+        return -1;
+    }
+
     strncpy(local_ip, ip_str, local_ip_size - 1);
     local_ip[local_ip_size - 1] = '\0';
+
+    close(sock);
     return 0;
 }
 
@@ -528,7 +534,12 @@ int test_phone_quality(const char *phone_number, const char *phone_ip,
 
     // Get local IP address that can reach the phone
     char local_ip[64];
-    if (get_local_ip(phone_ip, local_ip, sizeof(local_ip)) < 0) {
+    const char *env_ip = getenv("SIP_LOCAL_IP");
+    if (env_ip && strlen(env_ip) > 0) {
+        // Use environment variable if set
+        strncpy(local_ip, env_ip, sizeof(local_ip) - 1);
+        local_ip[sizeof(local_ip) - 1] = '\0';
+    } else if (get_local_ip(phone_ip, local_ip, sizeof(local_ip)) < 0) {
         result->status = PROBE_SIP_ERROR;
         snprintf(result->status_reason, sizeof(result->status_reason), "Failed to get local IP");
         goto cleanup;

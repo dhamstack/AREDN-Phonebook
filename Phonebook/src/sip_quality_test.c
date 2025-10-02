@@ -74,6 +74,7 @@ int test_one_phone(const char *phone_number, const char *phone_ip,
     probe_result_t result;
 
     printf("Testing %s (%s)...\n", phone_number, phone_ip);
+    fflush(stdout);
 
     int rc = test_phone_quality(phone_number, phone_ip, &result, config);
 
