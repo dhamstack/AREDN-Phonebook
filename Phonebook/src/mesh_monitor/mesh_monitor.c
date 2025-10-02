@@ -155,13 +155,17 @@ void* mesh_monitor_thread(void *arg) {
                     LOG_INFO("[TRACE-11] send_probes() sent %d UDP packets", probes_sent);
 
                     if (probes_sent > 0) {
-                        LOG_INFO("[TRACE-12] Probes sent successfully, waiting for responses...");
+                        LOG_INFO("[TRACE-12] Probes sent successfully, waiting %d seconds for responses...", g_monitor_config.probe_window_s);
                         // Wait for probe window to complete
                         sleep(g_monitor_config.probe_window_s);
 
+                        LOG_INFO("[TRACE-13] Wait complete, calling calculate_probe_metrics()...");
                         // Calculate metrics
                         probe_result_t result;
-                        if (calculate_probe_metrics(agents[i].ip, &result) == 0) {
+                        int calc_result = calculate_probe_metrics(agents[i].ip, &result);
+                        LOG_INFO("[TRACE-14] calculate_probe_metrics() returned %d (RTT=%.2f, loss=%.1f%%)",
+                                 calc_result, result.rtt_ms_avg, result.loss_pct);
+                        if (calc_result == 0) {
                             // Record routing daemon used for this probe
                             strncpy(result.routing_daemon, get_routing_daemon_name(), sizeof(result.routing_daemon) - 1);
 
