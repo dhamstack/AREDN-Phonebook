@@ -490,9 +490,10 @@ static void drain_rtp_packets(int rtp_sock, rtp_stats_t *stats) {
     }
 }
 
-// Public API implementation
-int test_phone_quality(const char *phone_number, const char *phone_ip,
-                       probe_result_t *result, const probe_config_t *config) {
+// Internal core implementation
+static int test_phone_quality_internal(int external_sip_sock, const char *phone_number,
+                                       const char *phone_ip, const char *server_ip,
+                                       probe_result_t *result, const probe_config_t *config) {
     // Use defaults if config not provided
     probe_config_t default_config = get_default_config();
     if (!config) config = &default_config;
@@ -503,6 +504,7 @@ int test_phone_quality(const char *phone_number, const char *phone_ip,
     snprintf(result->status_reason, sizeof(result->status_reason), "Not started");
 
     int sip_sock, rtp_sock, rtcp_sock;
+    int sip_sock_created = 0;  // Track if we created the SIP socket
     struct sockaddr_in sip_addr, rtp_addr, rtcp_addr;
     char sip_response[4096];
     char call_id[64], from_tag[32], to_tag[32];
@@ -512,15 +514,27 @@ int test_phone_quality(const char *phone_number, const char *phone_ip,
     uint32_t lsr = 0;
     struct timeval sr_time;
 
-    // Create sockets
-    sip_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    // Use external SIP socket if provided, otherwise create new one
+    if (external_sip_sock >= 0) {
+        sip_sock = external_sip_sock;
+        sip_sock_created = 0;
+    } else {
+        sip_sock = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sip_sock < 0) {
+            snprintf(result->status_reason, sizeof(result->status_reason), "SIP socket creation failed");
+            return -1;
+        }
+        sip_sock_created = 1;
+    }
+
+    // Create RTP and RTCP sockets (always new)
     rtp_sock = socket(AF_INET, SOCK_DGRAM, 0);
     rtcp_sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sip_sock < 0 || rtp_sock < 0 || rtcp_sock < 0) {
-        if (sip_sock >= 0) close(sip_sock);
+    if (rtp_sock < 0 || rtcp_sock < 0) {
+        if (sip_sock_created && sip_sock >= 0) close(sip_sock);
         if (rtp_sock >= 0) close(rtp_sock);
         if (rtcp_sock >= 0) close(rtcp_sock);
-        snprintf(result->status_reason, sizeof(result->status_reason), "Socket creation failed");
+        snprintf(result->status_reason, sizeof(result->status_reason), "RTP/RTCP socket creation failed");
         return -1;
     }
 
@@ -557,7 +571,12 @@ int test_phone_quality(const char *phone_number, const char *phone_ip,
     const char *debug = getenv("SIP_DEBUG");
     int is_debug = (debug && strcmp(debug, "1") == 0);
 
-    if (env_ip && strlen(env_ip) > 0) {
+    if (server_ip && strlen(server_ip) > 0) {
+        // Use provided server IP (from integrated mode)
+        strncpy(local_ip, server_ip, sizeof(local_ip) - 1);
+        local_ip[sizeof(local_ip) - 1] = '\0';
+        if (is_debug) fprintf(stderr, "[DEBUG] Using provided server IP: %s\n", local_ip);
+    } else if (env_ip && strlen(env_ip) > 0) {
         // Use environment variable if set
         strncpy(local_ip, env_ip, sizeof(local_ip) - 1);
         local_ip[sizeof(local_ip) - 1] = '\0';
@@ -716,10 +735,23 @@ int test_phone_quality(const char *phone_number, const char *phone_ip,
     send_bye(sip_sock, &sip_addr, phone_number, phone_ip, call_id, from_tag, to_tag, local_ip);
 
 cleanup:
-    close(sip_sock);
+    if (sip_sock_created) close(sip_sock);  // Only close if we created it
     close(rtp_sock);
     close(rtcp_sock);
     return (result->status == PROBE_SUCCESS) ? 0 : -1;
+}
+
+// Public API: Standalone mode (creates own socket)
+int test_phone_quality(const char *phone_number, const char *phone_ip,
+                       probe_result_t *result, const probe_config_t *config) {
+    return test_phone_quality_internal(-1, phone_number, phone_ip, NULL, result, config);
+}
+
+// Public API: Integrated mode (uses existing socket and server IP)
+int test_phone_quality_with_socket(int sip_sock, const char *phone_number,
+                                   const char *phone_ip, const char *server_ip,
+                                   probe_result_t *result, const probe_config_t *config) {
+    return test_phone_quality_internal(sip_sock, phone_number, phone_ip, server_ip, result, config);
 }
 
 // Get default configuration

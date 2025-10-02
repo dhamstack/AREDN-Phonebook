@@ -59,6 +59,7 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/mesh_monitor/http_client.c \
 		$(PKG_BUILD_DIR)/mesh_monitor/remote_reporter.c \
 		$(PKG_BUILD_DIR)/sip_quality_lib.c \
+		$(PKG_BUILD_DIR)/phone_quality_monitor/phone_quality_monitor.c \
 		-lpthread
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
 		-static \
@@ -107,6 +108,7 @@ define Package/aredn-phonebook/install
 	$(INSTALL_BIN) ./files/www/cgi-bin/version $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/hello $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/udp-test $(1)/www/cgi-bin/
+	$(INSTALL_BIN) ./files/www/cgi-bin/quality $(1)/www/cgi-bin/
 endef
 
 $(eval $(call BuildPackage,aredn-phonebook))

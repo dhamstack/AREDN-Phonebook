@@ -15,6 +15,7 @@
 #include "software_health/software_health.h" // For software health monitoring
 #include "mesh_monitor/mesh_monitor.h"
 #include "mesh_monitor/remote_reporter.h"  // For mesh network monitoring
+#include "phone_quality_monitor/phone_quality_monitor.h" // For VoIP quality monitoring
 
 // Define MODULE_NAME specific to main.c
 #define MODULE_NAME "MAIN"
@@ -54,6 +55,32 @@ const char* sockaddr_to_ip_str(const struct sockaddr_in* addr) {
     if (addr == NULL) return "NULL_ADDR";
     inet_ntop(AF_INET, &(addr->sin_addr), ip_str, sizeof(ip_str));
     return ip_str;
+}
+
+// Get server's local IP address
+static int get_server_ip(char *ip_buf, size_t buf_size) {
+    char hostname[256];
+    struct hostent *he;
+
+    if (gethostname(hostname, sizeof(hostname)) != 0) {
+        return -1;
+    }
+
+    he = gethostbyname(hostname);
+    if (he == NULL || he->h_addr_list[0] == NULL) {
+        return -1;
+    }
+
+    struct in_addr addr;
+    memcpy(&addr, he->h_addr_list[0], sizeof(struct in_addr));
+    const char *ip_str = inet_ntoa(addr);
+    if (!ip_str) {
+        return -1;
+    }
+
+    strncpy(ip_buf, ip_str, buf_size - 1);
+    ip_buf[buf_size - 1] = '\0';
+    return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -288,6 +315,24 @@ int main(int argc, char *argv[]) {
     LOG_INFO("Successfully bound to UDP port %d.", SIP_PORT);
 
     LOG_INFO("AREDN Phonebook SIP Server listening on UDP port %d", SIP_PORT);
+
+    // --- Initialize and start phone quality monitor ---
+    char server_ip[64];
+    if (get_server_ip(server_ip, sizeof(server_ip)) == 0) {
+        LOG_INFO("Server IP detected: %s", server_ip);
+        if (quality_monitor_init(sockfd, server_ip) == 0) {
+            if (quality_monitor_start() == 0) {
+                LOG_INFO("Phone quality monitor started successfully");
+            } else {
+                LOG_WARN("Failed to start phone quality monitor");
+            }
+        } else {
+            LOG_WARN("Failed to initialize phone quality monitor");
+        }
+    } else {
+        LOG_WARN("Failed to detect server IP, quality monitor disabled");
+    }
+
     LOG_INFO("Entering main SIP message processing loop.");
 
     while (1) { // Changed from while(keep_running) to while(1)

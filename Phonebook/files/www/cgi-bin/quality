@@ -1,0 +1,17 @@
+#!/bin/sh
+
+# AREDN Phonebook Phone Quality Endpoint
+# Returns JSON with VoIP quality metrics for registered phones
+
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache"
+echo ""
+
+# Check if quality JSON file exists
+if [ ! -f "/tmp/phone_quality.json" ]; then
+    echo '{"error":"Quality data not available","message":"Quality monitoring may not be initialized yet or no phones tested"}'
+    exit 1
+fi
+
+# Serve the pre-generated JSON from quality monitor
+cat /tmp/phone_quality.json
