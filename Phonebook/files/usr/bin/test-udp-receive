@@ -1,22 +1,63 @@
 #!/bin/sh
-# Simple UDP receiver on LAN IP
+# SIP OPTIONS receiver and responder
 # Usage: test-udp-receive [port]
 
-PORT="${1:-40050}"
+PORT="${1:-5060}"
 
-# Get our LAN IP
+# Get our LAN IP and hostname
 LAN_IP=$(ip -4 addr show br-lan | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+HOSTNAME=$(cat /proc/sys/kernel/hostname)
 
-echo "=== UDP Receiver Test ==="
+echo "=== SIP OPTIONS Receiver Test ==="
 echo "Listening on: $LAN_IP:$PORT"
+echo "Will respond with SIP 200 OK to OPTIONS requests"
 echo "Press Ctrl+C to stop"
 echo ""
 
-# Use nc to listen for UDP packets
-# Note: BusyBox nc UDP mode is limited, so we use a simple loop
+# Listen for SIP packets and respond
 while true; do
-    nc -l -u -p $PORT 2>&1 | while read line; do
-        TIMESTAMP=$(date +%Y-%m-%d_%H:%M:%S)
-        echo "[$TIMESTAMP] Received: $line"
-    done
+    # Receive packet and save to temp file
+    nc -l -u -p $PORT > /tmp/sip-packet.txt 2>&1
+
+    TIMESTAMP=$(date +%Y-%m-%d_%H:%M:%S)
+
+    # Parse SIP packet
+    METHOD=$(head -1 /tmp/sip-packet.txt | awk '{print $1}')
+    CALLID=$(grep "^Call-ID:" /tmp/sip-packet.txt | cut -d: -f2- | tr -d ' \r')
+    CSEQ=$(grep "^CSeq:" /tmp/sip-packet.txt | cut -d: -f2- | tr -d ' \r')
+    FROM=$(grep "^From:" /tmp/sip-packet.txt | cut -d: -f2- | tr -d '\r')
+    TO=$(grep "^To:" /tmp/sip-packet.txt | cut -d: -f2- | tr -d '\r')
+    VIA=$(grep "^Via:" /tmp/sip-packet.txt | cut -d: -f2- | tr -d '\r')
+
+    echo "[$TIMESTAMP] Received $METHOD"
+    echo "  Call-ID: $CALLID"
+    echo "  From: $FROM"
+    echo "  CSeq: $CSEQ"
+
+    # If it's OPTIONS, send 200 OK response
+    if [ "$METHOD" = "OPTIONS" ]; then
+        echo "  → Responding with 200 OK"
+
+        # Extract source IP from Via header (simplified)
+        SRC_IP=$(echo "$VIA" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1)
+
+        if [ -n "$SRC_IP" ]; then
+            # Create SIP 200 OK response
+            SIP_RESPONSE="SIP/2.0 200 OK
+Via:$VIA
+From:$FROM
+To:$TO
+Call-ID: $CALLID
+CSeq: $CSEQ
+Contact: <sip:phonebook@${LAN_IP}:${PORT}>
+User-Agent: AREDN-Phonebook-Test/1.0
+Allow: INVITE, ACK, CANCEL, OPTIONS, BYE
+Content-Length: 0
+
+"
+            echo "$SIP_RESPONSE" | nc -u -w1 $SRC_IP $PORT 2>&1
+        fi
+    fi
+
+    echo ""
 done

@@ -1,23 +1,24 @@
 #!/bin/sh
-# Simple UDP LAN-to-LAN test - continuous packet sender
+# SIP OPTIONS test - continuous SIP health checks
 # Usage: test-udp-lan <destination_ip> [interval_ms]
 
 if [ -z "$1" ]; then
     echo "Usage: test-udp-lan <destination_ip> [interval_ms]"
-    echo "Example: test-udp-lan 10.51.55.233 100"
-    echo "         (sends packets every 100ms until Ctrl+C)"
+    echo "Example: test-udp-lan 10.51.55.233 1000"
+    echo "         (sends SIP OPTIONS every 1000ms until Ctrl+C)"
     exit 1
 fi
 
 DST="$1"
-INTERVAL="${2:-100}"  # Default 100ms
-PORT=40050
+INTERVAL="${2:-1000}"  # Default 1000ms for SIP
+PORT=5060  # SIP port
 
-# Get our LAN IP
+# Get our LAN IP and hostname
 SRC=$(ip -4 addr show br-lan | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+HOSTNAME=$(cat /proc/sys/kernel/hostname)
 
-echo "=== UDP LAN Continuous Test ==="
-echo "Source: $SRC"
+echo "=== SIP OPTIONS Test ==="
+echo "Source: $SRC ($HOSTNAME)"
 echo "Destination: $DST:$PORT"
 echo "Interval: ${INTERVAL}ms"
 echo "Press Ctrl+C to stop"
@@ -35,14 +36,30 @@ fi
 echo ""
 echo "Route: $(ip route get $DST | head -1)"
 echo ""
-echo "Sending packets..."
+echo "Sending SIP OPTIONS packets..."
 
-# Send packets continuously
+# Send SIP OPTIONS continuously
 SEQ=0
 while true; do
-    TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s)
-    echo "SEQ=$SEQ TIME=$TIMESTAMP SRC=$SRC DST=$DST" | nc -u -w1 $DST $PORT 2>&1
-    echo "[$TIMESTAMP] Sent packet $SEQ"
+    TIMESTAMP=$(date +%s)
+    CALLID="monitor-${HOSTNAME}-${TIMESTAMP}-${SEQ}"
+
+    # Create SIP OPTIONS packet
+    SIP_PACKET="OPTIONS sip:phonebook@${DST}:${PORT} SIP/2.0
+Via: SIP/2.0/UDP ${SRC}:${PORT};branch=z9hG4bK${SEQ}
+From: <sip:monitor@${SRC}>;tag=monitor${SEQ}
+To: <sip:phonebook@${DST}>
+Call-ID: ${CALLID}
+CSeq: ${SEQ} OPTIONS
+Contact: <sip:monitor@${SRC}:${PORT}>
+Max-Forwards: 70
+User-Agent: AREDN-Monitor/1.0
+Content-Length: 0
+
+"
+
+    echo "$SIP_PACKET" | nc -u -w1 $DST $PORT 2>&1
+    echo "[$TIMESTAMP] Sent OPTIONS #$SEQ (Call-ID: $CALLID)"
     SEQ=$((SEQ + 1))
     usleep $((INTERVAL * 1000))
 done
