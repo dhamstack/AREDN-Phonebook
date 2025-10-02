@@ -127,8 +127,10 @@ void* mesh_monitor_thread(void *arg) {
         }
 
         // Check if it's time to probe
+        LOG_DEBUG("Probe check: now=%ld, last_probe=%ld, diff=%ld, interval=%d",
+                  now, last_probe_time, now - last_probe_time, g_monitor_config.network_status_interval_s);
         if (now - last_probe_time >= g_monitor_config.network_status_interval_s) {
-            LOG_DEBUG("Starting probe cycle");
+            LOG_INFO("Starting probe cycle");
 
             // Get discovered agents instead of neighbors
             discovered_agent_t agents[MAX_DISCOVERED_AGENTS];

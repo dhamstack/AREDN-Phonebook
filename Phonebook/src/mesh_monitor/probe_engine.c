@@ -273,17 +273,22 @@ int calculate_probe_metrics(const char *dst_ip, probe_result_t *result) {
     timeout.tv_sec = 0;
     timeout.tv_usec = 100000;
 
+    LOG_DEBUG("Waiting for %d probe responses on socket %d (port 59330?)", expected_responses, probe_socket);
+
     for (int attempts = 0; attempts < 50 && rtt_count < expected_responses; attempts++) {
         FD_ZERO(&readfds);
         FD_SET(probe_socket, &readfds);
 
         int ready = select(probe_socket + 1, &readfds, NULL, NULL, &timeout);
         if (ready <= 0) {
+            LOG_DEBUG("select() returned %d (attempt %d/%d)", ready, attempts + 1, 50);
             continue;  // Timeout or error
         }
 
+        LOG_DEBUG("select() ready! Calling recvfrom()...");
         ssize_t n = recvfrom(probe_socket, buffer, sizeof(buffer), 0,
                              (struct sockaddr *)&src_addr, &addr_len);
+        LOG_DEBUG("recvfrom() returned %d bytes from %s", n, inet_ntoa(src_addr.sin_addr));
 
         if (n < sizeof(probe_packet_t)) {
             continue;  // Invalid packet
