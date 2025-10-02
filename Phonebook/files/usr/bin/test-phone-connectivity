@@ -4,7 +4,7 @@
 # Example: test-phone-connectivity 441530 441533 2000
 
 # Default phones to test if none specified
-DEFAULT_PHONES="441530 441533 561430"
+DEFAULT_PHONES="441530 441533 648730"
 
 # Parse arguments
 PHONE_IDS=""
@@ -60,7 +60,7 @@ if [ -z "$PHONES" ]; then
         case $PHONE_ID in
             441530) PHONE_IP="10.197.143.20" ;;  # HB9BLA-1 on VM-1 LAN
             441533) PHONE_IP="10.51.55.234" ;;   # HB9BLA-4 on HAP-2 LAN
-            561430) PHONE_IP="192.168.0.1" ;;    # HB9HMQ-1 (may not be reachable)
+            648730) PHONE_IP="10.32.73.134" ;;   # HB9TSI remote phone in Göschenen
             *) PHONE_IP="" ;;
         esac
         if [ -n "$PHONE_IP" ]; then
