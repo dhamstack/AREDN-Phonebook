@@ -212,9 +212,8 @@ void* quality_monitor_thread(void *arg) {
              ctx->config.test_interval_sec, ctx->config.cycle_delay_sec);
 
     while (g_monitor_running) {
-        // Get list of registered users to test
+        // Get list of ALL users to test (both CSV directory and dynamic registrations)
         pthread_mutex_lock(&registered_users_mutex);
-        int user_count = num_registered_users;
 
         // Copy user info to local array (minimize lock time)
         typedef struct {
@@ -225,8 +224,9 @@ void* quality_monitor_thread(void *arg) {
         user_info_t users_to_test[MAX_REGISTERED_USERS];
         int test_count = 0;
 
-        for (int i = 0; i < MAX_REGISTERED_USERS && test_count < user_count; i++) {
-            if (registered_users[i].user_id[0] != '\0') {
+        // Iterate through entire registered_users array (includes both CSV and dynamic users)
+        for (int i = 0; i < MAX_REGISTERED_USERS; i++) {
+            if (registered_users[i].user_id[0] != '\0' && registered_users[i].is_active) {
                 // Resolve phone IP via DNS (user_id.local.mesh)
                 char hostname[256];
                 snprintf(hostname, sizeof(hostname), "%s.local.mesh", registered_users[i].user_id);
