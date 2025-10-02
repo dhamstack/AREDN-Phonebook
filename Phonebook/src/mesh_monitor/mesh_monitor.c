@@ -112,8 +112,11 @@ void* mesh_monitor_thread(void *arg) {
 
     // Start with timestamps in the past to trigger immediate first probe/discovery
     time_t now = time(NULL);
-    time_t last_probe_time = now - g_monitor_config.network_status_interval_s;
+    time_t last_probe_time = now - g_monitor_config.network_status_interval_s - 1;  // Ensure immediate trigger
     time_t last_discovery_time = now;  // Skip discovery, use cached agents
+
+    LOG_INFO("Initialized: will probe immediately (last_probe_time=%ld, now=%ld, interval=%d)",
+             last_probe_time, now, g_monitor_config.network_status_interval_s);
 
     while (monitor_running) {
         time_t now = time(NULL);
@@ -136,8 +139,10 @@ void* mesh_monitor_thread(void *arg) {
             discovered_agent_t agents[MAX_DISCOVERED_AGENTS];
             int agent_count = get_discovered_agents(agents, MAX_DISCOVERED_AGENTS);
 
+            LOG_INFO("get_discovered_agents() returned %d agents", agent_count);
+
             if (agent_count > 0) {
-                LOG_DEBUG("Probing %d discovered agents", agent_count);
+                LOG_INFO("Probing %d discovered agents", agent_count);
 
                 for (int i = 0; i < agent_count; i++) {
                     LOG_DEBUG("Probing agent %s", agents[i].ip);
