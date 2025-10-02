@@ -80,6 +80,7 @@ define Package/aredn-phonebook/install
 	$(INSTALL_BIN) ./files/usr/bin/agent-discovery-status $(1)/usr/bin/
 	$(INSTALL_BIN) ./files/usr/bin/test-udp-lan $(1)/usr/bin/
 	$(INSTALL_BIN) ./files/usr/bin/test-udp-receive $(1)/usr/bin/
+	$(INSTALL_BIN) ./files/usr/bin/test-phone-connectivity $(1)/usr/bin/
 	$(INSTALL_DIR) $(1)/etc
 	$(INSTALL_CONF) $(PKG_BUILD_DIR)/files/etc/sipserver.conf $(1)/etc/
 	$(INSTALL_DIR) $(1)/etc/init.d

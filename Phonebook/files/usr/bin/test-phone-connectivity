@@ -1,0 +1,79 @@
+#!/bin/sh
+# Test connectivity to registered phones using SIP OPTIONS
+# Usage: test-phone-connectivity [interval_ms]
+
+INTERVAL="${1:-2000}"  # Default 2000ms
+PORT=5060
+
+# Get our LAN IP
+SRC=$(ip -4 addr show br-lan | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+HOSTNAME=$(cat /proc/sys/kernel/hostname)
+
+echo "=== Phone Connectivity Test ==="
+echo "Source: $SRC ($HOSTNAME)"
+echo "Querying phonebook for registered phones..."
+echo ""
+
+# Read phonebook (assuming /tmp/phonebook.txt format: userid,name,ip,port)
+if [ ! -f /tmp/phonebook.txt ]; then
+    echo "ERROR: /tmp/phonebook.txt not found"
+    echo "Make sure phonebook is running and has fetched phone data"
+    exit 1
+fi
+
+# Parse phonebook and extract phone IPs
+PHONES=$(awk -F',' '{if (NF >= 3 && $3 != "") print $3}' /tmp/phonebook.txt | sort -u)
+
+if [ -z "$PHONES" ]; then
+    echo "No phones found in phonebook"
+    exit 1
+fi
+
+echo "Found phones:"
+for PHONE_IP in $PHONES; do
+    echo "  - $PHONE_IP"
+done
+echo ""
+echo "Interval: ${INTERVAL}ms"
+echo "Press Ctrl+C to stop"
+echo ""
+
+# Test each phone continuously
+SEQ=0
+while true; do
+    TIMESTAMP=$(date +%H:%M:%S)
+
+    for PHONE_IP in $PHONES; do
+        CALLID="monitor-${HOSTNAME}-${TIMESTAMP}-${SEQ}-${PHONE_IP}"
+
+        # Create SIP OPTIONS packet
+        SIP_PACKET="OPTIONS sip:phone@${PHONE_IP}:${PORT} SIP/2.0
+Via: SIP/2.0/UDP ${SRC}:${PORT};branch=z9hG4bK${SEQ}
+From: <sip:monitor@${SRC}>;tag=monitor${SEQ}
+To: <sip:phone@${PHONE_IP}>
+Call-ID: ${CALLID}
+CSeq: ${SEQ} OPTIONS
+Contact: <sip:monitor@${SRC}:${PORT}>
+Max-Forwards: 70
+User-Agent: AREDN-Phonebook-Monitor/1.0
+Content-Length: 0
+
+"
+
+        # Send OPTIONS and measure response time
+        START=$(date +%s%N 2>/dev/null || date +%s)
+        echo "$SIP_PACKET" | nc -u -w1 $PHONE_IP $PORT > /tmp/sip-response-${PHONE_IP}.txt 2>&1
+        END=$(date +%s%N 2>/dev/null || date +%s)
+
+        # Check if we got a response
+        if grep -q "SIP/2.0 200" /tmp/sip-response-${PHONE_IP}.txt 2>/dev/null; then
+            RTT=$((($END - $START) / 1000000))  # Convert to milliseconds
+            echo "[$TIMESTAMP] ✓ $PHONE_IP responded (${RTT}ms)"
+        else
+            echo "[$TIMESTAMP] ✗ $PHONE_IP no response"
+        fi
+    done
+
+    SEQ=$((SEQ + 1))
+    usleep $((INTERVAL * 1000))
+done
