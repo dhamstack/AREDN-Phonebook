@@ -164,35 +164,45 @@ int send_probes(const char *dst_hostname, int count, int interval_ms) {
         return -1;
     }
 
-    // Build FQDN: <hostname>.local.mesh
-    char fqdn[256];
-    snprintf(fqdn, sizeof(fqdn), "%s.local.mesh", dst_hostname);
-
-    // Resolve destination hostname via DNS
-    struct addrinfo hints = {.ai_family = AF_INET, .ai_socktype = SOCK_DGRAM};
-    struct addrinfo *res = NULL;
-
-    int status = getaddrinfo(fqdn, NULL, &hints, &res);
-    if (status != 0) {
-        LOG_ERROR("DNS resolution failed for %s: %s", fqdn, gai_strerror(status));
-        return -1;
-    }
-
-    // Extract resolved IP
-    struct sockaddr_in *resolved = (struct sockaddr_in *)res->ai_addr;
-    char resolved_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &resolved->sin_addr, resolved_ip, sizeof(resolved_ip));
-
-    LOG_INFO("[TRACE-DNS] Resolved %s -> %s", fqdn, resolved_ip);
-
-    // Set up destination address
     struct sockaddr_in dst_addr;
     memset(&dst_addr, 0, sizeof(dst_addr));
     dst_addr.sin_family = AF_INET;
     dst_addr.sin_port = htons(probe_config.probe_port);
-    dst_addr.sin_addr = resolved->sin_addr;
 
-    freeaddrinfo(res);
+    // Check if dst_hostname is already an IP address (contains digits and dots)
+    bool is_ip_address = (strchr(dst_hostname, '.') != NULL && isdigit((unsigned char)dst_hostname[0]));
+
+    if (is_ip_address) {
+        // Direct IP address - use inet_pton to convert
+        if (inet_pton(AF_INET, dst_hostname, &dst_addr.sin_addr) <= 0) {
+            LOG_ERROR("Invalid IP address: %s", dst_hostname);
+            return -1;
+        }
+        LOG_INFO("[TRACE-DNS] Using IP address directly: %s", dst_hostname);
+    } else {
+        // Hostname - resolve via DNS
+        char fqdn[256];
+        snprintf(fqdn, sizeof(fqdn), "%s.local.mesh", dst_hostname);
+
+        struct addrinfo hints = {.ai_family = AF_INET, .ai_socktype = SOCK_DGRAM};
+        struct addrinfo *res = NULL;
+
+        int status = getaddrinfo(fqdn, NULL, &hints, &res);
+        if (status != 0) {
+            LOG_ERROR("DNS resolution failed for %s: %s", fqdn, gai_strerror(status));
+            return -1;
+        }
+
+        // Extract resolved IP
+        struct sockaddr_in *resolved = (struct sockaddr_in *)res->ai_addr;
+        char resolved_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &resolved->sin_addr, resolved_ip, sizeof(resolved_ip));
+
+        LOG_INFO("[TRACE-DNS] Resolved %s -> %s", fqdn, resolved_ip);
+
+        dst_addr.sin_addr = resolved->sin_addr;
+        freeaddrinfo(res);
+    }
 
     // Use our LAN IP as return address (like a phone would)
     // OLSR will route responses to our LAN subnet automatically
