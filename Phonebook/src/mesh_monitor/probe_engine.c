@@ -260,7 +260,7 @@ int send_probes(const char *dst_hostname, int count, int interval_ms) {
         if (pending_probe_count < MAX_PENDING_PROBES) {
             pending_probes[pending_probe_count].sequence = i;
             pending_probes[pending_probe_count].sent_time = now;
-            strncpy(pending_probes[pending_probe_count].dst_ip, resolved_ip, 15);
+            strncpy(pending_probes[pending_probe_count].dst_ip, dst_ip_str, 15);
             pending_probe_count++;
         }
         pthread_mutex_unlock(&pending_mutex);
@@ -273,7 +273,7 @@ int send_probes(const char *dst_hostname, int count, int interval_ms) {
         }
     }
 
-    LOG_DEBUG("Sent %d probes to %s (%s)", sent, dst_hostname, resolved_ip);
+    LOG_DEBUG("Sent %d probes to %s (%s)", sent, dst_hostname, dst_ip_str);
     return sent;
 }
 
