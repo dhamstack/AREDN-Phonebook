@@ -84,8 +84,8 @@ int perform_agent_discovery_scan(void) {
 
     // Use localnode.local.mesh (same as phonebook does)
     if (http_get_localhost("localnode.local.mesh", 8080, "/cgi-bin/sysinfo.json?hosts=1", sysinfo_json, sizeof(sysinfo_json)) != 0) {
-        LOG_ERROR("Failed to query AREDN sysinfo for agent discovery");
-        return -1;
+        LOG_WARN("AREDN sysinfo API not available (older firmware?), skipping agent discovery on this node");
+        return 0;
     }
 
     // Parse unique IPs and names from hosts array
