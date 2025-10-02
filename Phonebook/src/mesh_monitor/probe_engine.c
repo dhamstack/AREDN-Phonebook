@@ -169,6 +169,9 @@ int send_probes(const char *dst_hostname, int count, int interval_ms) {
     dst_addr.sin_family = AF_INET;
     dst_addr.sin_port = htons(probe_config.probe_port);
 
+    // Destination IP string (for logging)
+    char dst_ip_str[INET_ADDRSTRLEN];
+
     // Check if dst_hostname is already an IP address (contains digits and dots)
     bool is_ip_address = (strchr(dst_hostname, '.') != NULL && isdigit((unsigned char)dst_hostname[0]));
 
@@ -178,7 +181,8 @@ int send_probes(const char *dst_hostname, int count, int interval_ms) {
             LOG_ERROR("Invalid IP address: %s", dst_hostname);
             return -1;
         }
-        LOG_INFO("[TRACE-DNS] Using IP address directly: %s", dst_hostname);
+        strncpy(dst_ip_str, dst_hostname, sizeof(dst_ip_str) - 1);
+        LOG_INFO("[TRACE-DNS] Using IP address directly: %s", dst_ip_str);
     } else {
         // Hostname - resolve via DNS
         char fqdn[256];
@@ -195,10 +199,9 @@ int send_probes(const char *dst_hostname, int count, int interval_ms) {
 
         // Extract resolved IP
         struct sockaddr_in *resolved = (struct sockaddr_in *)res->ai_addr;
-        char resolved_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &resolved->sin_addr, resolved_ip, sizeof(resolved_ip));
+        inet_ntop(AF_INET, &resolved->sin_addr, dst_ip_str, sizeof(dst_ip_str));
 
-        LOG_INFO("[TRACE-DNS] Resolved %s -> %s", fqdn, resolved_ip);
+        LOG_INFO("[TRACE-DNS] Resolved %s -> %s", fqdn, dst_ip_str);
 
         dst_addr.sin_addr = resolved->sin_addr;
         freeaddrinfo(res);
@@ -241,14 +244,14 @@ int send_probes(const char *dst_hostname, int count, int interval_ms) {
                            (struct sockaddr *)&dst_addr, sizeof(dst_addr));
 
         if (n < 0) {
-            LOG_ERROR("Failed to send probe to %s: %s", resolved_ip, strerror(errno));
+            LOG_ERROR("Failed to send probe to %s: %s", dst_ip_str, strerror(errno));
             continue;
         }
 
         // Log first and last packet to trace packet flow with full details
         if (i == 0 || i == count - 1) {
             LOG_INFO("[TRACE-TX] Sent probe seq=%d to %s:%d (packet: src_node=%s, return=%s:%d)",
-                     i, resolved_ip, probe_config.probe_port,
+                     i, dst_ip_str, probe_config.probe_port,
                      packet.src_node, return_ip_str, return_port);
         }
 
