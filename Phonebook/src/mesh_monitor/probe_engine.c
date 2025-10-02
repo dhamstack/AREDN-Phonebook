@@ -12,13 +12,15 @@
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
 
 static int probe_socket = -1;          // Socket for sending probes and receiving responses
 static int responder_socket = -1;     // Separate socket for probe responder (echo server)
 static mesh_monitor_config_t probe_config;
 static bool engine_running = false;
 static char local_node[64] = {0};
-static char local_mesh_ip[INET_ADDRSTRLEN] = {0};  // Our primary mesh IP (from DNS)
+static char local_lan_ip[INET_ADDRSTRLEN] = {0};  // Our LAN IP (from br-lan interface)
 
 // Probe response tracking
 #define MAX_PENDING_PROBES 100
@@ -45,23 +47,28 @@ int probe_engine_init(mesh_monitor_config_t *config) {
         strcpy(local_node, "unknown");
     }
 
-    // Resolve our own primary mesh IP via DNS
-    // This gives us the correct mesh interface IP, not DTD/tunnel IPs
-    char fqdn[256];
-    snprintf(fqdn, sizeof(fqdn), "%s.local.mesh", local_node);
-
-    struct addrinfo hints = {.ai_family = AF_INET, .ai_socktype = SOCK_DGRAM};
-    struct addrinfo *res = NULL;
-
-    if (getaddrinfo(fqdn, NULL, &hints, &res) == 0) {
-        struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
-        inet_ntop(AF_INET, &addr->sin_addr, local_mesh_ip, sizeof(local_mesh_ip));
-        freeaddrinfo(res);
-        LOG_INFO("Resolved local mesh IP: %s -> %s", fqdn, local_mesh_ip);
-    } else {
-        LOG_WARN("Failed to resolve local mesh IP, will use connect() trick as fallback");
-        local_mesh_ip[0] = '\0';
+    // Get our LAN IP from br-lan interface (like a phone would use)
+    // This is the router's LAN IP that OLSR announces as part of the LAN subnet
+    int temp_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (temp_sock < 0) {
+        LOG_ERROR("Failed to create socket for LAN IP lookup: %s", strerror(errno));
+        return -1;
     }
+
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, "br-lan", IFNAMSIZ - 1);
+
+    if (ioctl(temp_sock, SIOCGIFADDR, &ifr) == 0) {
+        struct sockaddr_in *addr = (struct sockaddr_in *)&ifr.ifr_addr;
+        inet_ntop(AF_INET, &addr->sin_addr, local_lan_ip, sizeof(local_lan_ip));
+        LOG_INFO("Using LAN IP from br-lan: %s (phone-like behavior)", local_lan_ip);
+    } else {
+        LOG_ERROR("Failed to get br-lan IP address: %s", strerror(errno));
+        close(temp_sock);
+        return -1;
+    }
+    close(temp_sock);
 
     // Create UDP socket for sending probes and receiving responses
     // Bind to INADDR_ANY with port 0 (ephemeral) so it receives on all interfaces
@@ -112,16 +119,17 @@ int probe_engine_init(mesh_monitor_config_t *config) {
     flags = fcntl(responder_socket, F_GETFL, 0);
     fcntl(responder_socket, F_SETFL, flags | O_NONBLOCK);
 
-    // Bind responder socket to probe port 40050
+    // Bind responder socket to LAN IP and probe port 40050 (like a phone)
+    // This binds to the br-lan interface, same as phones do
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
+    inet_pton(AF_INET, local_lan_ip, &addr.sin_addr);
     addr.sin_port = htons(probe_config.probe_port);
 
     if (bind(responder_socket, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        LOG_ERROR("Failed to bind responder socket to port %d: %s",
-                  probe_config.probe_port, strerror(errno));
+        LOG_ERROR("Failed to bind responder socket to %s:%d: %s",
+                  local_lan_ip, probe_config.probe_port, strerror(errno));
         close(probe_socket);
         close(responder_socket);
         probe_socket = -1;
@@ -130,7 +138,8 @@ int probe_engine_init(mesh_monitor_config_t *config) {
     }
 
     engine_running = true;
-    LOG_INFO("Probe engine initialized (port=%d, using separate sender/responder sockets)", probe_config.probe_port);
+    LOG_INFO("Probe engine initialized on LAN IP %s:%d (phone-like behavior)",
+             local_lan_ip, probe_config.probe_port);
     return 0;
 }
 
@@ -185,41 +194,11 @@ int send_probes(const char *dst_hostname, int count, int interval_ms) {
 
     freeaddrinfo(res);
 
-    // Determine return address
-    // Use our primary mesh IP (from DNS) to avoid DTD/tunnel interfaces
+    // Use our LAN IP as return address (like a phone would)
+    // OLSR will route responses to our LAN subnet automatically
     char return_ip_str[INET_ADDRSTRLEN];
-
-    if (local_mesh_ip[0] != '\0') {
-        // Use our resolved mesh IP (preferred - works with multi-homed nodes)
-        strncpy(return_ip_str, local_mesh_ip, sizeof(return_ip_str) - 1);
-        LOG_DEBUG("Using pre-resolved mesh IP for return address: %s", return_ip_str);
-    } else {
-        // Fallback: use connect() trick (less reliable with DTD links)
-        LOG_WARN("Using connect() fallback to determine return address");
-        struct sockaddr_in local_addr;
-        socklen_t addr_len = sizeof(local_addr);
-
-        int test_sock = socket(AF_INET, SOCK_DGRAM, 0);
-        if (test_sock < 0) {
-            LOG_ERROR("Failed to create test socket: %s", strerror(errno));
-            return -1;
-        }
-
-        if (connect(test_sock, (struct sockaddr *)&dst_addr, sizeof(dst_addr)) < 0) {
-            LOG_ERROR("Failed to connect test socket: %s", strerror(errno));
-            close(test_sock);
-            return -1;
-        }
-
-        if (getsockname(test_sock, (struct sockaddr *)&local_addr, &addr_len) < 0) {
-            LOG_ERROR("Failed to get local address: %s", strerror(errno));
-            close(test_sock);
-            return -1;
-        }
-        close(test_sock);
-
-        inet_ntop(AF_INET, &local_addr.sin_addr, return_ip_str, sizeof(return_ip_str));
-    }
+    strncpy(return_ip_str, local_lan_ip, sizeof(return_ip_str) - 1);
+    LOG_DEBUG("Using LAN IP for return address: %s (phone-like behavior)", return_ip_str);
 
     // Get the actual port from our probe_socket
     struct sockaddr_in local_addr;
@@ -230,8 +209,8 @@ int send_probes(const char *dst_hostname, int count, int interval_ms) {
     }
     uint16_t return_port = ntohs(local_addr.sin_port);
 
-    LOG_INFO("[TRACE-RETURN] Will request echoes to %s:%d (mesh IP, resolved from %s)",
-             return_ip_str, return_port, fqdn);
+    LOG_INFO("[TRACE-RETURN] Will request echoes to %s:%d (LAN IP, phone-like behavior)",
+             return_ip_str, return_port);
 
     int sent = 0;
     for (int i = 0; i < count; i++) {
