@@ -1,0 +1,31 @@
+#!/bin/sh
+
+# Simple UDP test: send packet from LAN IP to another LAN IP
+# Usage: curl "http://localhost:8080/cgi-bin/udp-test?dst=10.51.55.233"
+
+echo "Content-Type: text/plain"
+echo ""
+
+# Get destination from query string
+DST=$(echo "$QUERY_STRING" | sed -n 's/.*dst=\([^&]*\).*/\1/p')
+
+if [ -z "$DST" ]; then
+    echo "ERROR: No destination specified"
+    echo "Usage: curl 'http://localhost:8080/cgi-bin/udp-test?dst=10.51.55.233'"
+    exit 1
+fi
+
+# Get our LAN IP
+SRC=$(ip -4 addr show br-lan | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+
+echo "UDP Test: $SRC -> $DST:40050"
+echo ""
+
+# Send test packet using nc or echo
+echo "TEST-PACKET-FROM-$SRC" | busybox nc -u -w1 $DST 40050 2>&1
+
+if [ $? -eq 0 ]; then
+    echo "Packet sent successfully"
+else
+    echo "Failed to send packet"
+fi

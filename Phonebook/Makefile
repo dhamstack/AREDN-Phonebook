@@ -78,6 +78,7 @@ define Package/aredn-phonebook/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/aredn-phonebook $(1)/usr/bin/
 	$(INSTALL_BIN) ./files/usr/bin/agent-discovery-status $(1)/usr/bin/
+	$(INSTALL_BIN) ./files/usr/bin/test-udp-lan $(1)/usr/bin/
 	$(INSTALL_DIR) $(1)/etc
 	$(INSTALL_CONF) $(PKG_BUILD_DIR)/files/etc/sipserver.conf $(1)/etc/
 	$(INSTALL_DIR) $(1)/etc/init.d
@@ -90,6 +91,7 @@ define Package/aredn-phonebook/install
 	$(INSTALL_BIN) ./files/www/cgi-bin/network $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/version $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/hello $(1)/www/cgi-bin/
+	$(INSTALL_BIN) ./files/www/cgi-bin/udp-test $(1)/www/cgi-bin/
 endef
 
 $(eval $(call BuildPackage,aredn-phonebook))

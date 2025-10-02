@@ -1,0 +1,36 @@
+#!/bin/sh
+# Simple UDP LAN-to-LAN test
+# Usage: test-udp-lan <destination_ip>
+
+if [ -z "$1" ]; then
+    echo "Usage: test-udp-lan <destination_ip>"
+    echo "Example: test-udp-lan 10.51.55.233"
+    exit 1
+fi
+
+DST="$1"
+PORT=40050
+
+# Get our LAN IP
+SRC=$(ip -4 addr show br-lan | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+
+echo "=== UDP LAN Test ==="
+echo "Source: $SRC"
+echo "Destination: $DST:$PORT"
+echo ""
+
+# Test basic connectivity
+echo "1. Testing ping..."
+ping -c 2 -W 2 $DST
+
+echo ""
+echo "2. Checking route..."
+ip route get $DST
+
+echo ""
+echo "3. Sending UDP test packet..."
+echo "TEST-FROM-$SRC-$(date +%s)" > /tmp/udp-test-packet.txt
+cat /tmp/udp-test-packet.txt | nc -u -w1 $DST $PORT 2>&1
+
+echo ""
+echo "Done. Check destination node logs for received packet."
