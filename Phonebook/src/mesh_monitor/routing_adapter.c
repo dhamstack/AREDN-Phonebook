@@ -141,14 +141,32 @@ int http_get_localhost(const char *host, int port, const char *path, char *buffe
         return -1;
     }
 
-    // Read response
+    // Read response - loop until connection closes or buffer full
     memset(buffer, 0, buffer_size);
-    bytes_received = recv(sockfd, buffer, buffer_size - 1, 0);
+    bytes_received = 0;
+    ssize_t n;
+
+    while (bytes_received < (ssize_t)(buffer_size - 1)) {
+        n = recv(sockfd, buffer + bytes_received, buffer_size - 1 - bytes_received, 0);
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Timeout or would block - we've got all available data
+                break;
+            }
+            LOG_ERROR("Failed to receive HTTP response: %s", strerror(errno));
+            close(sockfd);
+            return -1;
+        } else if (n == 0) {
+            // Connection closed by server - we've got all the data
+            break;
+        }
+        bytes_received += n;
+    }
 
     close(sockfd);
 
-    if (bytes_received < 0) {
-        LOG_ERROR("Failed to receive HTTP response: %s", strerror(errno));
+    if (bytes_received == 0) {
+        LOG_ERROR("No data received from HTTP request");
         return -1;
     }
 
