@@ -1,8 +1,32 @@
 #!/bin/sh
 # Test connectivity to registered phones using SIP OPTIONS
-# Usage: test-phone-connectivity [interval_ms]
+# Usage: test-phone-connectivity [phone_id...] [interval_ms]
+# Example: test-phone-connectivity 441530 441533 2000
 
-INTERVAL="${1:-2000}"  # Default 2000ms
+# Default phones to test if none specified
+DEFAULT_PHONES="441530 441532 441533"
+
+# Parse arguments
+PHONE_IDS=""
+INTERVAL=2000
+
+for arg in "$@"; do
+    if echo "$arg" | grep -q '^[0-9]\+$'; then
+        if [ $arg -gt 10000 ]; then
+            # Likely an interval in ms
+            INTERVAL=$arg
+        else
+            # Phone ID
+            PHONE_IDS="$PHONE_IDS $arg"
+        fi
+    fi
+done
+
+# Use default phones if none specified
+if [ -z "$PHONE_IDS" ]; then
+    PHONE_IDS="$DEFAULT_PHONES"
+fi
+
 PORT=5060
 
 # Get our LAN IP
@@ -11,7 +35,7 @@ HOSTNAME=$(cat /proc/sys/kernel/hostname)
 
 echo "=== Phone Connectivity Test ==="
 echo "Source: $SRC ($HOSTNAME)"
-echo "Querying phonebook for registered phones..."
+echo "Testing phones: $PHONE_IDS"
 echo ""
 
 # Read phonebook (assuming /tmp/phonebook.txt format: userid,name,ip,port)
@@ -21,8 +45,17 @@ if [ ! -f /tmp/phonebook.txt ]; then
     exit 1
 fi
 
-# Parse phonebook and extract phone IPs
-PHONES=$(awk -F',' '{if (NF >= 3 && $3 != "") print $3}' /tmp/phonebook.txt | sort -u)
+# Parse phonebook and extract IPs for specified phone IDs
+PHONES=""
+for PHONE_ID in $PHONE_IDS; do
+    PHONE_IP=$(awk -F',' -v id="$PHONE_ID" '{if ($1 == id && $3 != "") print $3}' /tmp/phonebook.txt | head -1)
+    if [ -n "$PHONE_IP" ]; then
+        PHONES="$PHONES $PHONE_IP"
+        echo "Found $PHONE_ID at $PHONE_IP"
+    else
+        echo "WARNING: Phone $PHONE_ID not found in phonebook"
+    fi
+done
 
 if [ -z "$PHONES" ]; then
     echo "No phones found in phonebook"
