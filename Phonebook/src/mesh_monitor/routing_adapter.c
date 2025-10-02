@@ -15,7 +15,7 @@
 
 #define OLSR_JSONINFO_HOST "127.0.0.1"
 #define OLSR_JSONINFO_PORT 9090
-#define HTTP_TIMEOUT_SEC 5
+#define HTTP_TIMEOUT_SEC 2
 #define HTTP_BUFFER_SIZE 65536
 
 #define BABEL_SOCKET_PATH "/var/run/babeld.sock"
