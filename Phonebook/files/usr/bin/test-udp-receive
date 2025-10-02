@@ -1,0 +1,22 @@
+#!/bin/sh
+# Simple UDP receiver on LAN IP
+# Usage: test-udp-receive [port]
+
+PORT="${1:-40050}"
+
+# Get our LAN IP
+LAN_IP=$(ip -4 addr show br-lan | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+
+echo "=== UDP Receiver Test ==="
+echo "Listening on: $LAN_IP:$PORT"
+echo "Press Ctrl+C to stop"
+echo ""
+
+# Use nc to listen for UDP packets
+# Note: BusyBox nc UDP mode is limited, so we use a simple loop
+while true; do
+    nc -l -u -p $PORT 2>&1 | while read line; do
+        TIMESTAMP=$(date +%Y-%m-%d_%H:%M:%S)
+        echo "[$TIMESTAMP] Received: $line"
+    done
+done
