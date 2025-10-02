@@ -121,5 +121,5 @@ Content-Length: 0
     done
 
     SEQ=$((SEQ + 1))
-    usleep $((INTERVAL * 1000))
+    sleep $((INTERVAL / 1000))
 done
