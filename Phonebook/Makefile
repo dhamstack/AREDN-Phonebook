@@ -63,6 +63,10 @@ define Build/Compile
 		-static \
 		-o $(PKG_BUILD_DIR)/udp-send \
 		$(PKG_BUILD_DIR)/udp_send.c
+	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
+		-static \
+		-o $(PKG_BUILD_DIR)/sip-quality-test \
+		$(PKG_BUILD_DIR)/sip_quality_test.c
 endef
 
 define Package/aredn-phonebook/preinst
@@ -82,6 +86,7 @@ define Package/aredn-phonebook/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/aredn-phonebook $(1)/usr/bin/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/udp-send $(1)/usr/bin/sip-options-ping
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/sip-quality-test $(1)/usr/bin/sip-quality-test
 	$(INSTALL_BIN) ./files/usr/bin/agent-discovery-status $(1)/usr/bin/
 	$(INSTALL_BIN) ./files/usr/bin/test-udp-lan $(1)/usr/bin/
 	$(INSTALL_BIN) ./files/usr/bin/test-udp-receive $(1)/usr/bin/
