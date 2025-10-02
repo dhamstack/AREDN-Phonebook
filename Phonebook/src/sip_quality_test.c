@@ -208,7 +208,7 @@ long test_sip_options(const char *phone_number, const char *phone_ip, int verbos
 // Send SIP INVITE with auto-answer
 int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_number,
                 const char *phone_ip, int rtp_port, char *call_id_out,
-                char *from_tag_out, char *response, int response_size) {
+                char *from_tag_out, char *response, int response_size, int verbose) {
     char request[2048];
     long rand_val = time(NULL);
 
@@ -225,6 +225,7 @@ int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_number,
         "Contact: <sip:test@10.0.0.1:5060>\r\n"
         "Max-Forwards: 70\r\n"
         "Call-Info: answer-after=0\r\n"
+        "Alert-Info: info=alert-autoanswer\r\n"
         "Content-Type: application/sdp\r\n"
         "Content-Length: %d\r\n"
         "\r\n"
@@ -249,9 +250,12 @@ int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_number,
     // Wait for responses (may get 100 Trying, 180 Ringing, then 200 OK)
     struct sockaddr_in from;
     socklen_t fromlen = sizeof(from);
-    int attempts = 0;
+    int got_180 = 0;
 
-    while (attempts < 10) {  // Try up to 10 responses
+    // Extend timeout if we get 180 Ringing (phone needs time to be answered)
+    struct timeval extended_tv = {30, 0};  // 30 seconds for manual answer
+
+    while (1) {
         ssize_t len = recvfrom(sockfd, response, response_size - 1, 0,
                               (struct sockaddr *)&from, &fromlen);
         if (len > 0) {
@@ -263,11 +267,19 @@ int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_number,
             }
             if (strstr(response, "486 Busy") != NULL ||
                 strstr(response, "603 Decline") != NULL ||
-                strstr(response, "404 Not Found") != NULL) {
+                strstr(response, "404 Not Found") != NULL ||
+                strstr(response, "487 Request Terminated") != NULL) {
                 return -1;  // Phone rejected
             }
+            if (strstr(response, "180 Ringing") != NULL) {
+                // Phone is ringing, extend timeout to allow manual answer
+                if (!got_180) {
+                    got_180 = 1;
+                    if (verbose) printf("  Phone ringing (auto-answer not supported), waiting up to 30s...\n");
+                    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &extended_tv, sizeof(extended_tv));
+                }
+            }
             // 100 Trying or 180 Ringing - keep waiting
-            attempts++;
         } else {
             // Timeout or error
             return -1;
@@ -429,7 +441,7 @@ int test_media_quality(const char *phone_number, const char *phone_ip,
     // Send INVITE
     if (verbose) printf("  Sending INVITE...\n");
     int invite_result = send_invite(sip_sock, &sip_addr, phone_number, phone_ip, rtp_port,
-                                    call_id, from_tag, sip_response, sizeof(sip_response));
+                                    call_id, from_tag, sip_response, sizeof(sip_response), verbose);
     if (invite_result < 0) {
         if (verbose) {
             printf("  INVITE failed\n");
