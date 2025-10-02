@@ -89,12 +89,23 @@ int perform_agent_discovery_scan(void) {
     }
 
     // Parse unique IPs and names from hosts array
-    char unique_ips[MAX_DISCOVERED_AGENTS][INET_ADDRSTRLEN];
-    char node_names[MAX_DISCOVERED_AGENTS][64];
+    // Allocate on heap to avoid stack overflow with large MAX_DISCOVERED_AGENTS
+    char (*unique_ips)[INET_ADDRSTRLEN] = malloc(MAX_DISCOVERED_AGENTS * sizeof(*unique_ips));
+    char (*node_names)[64] = malloc(MAX_DISCOVERED_AGENTS * sizeof(*node_names));
+
+    if (!unique_ips || !node_names) {
+        LOG_ERROR("Failed to allocate memory for discovery arrays");
+        free(unique_ips);
+        free(node_names);
+        return -1;
+    }
+
     int ip_count = parse_hosts_ips(sysinfo_json, unique_ips, node_names, MAX_DISCOVERED_AGENTS);
 
     if (ip_count == 0) {
         LOG_WARN("No IPs found in AREDN hosts");
+        free(unique_ips);
+        free(node_names);
         return 0;
     }
 
@@ -177,6 +188,10 @@ int perform_agent_discovery_scan(void) {
     time_t scan_duration = time(NULL) - scan_start;
     LOG_INFO("Agent discovery complete: %d new, %d existing, %d total agents (scan took %ld seconds, tested %d/%d hosts)",
              new_agents, existing_agents, agent_count, scan_duration, routers_tested, ip_count);
+
+    // Free allocated memory
+    free(unique_ips);
+    free(node_names);
 
     return agent_count;
 }
