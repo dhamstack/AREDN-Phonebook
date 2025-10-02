@@ -196,9 +196,9 @@ void* probe_responder_thread(void *arg) {
 
     char buffer[1024];
     struct sockaddr_in src_addr;
-    socklen_t addr_len = sizeof(src_addr);
 
     while (engine_running) {
+        socklen_t addr_len = sizeof(src_addr);  // Reset for each recvfrom()
         ssize_t n = recvfrom(responder_socket, buffer, sizeof(buffer), 0,
                              (struct sockaddr *)&src_addr, &addr_len);
 
