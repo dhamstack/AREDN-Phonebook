@@ -112,6 +112,12 @@ int perform_agent_discovery_scan(void) {
 
     LOG_INFO("Found %d hosts in mesh, will test one at a time to minimize memory", ip_count);
 
+    // Get local hostname to skip testing ourselves
+    char local_hostname[64] = {0};
+    if (gethostname(local_hostname, sizeof(local_hostname) - 1) != 0) {
+        LOG_WARN("Failed to get local hostname, will test all nodes");
+    }
+
     pthread_mutex_lock(&discovery_mutex);
     int new_agents = 0;
     int existing_agents = 0;
@@ -131,6 +137,12 @@ int perform_agent_discovery_scan(void) {
 
         // Skip LAN interface entries (lan.*)
         if (is_lan_interface(node_names[i])) {
+            continue;
+        }
+
+        // Skip ourselves (no need to test local node)
+        if (local_hostname[0] != '\0' && strcmp(node_names[i], local_hostname) == 0) {
+            LOG_DEBUG("Skipping local node: %s", local_hostname);
             continue;
         }
 
