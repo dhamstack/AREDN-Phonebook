@@ -273,7 +273,7 @@ int calculate_probe_metrics(const char *dst_ip, probe_result_t *result) {
     timeout.tv_sec = 0;
     timeout.tv_usec = 100000;
 
-    LOG_DEBUG("Waiting for %d probe responses on socket %d (port 59330?)", expected_responses, probe_socket);
+    LOG_INFO("[TRACE-RX-1] Waiting for %d probe responses on socket %d", expected_responses, probe_socket);
 
     for (int attempts = 0; attempts < 50 && rtt_count < expected_responses; attempts++) {
         FD_ZERO(&readfds);
@@ -281,16 +281,20 @@ int calculate_probe_metrics(const char *dst_ip, probe_result_t *result) {
 
         int ready = select(probe_socket + 1, &readfds, NULL, NULL, &timeout);
         if (ready <= 0) {
-            LOG_DEBUG("select() returned %d (attempt %d/%d)", ready, attempts + 1, 50);
+            if (attempts == 0 || attempts % 10 == 0) {
+                LOG_INFO("[TRACE-RX-2] select() returned %d (attempt %d/%d, received %d/%d so far)",
+                         ready, attempts + 1, 50, rtt_count, expected_responses);
+            }
             continue;  // Timeout or error
         }
 
-        LOG_DEBUG("select() ready! Calling recvfrom()...");
+        LOG_INFO("[TRACE-RX-3] select() ready! Calling recvfrom()...");
         ssize_t n = recvfrom(probe_socket, buffer, sizeof(buffer), 0,
                              (struct sockaddr *)&src_addr, &addr_len);
-        LOG_DEBUG("recvfrom() returned %d bytes from %s", n, inet_ntoa(src_addr.sin_addr));
+        LOG_INFO("[TRACE-RX-4] recvfrom() returned %d bytes from %s", n, inet_ntoa(src_addr.sin_addr));
 
         if (n < sizeof(probe_packet_t)) {
+            LOG_INFO("[TRACE-RX-5] Packet too small: %d bytes (need %d)", n, sizeof(probe_packet_t));
             continue;  // Invalid packet
         }
 
@@ -302,8 +306,11 @@ int calculate_probe_metrics(const char *dst_ip, probe_result_t *result) {
         uint32_t sent_sec = ntohl(response->timestamp_sec);
         uint32_t sent_usec = ntohl(response->timestamp_usec);
 
+        LOG_INFO("[TRACE-RX-6] Valid packet: seq=%d, looking for match with dst_ip=%s", seq, dst_ip);
+
         // Find matching pending probe
         pthread_mutex_lock(&pending_mutex);
+        bool found = false;
         for (int i = 0; i < pending_probe_count; i++) {
             if (pending_probes[i].sequence == seq &&
                 strcmp(pending_probes[i].dst_ip, dst_ip) == 0) {
@@ -315,9 +322,16 @@ int calculate_probe_metrics(const char *dst_ip, probe_result_t *result) {
 
                 if (rtt_ms >= 0 && rtt_ms < 10000.0) {  // Sanity check (< 10 seconds)
                     rtt_samples[rtt_count++] = rtt_ms;
+                    LOG_INFO("[TRACE-RX-7] Match found! RTT=%.2fms (received %d/%d)", rtt_ms, rtt_count, expected_responses);
+                    found = true;
+                } else {
+                    LOG_INFO("[TRACE-RX-8] RTT out of range: %.2fms", rtt_ms);
                 }
                 break;
             }
+        }
+        if (!found) {
+            LOG_INFO("[TRACE-RX-9] No match found for seq=%d dst=%s", seq, dst_ip);
         }
         pthread_mutex_unlock(&pending_mutex);
     }
