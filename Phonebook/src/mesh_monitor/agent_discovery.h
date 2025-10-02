@@ -4,7 +4,7 @@
 
 #include "../common.h"
 
-#define MAX_DISCOVERED_AGENTS 100
+#define MAX_DISCOVERED_AGENTS 500  // Support larger mesh networks (Swiss AREDN has ~300+ nodes)
 #define AGENT_CACHE_FILE "/tmp/aredn_agent_cache.txt"
 #define DISCOVERY_SCAN_INTERVAL_S 3600  // 1 hour
 
