@@ -107,15 +107,9 @@ int perform_agent_discovery_scan(void) {
 
     // Test each host for agent (skip phones and LAN interfaces)
     for (int i = 0; i < ip_count; i++) {
-        // Skip telephones (numeric-only names like "441533")
+        // Skip telephones (numeric-only names)
         if (is_numeric_name(node_names[i])) {
-            LOG_DEBUG("Skipping telephone (numeric): %s", node_names[i]);
-            continue;
-        }
-
-        // Skip phone devices (names containing "phone", "snom", etc.)
-        if (is_phone_device(node_names[i])) {
-            LOG_DEBUG("Skipping phone device: %s", node_names[i]);
+            LOG_DEBUG("Skipping telephone: %s", node_names[i]);
             continue;
         }
 
@@ -258,27 +252,6 @@ static bool is_numeric_name(const char *name) {
     }
 
     return true;
-}
-
-static bool is_phone_device(const char *name) {
-    if (!name) return false;
-
-    // Convert to lowercase for case-insensitive matching
-    char lower_name[64];
-    strncpy(lower_name, name, sizeof(lower_name) - 1);
-    lower_name[sizeof(lower_name) - 1] = '\0';
-    for (char *p = lower_name; *p; p++) {
-        *p = tolower((unsigned char)*p);
-    }
-
-    // Check for common phone patterns
-    if (strstr(lower_name, "phone") != NULL) return true;
-    if (strstr(lower_name, "snom") != NULL) return true;
-    if (strstr(lower_name, "grandstream") != NULL) return true;
-    if (strstr(lower_name, "yealink") != NULL) return true;
-    if (strstr(lower_name, "cisco") != NULL) return true;
-
-    return false;
 }
 
 static bool is_lan_interface(const char *name) {
