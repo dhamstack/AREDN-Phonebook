@@ -155,11 +155,10 @@ void* mesh_monitor_thread(void *arg) {
                     LOG_INFO("[TRACE-11] send_probes() sent %d UDP packets", probes_sent);
 
                     if (probes_sent > 0) {
-                        LOG_INFO("[TRACE-12] Probes sent successfully, waiting %d seconds for responses...", g_monitor_config.probe_window_s);
-                        // Wait for probe window to complete
-                        sleep(g_monitor_config.probe_window_s);
+                        LOG_INFO("[TRACE-12] Probes sent successfully, calling calculate_probe_metrics() immediately...");
+                        // NO SLEEP - calculate_probe_metrics() has its own timeout logic with select()
 
-                        LOG_INFO("[TRACE-13] Wait complete, calling calculate_probe_metrics()...");
+                        LOG_INFO("[TRACE-13] Calling calculate_probe_metrics()...");
                         // Calculate metrics
                         probe_result_t result;
                         int calc_result = calculate_probe_metrics(agents[i].ip, &result);
