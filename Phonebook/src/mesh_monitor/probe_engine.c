@@ -12,7 +12,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-static int probe_socket = -1;
+static int probe_socket = -1;          // Socket for sending probes and receiving responses
+static int responder_socket = -1;     // Separate socket for probe responder (echo server)
 static mesh_monitor_config_t probe_config;
 static bool engine_running = false;
 static char local_node[64] = {0};
@@ -42,11 +43,17 @@ int probe_engine_init(mesh_monitor_config_t *config) {
         strcpy(local_node, "unknown");
     }
 
-    // Create UDP socket for probes
+    // Create UDP socket for sending probes and receiving responses
     probe_socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (probe_socket < 0) {
         LOG_ERROR("Failed to create probe socket: %s", strerror(errno));
         return -1;
+    }
+
+    // Enable SO_REUSEADDR to allow multiple sockets on same port
+    int reuse = 1;
+    if (setsockopt(probe_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+        LOG_WARN("Failed to set SO_REUSEADDR on probe socket");
     }
 
     // Set socket to non-blocking
@@ -76,8 +83,37 @@ int probe_engine_init(mesh_monitor_config_t *config) {
         }
     }
 
+    // Create separate socket for probe responder (echo server)
+    responder_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (responder_socket < 0) {
+        LOG_ERROR("Failed to create responder socket: %s", strerror(errno));
+        close(probe_socket);
+        probe_socket = -1;
+        return -1;
+    }
+
+    // Enable SO_REUSEADDR on responder socket too
+    if (setsockopt(responder_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+        LOG_WARN("Failed to set SO_REUSEADDR on responder socket");
+    }
+
+    // Set responder socket to non-blocking
+    flags = fcntl(responder_socket, F_GETFL, 0);
+    fcntl(responder_socket, F_SETFL, flags | O_NONBLOCK);
+
+    // Bind responder socket to same port (SO_REUSEADDR allows this)
+    if (bind(responder_socket, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        LOG_ERROR("Failed to bind responder socket to port %d: %s",
+                  probe_config.probe_port, strerror(errno));
+        close(probe_socket);
+        close(responder_socket);
+        probe_socket = -1;
+        responder_socket = -1;
+        return -1;
+    }
+
     engine_running = true;
-    LOG_INFO("Probe engine initialized (port=%d)", probe_config.probe_port);
+    LOG_INFO("Probe engine initialized (port=%d, using separate sender/responder sockets)", probe_config.probe_port);
     return 0;
 }
 
@@ -87,6 +123,11 @@ void probe_engine_shutdown(void) {
     if (probe_socket >= 0) {
         close(probe_socket);
         probe_socket = -1;
+    }
+
+    if (responder_socket >= 0) {
+        close(responder_socket);
+        responder_socket = -1;
     }
 
     LOG_INFO("Probe engine shutdown");
@@ -158,7 +199,7 @@ void* probe_responder_thread(void *arg) {
     socklen_t addr_len = sizeof(src_addr);
 
     while (engine_running) {
-        ssize_t n = recvfrom(probe_socket, buffer, sizeof(buffer), 0,
+        ssize_t n = recvfrom(responder_socket, buffer, sizeof(buffer), 0,
                              (struct sockaddr *)&src_addr, &addr_len);
 
         if (n < 0) {
@@ -175,7 +216,7 @@ void* probe_responder_thread(void *arg) {
         }
 
         // Echo the packet back
-        ssize_t sent = sendto(probe_socket, buffer, n, 0,
+        ssize_t sent = sendto(responder_socket, buffer, n, 0,
                               (struct sockaddr *)&src_addr, addr_len);
 
         if (sent < 0) {
