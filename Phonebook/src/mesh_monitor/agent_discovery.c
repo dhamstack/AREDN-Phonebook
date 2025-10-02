@@ -100,6 +100,13 @@ int perform_agent_discovery_scan(void) {
 
     LOG_INFO("Found %d hosts in mesh, discovering agents via HTTP ping", ip_count);
 
+    // Debug: Check if all array entries are valid
+    LOG_INFO("Validating parsed arrays: checking first and last entries");
+    if (ip_count > 0) {
+        LOG_INFO("First entry: name='%s', ip='%s'", node_names[0], unique_ips[0]);
+        LOG_INFO("Last entry: name='%s', ip='%s'", node_names[ip_count-1], unique_ips[ip_count-1]);
+    }
+
     pthread_mutex_lock(&discovery_mutex);
     int new_agents = 0;
     int existing_agents = 0;
@@ -109,6 +116,13 @@ int perform_agent_discovery_scan(void) {
 
     // Test each host for agent (skip phones and LAN interfaces)
     for (int i = 0; i < ip_count; i++) {
+        // Debug: Check for invalid/empty entries that might cause early exit
+        if (node_names[i][0] == '\0' || unique_ips[i][0] == '\0') {
+            LOG_WARN("Invalid entry at index %d: name='%s', ip='%s' - stopping scan",
+                     i, node_names[i], unique_ips[i]);
+            break;
+        }
+
         // Skip telephones (numeric-only names)
         if (is_numeric_name(node_names[i])) {
             LOG_DEBUG("Skipping telephone: %s", node_names[i]);
