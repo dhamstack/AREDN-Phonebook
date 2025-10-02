@@ -81,30 +81,47 @@ void get_ntp_time(uint32_t *ntp_sec, uint32_t *ntp_frac) {
     *ntp_frac = (uint32_t)((double)tv.tv_usec * 4294.967296);
 }
 
-// Send RTCP Sender Report
+// Send RTCP Sender Report + SDES compound packet
 int send_rtcp_sr(int sockfd, struct sockaddr_in *addr, uint32_t ssrc,
                  uint32_t rtp_ts, uint32_t pkt_count, uint32_t byte_count,
                  uint32_t *lsr_out) {
-    rtcp_sr_t sr;
+    uint8_t packet[256];
+    int offset = 0;
     uint32_t ntp_sec, ntp_frac;
 
-    memset(&sr, 0, sizeof(sr));
-    sr.vpxcc = 0x80;  // version 2, no padding, no reception reports
-    sr.pt = 200;      // SR
-    sr.length = htons(6); // 6 32-bit words after header
-    sr.ssrc = htonl(ssrc);
-
     get_ntp_time(&ntp_sec, &ntp_frac);
-    sr.ntp_sec = htonl(ntp_sec);
-    sr.ntp_frac = htonl(ntp_frac);
-    sr.rtp_ts = htonl(rtp_ts);
-    sr.pkt_count = htonl(pkt_count);
-    sr.byte_count = htonl(byte_count);
+
+    // Build SR
+    rtcp_sr_t *sr = (rtcp_sr_t *)(packet + offset);
+    memset(sr, 0, sizeof(rtcp_sr_t));
+    sr->vpxcc = 0x80;  // version 2, no padding, no reception reports
+    sr->pt = 200;      // SR
+    sr->length = htons(6); // 6 32-bit words after header
+    sr->ssrc = htonl(ssrc);
+    sr->ntp_sec = htonl(ntp_sec);
+    sr->ntp_frac = htonl(ntp_frac);
+    sr->rtp_ts = htonl(rtp_ts);
+    sr->pkt_count = htonl(pkt_count);
+    sr->byte_count = htonl(byte_count);
+    offset += sizeof(rtcp_sr_t);
 
     // Save LSR (middle 32 bits of NTP timestamp)
     *lsr_out = ((ntp_sec & 0xFFFF) << 16) | ((ntp_frac >> 16) & 0xFFFF);
 
-    return sendto(sockfd, &sr, sizeof(sr), 0, (struct sockaddr *)addr, sizeof(*addr));
+    // Add SDES with CNAME
+    uint8_t *sdes = packet + offset;
+    sdes[0] = 0x81;  // V=2, P=0, SC=1
+    sdes[1] = 202;   // PT=SDES
+    sdes[2] = 0;     // length high byte
+    sdes[3] = 6;     // length = 6 (includes SSRC + CNAME item)
+    memcpy(sdes + 4, &sr->ssrc, 4); // SSRC
+    sdes[8] = 1;     // CNAME
+    sdes[9] = 15;    // length
+    memcpy(sdes + 10, "test@10.0.0.1  ", 15); // CNAME string (padded)
+    sdes[25] = 0;    // END
+    offset += 26;
+
+    return sendto(sockfd, packet, offset, 0, (struct sockaddr *)addr, sizeof(*addr));
 }
 
 // Parse RTCP RR and extract metrics
@@ -351,14 +368,23 @@ int extract_to_tag(const char *response, char *to_tag, int max_len) {
     return 0;
 }
 
-// Parse SDP to extract phone's RTP port and IP
-int parse_sdp(const char *sdp, int *rtp_port, char *ip, int ip_size) {
+// Parse SDP to extract phone's RTP port, RTCP port, and IP
+int parse_sdp(const char *sdp, int *rtp_port, int *rtcp_port, char *ip, int ip_size) {
     // Find m=audio line
     const char *m_line = strstr(sdp, "m=audio ");
     if (!m_line) return -1;
 
     if (sscanf(m_line, "m=audio %d", rtp_port) != 1) {
         return -1;
+    }
+
+    // Default RTCP port is RTP + 1
+    *rtcp_port = *rtp_port + 1;
+
+    // Look for explicit a=rtcp: line
+    const char *rtcp_line = strstr(sdp, "a=rtcp:");
+    if (rtcp_line) {
+        sscanf(rtcp_line, "a=rtcp:%d", rtcp_port);
     }
 
     // Find c=IN IP4 line for connection address
@@ -468,16 +494,18 @@ int test_media_quality(const char *phone_number, const char *phone_ip,
         goto cleanup;
     }
 
-    // Parse SDP from 200 OK to get phone's RTP port and IP
+    // Parse SDP from 200 OK to get phone's RTP/RTCP ports and IP
     int phone_rtp_port = 0;
+    int phone_rtcp_port = 0;
     char phone_media_ip[64] = {0};
     strncpy(phone_media_ip, phone_ip, sizeof(phone_media_ip) - 1); // Default to phone IP
 
-    if (parse_sdp(sip_response, &phone_rtp_port, phone_media_ip, sizeof(phone_media_ip)) == 0) {
-        if (verbose) printf("  Phone RTP: %s:%d\n", phone_media_ip, phone_rtp_port);
+    if (parse_sdp(sip_response, &phone_rtp_port, &phone_rtcp_port, phone_media_ip, sizeof(phone_media_ip)) == 0) {
+        if (verbose) printf("  Phone RTP: %s:%d, RTCP: %d\n", phone_media_ip, phone_rtp_port, phone_rtcp_port);
     } else {
         if (verbose) printf("  Warning: Could not parse SDP, using defaults\n");
         phone_rtp_port = rtp_port; // Fallback
+        phone_rtcp_port = rtp_port + 1;
     }
 
     // Send ACK
@@ -492,17 +520,19 @@ int test_media_quality(const char *phone_number, const char *phone_ip,
 
     memset(&rtcp_addr, 0, sizeof(rtcp_addr));
     rtcp_addr.sin_family = AF_INET;
-    rtcp_addr.sin_port = htons(phone_rtp_port + 1); // RTCP is typically RTP+1
+    rtcp_addr.sin_port = htons(phone_rtcp_port);
     rtcp_addr.sin_addr.s_addr = inet_addr(phone_media_ip);
 
-    // Send RTCP SR immediately
+    // Send RTCP SR+SDES compound immediately after ACK
     gettimeofday(&sr_time, NULL);
     send_rtcp_sr(rtcp_sock, &rtcp_addr, ssrc, 0, 0, 0, &lsr);
+    if (verbose) printf("  Sent initial RTCP SR+SDES\n");
 
     // Send RTP packets for TEST_DURATION_MS
     uint16_t seq = 0;
     uint32_t timestamp = 0;
     int packets_to_send = TEST_DURATION_MS / PTIME;
+    int sr_at_1s = 1000 / PTIME;  // Send SR again at ~1s
 
     for (int i = 0; i < packets_to_send; i++) {
         rtp_header_t rtp;
@@ -528,17 +558,24 @@ int test_media_quality(const char *phone_number, const char *phone_ip,
         stats->rtp_packets_sent++;
         timestamp += 320; // 40ms at 8000 Hz
 
+        // Send another SR at ~1s to encourage RR
+        if (i == sr_at_1s) {
+            send_rtcp_sr(rtcp_sock, &rtcp_addr, ssrc, timestamp,
+                        stats->rtp_packets_sent, stats->rtp_packets_sent * 160, &lsr);
+            if (verbose) printf("  Sent mid-stream RTCP SR\n");
+        }
+
         usleep(PTIME * 1000); // Wait 40ms
     }
 
     // Send final RTCP SR
     send_rtcp_sr(rtcp_sock, &rtcp_addr, ssrc, timestamp,
                  stats->rtp_packets_sent, stats->rtp_packets_sent * 160, &lsr);
+    if (verbose) printf("  Sent final RTCP SR, waiting for RR...\n");
 
-    // Wait for RTCP RR
-    if (verbose) printf("  Waiting for RTCP RR...\n");
-    tv.tv_sec = 0;
-    tv.tv_usec = RTCP_WAIT_MS * 1000;
+    // Wait for RTCP RR - allow 2 seconds
+    tv.tv_sec = 2;
+    tv.tv_usec = 0;
     setsockopt(rtcp_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     uint8_t rtcp_buf[512];
