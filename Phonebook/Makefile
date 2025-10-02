@@ -59,6 +59,10 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/mesh_monitor/http_client.c \
 		$(PKG_BUILD_DIR)/mesh_monitor/remote_reporter.c \
 		-lpthread
+	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
+		-static \
+		-o $(PKG_BUILD_DIR)/udp-send \
+		$(PKG_BUILD_DIR)/udp_send.c
 endef
 
 define Package/aredn-phonebook/preinst
@@ -77,6 +81,7 @@ endef
 define Package/aredn-phonebook/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/aredn-phonebook $(1)/usr/bin/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/udp-send $(1)/usr/bin/sip-options-ping
 	$(INSTALL_BIN) ./files/usr/bin/agent-discovery-status $(1)/usr/bin/
 	$(INSTALL_BIN) ./files/usr/bin/test-udp-lan $(1)/usr/bin/
 	$(INSTALL_BIN) ./files/usr/bin/test-udp-receive $(1)/usr/bin/
