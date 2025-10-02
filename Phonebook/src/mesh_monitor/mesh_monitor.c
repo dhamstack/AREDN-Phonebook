@@ -123,8 +123,7 @@ void* mesh_monitor_thread(void *arg) {
         LOG_DEBUG("[TRACE-3] Loop iteration: now=%ld", now);
 
         // Check if it's time to run agent discovery scan (every 1 hour)
-        // TEMPORARILY DISABLED for testing - using cached agents only
-        if (0 && now - last_discovery_time >= 3600) {  // AGENT_DISCOVERY_INTERVAL_S
+        if (now - last_discovery_time >= 3600) {  // AGENT_DISCOVERY_INTERVAL_S
             LOG_INFO("Running periodic agent discovery scan");
             perform_agent_discovery_scan();
             last_discovery_time = now;
