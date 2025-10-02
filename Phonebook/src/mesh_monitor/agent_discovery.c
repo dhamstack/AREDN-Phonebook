@@ -105,6 +105,8 @@ int perform_agent_discovery_scan(void) {
     int existing_agents = 0;
     int routers_tested = 0;
 
+    LOG_INFO("Starting discovery loop: will test up to %d hosts", ip_count);
+
     // Test each host for agent (skip phones and LAN interfaces)
     for (int i = 0; i < ip_count; i++) {
         // Skip telephones (numeric-only names)
@@ -120,7 +122,7 @@ int perform_agent_discovery_scan(void) {
         }
 
         routers_tested++;
-        LOG_INFO("Testing %d/%d: %s for agent", routers_tested, ip_count, node_names[i]);
+        LOG_INFO("Testing %d/%d: %s for agent (loop index i=%d)", routers_tested, ip_count, node_names[i], i);
 
         // Test agent via HTTP ping (includes DNS resolution and reachability check)
         char resolved_ip[INET_ADDRSTRLEN];
@@ -149,6 +151,8 @@ int perform_agent_discovery_scan(void) {
         }
     }
 
+    LOG_INFO("Discovery loop completed: tested %d routers out of %d total hosts", routers_tested, ip_count);
+
     last_discovery_scan = time(NULL);
 
     // Save updated cache
@@ -157,8 +161,8 @@ int perform_agent_discovery_scan(void) {
     pthread_mutex_unlock(&discovery_mutex);
 
     time_t scan_duration = time(NULL) - scan_start;
-    LOG_INFO("Agent discovery complete: %d new, %d existing, %d total agents (scan took %ld seconds)",
-             new_agents, existing_agents, agent_count, scan_duration);
+    LOG_INFO("Agent discovery complete: %d new, %d existing, %d total agents (scan took %ld seconds, tested %d/%d hosts)",
+             new_agents, existing_agents, agent_count, scan_duration, routers_tested, ip_count);
 
     return agent_count;
 }
