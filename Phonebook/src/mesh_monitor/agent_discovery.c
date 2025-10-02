@@ -177,7 +177,7 @@ int perform_agent_discovery_scan(void) {
 
     time_t scan_duration = time(NULL) - scan_start;
     LOG_INFO("Agent discovery complete: %d new, %d existing, %d total agents (scan took %ld seconds, tested %d routers)",
-             new_agents, existing_agents, agent_count, scan_duration, total_routers_tested);
+             new_agents, existing_agents, agent_count, scan_duration, routers_tested);
 
     return agent_count;
 }
