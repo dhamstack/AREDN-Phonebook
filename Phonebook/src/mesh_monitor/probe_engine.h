@@ -20,8 +20,8 @@ int probe_engine_init(mesh_monitor_config_t *config);
 // Shutdown probe engine
 void probe_engine_shutdown(void);
 
-// Send probes to targets
-int send_probes(const char *dst_ip, int count, int interval_ms);
+// Send probes to targets (uses hostname, resolves via DNS)
+int send_probes(const char *dst_hostname, int count, int interval_ms);
 
 // Probe responder (listens for incoming probes and echoes them back)
 void* probe_responder_thread(void *arg);

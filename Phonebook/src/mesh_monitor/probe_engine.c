@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <sys/time.h>
 #include <errno.h>
 #include <unistd.h>
@@ -130,46 +131,78 @@ void probe_engine_shutdown(void) {
     LOG_INFO("Probe engine shutdown");
 }
 
-int send_probes(const char *dst_ip, int count, int interval_ms) {
-    if (!engine_running || !dst_ip || probe_socket < 0) {
+int send_probes(const char *dst_hostname, int count, int interval_ms) {
+    if (!engine_running || !dst_hostname || probe_socket < 0) {
         return -1;
     }
 
+    // Build FQDN: <hostname>.local.mesh
+    char fqdn[256];
+    snprintf(fqdn, sizeof(fqdn), "%s.local.mesh", dst_hostname);
+
+    // Resolve destination hostname via DNS
+    struct addrinfo hints = {.ai_family = AF_INET, .ai_socktype = SOCK_DGRAM};
+    struct addrinfo *res = NULL;
+
+    int status = getaddrinfo(fqdn, NULL, &hints, &res);
+    if (status != 0) {
+        LOG_ERROR("DNS resolution failed for %s: %s", fqdn, gai_strerror(status));
+        return -1;
+    }
+
+    // Extract resolved IP
+    struct sockaddr_in *resolved = (struct sockaddr_in *)res->ai_addr;
+    char resolved_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &resolved->sin_addr, resolved_ip, sizeof(resolved_ip));
+
+    LOG_INFO("[TRACE-DNS] Resolved %s -> %s", fqdn, resolved_ip);
+
+    // Set up destination address
     struct sockaddr_in dst_addr;
     memset(&dst_addr, 0, sizeof(dst_addr));
     dst_addr.sin_family = AF_INET;
     dst_addr.sin_port = htons(probe_config.probe_port);
+    dst_addr.sin_addr = resolved->sin_addr;
 
-    if (inet_pton(AF_INET, dst_ip, &dst_addr.sin_addr) <= 0) {
-        LOG_ERROR("Invalid destination IP: %s", dst_ip);
-        return -1;
-    }
+    freeaddrinfo(res);
 
-    // Get our local bound address and port for return address
+    // Use connect() to determine which local IP will be used for this route
+    // This gives us the correct return address
     struct sockaddr_in local_addr;
     socklen_t addr_len = sizeof(local_addr);
-    if (getsockname(probe_socket, (struct sockaddr *)&local_addr, &addr_len) < 0) {
-        LOG_ERROR("Failed to get local socket address: %s", strerror(errno));
+
+    int test_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (test_sock < 0) {
+        LOG_ERROR("Failed to create test socket: %s", strerror(errno));
         return -1;
     }
 
-    // If bound to INADDR_ANY, determine actual source IP by connecting
-    char return_ip_str[16];
-    if (local_addr.sin_addr.s_addr == INADDR_ANY) {
-        // Use ip route to determine source IP
-        struct sockaddr_in test_addr;
-        int test_sock = socket(AF_INET, SOCK_DGRAM, 0);
-        if (test_sock >= 0) {
-            memcpy(&test_addr, &dst_addr, sizeof(test_addr));
-            connect(test_sock, (struct sockaddr *)&test_addr, sizeof(test_addr));
-            getsockname(test_sock, (struct sockaddr *)&local_addr, &addr_len);
-            close(test_sock);
-        }
+    if (connect(test_sock, (struct sockaddr *)&dst_addr, sizeof(dst_addr)) < 0) {
+        LOG_ERROR("Failed to connect test socket: %s", strerror(errno));
+        close(test_sock);
+        return -1;
     }
+
+    if (getsockname(test_sock, (struct sockaddr *)&local_addr, &addr_len) < 0) {
+        LOG_ERROR("Failed to get local address: %s", strerror(errno));
+        close(test_sock);
+        return -1;
+    }
+    close(test_sock);
+
+    // Extract return address
+    char return_ip_str[16];
     inet_ntop(AF_INET, &local_addr.sin_addr, return_ip_str, sizeof(return_ip_str));
+
+    // Get the actual port from our probe_socket (not the ephemeral port from test_sock)
+    if (getsockname(probe_socket, (struct sockaddr *)&local_addr, &addr_len) < 0) {
+        LOG_ERROR("Failed to get probe socket address: %s", strerror(errno));
+        return -1;
+    }
     uint16_t return_port = ntohs(local_addr.sin_port);
 
-    LOG_INFO("[TRACE-RETURN] Will request echoes to %s:%d", return_ip_str, return_port);
+    LOG_INFO("[TRACE-RETURN] Will request echoes to %s:%d (resolved from %s)",
+             return_ip_str, return_port, fqdn);
 
     int sent = 0;
     for (int i = 0; i < count; i++) {
@@ -190,7 +223,7 @@ int send_probes(const char *dst_ip, int count, int interval_ms) {
                            (struct sockaddr *)&dst_addr, sizeof(dst_addr));
 
         if (n < 0) {
-            LOG_ERROR("Failed to send probe to %s: %s", dst_ip, strerror(errno));
+            LOG_ERROR("Failed to send probe to %s: %s", resolved_ip, strerror(errno));
             continue;
         }
 
@@ -199,7 +232,7 @@ int send_probes(const char *dst_ip, int count, int interval_ms) {
         if (pending_probe_count < MAX_PENDING_PROBES) {
             pending_probes[pending_probe_count].sequence = i;
             pending_probes[pending_probe_count].sent_time = now;
-            strncpy(pending_probes[pending_probe_count].dst_ip, dst_ip, 15);
+            strncpy(pending_probes[pending_probe_count].dst_ip, resolved_ip, 15);
             pending_probe_count++;
         }
         pthread_mutex_unlock(&pending_mutex);
@@ -212,7 +245,7 @@ int send_probes(const char *dst_ip, int count, int interval_ms) {
         }
     }
 
-    LOG_DEBUG("Sent %d probes to %s", sent, dst_ip);
+    LOG_DEBUG("Sent %d probes to %s (%s)", sent, dst_hostname, resolved_ip);
     return sent;
 }
 

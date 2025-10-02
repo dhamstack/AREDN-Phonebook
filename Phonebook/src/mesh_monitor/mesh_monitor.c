@@ -147,11 +147,11 @@ void* mesh_monitor_thread(void *arg) {
                 LOG_INFO("[TRACE-8] Probing %d discovered agents", agent_count);
 
                 for (int i = 0; i < agent_count; i++) {
-                    LOG_INFO("[TRACE-9] Probing agent %d: %s", i, agents[i].ip);
+                    LOG_INFO("[TRACE-9] Probing agent %d: %s (%s)", i, agents[i].node, agents[i].ip);
 
-                    // Send probes (UDP echo test packets)
-                    LOG_INFO("[TRACE-10] Calling send_probes() to send UDP packets to %s...", agents[i].ip);
-                    int probes_sent = send_probes(agents[i].ip, 10, 100);  // 10 probes, 100ms apart
+                    // Send probes using hostname (DNS will resolve correct IP)
+                    LOG_INFO("[TRACE-10] Calling send_probes() to send UDP packets to %s.local.mesh...", agents[i].node);
+                    int probes_sent = send_probes(agents[i].node, 10, 100);  // 10 probes, 100ms apart
                     LOG_INFO("[TRACE-11] send_probes() sent %d UDP packets", probes_sent);
 
                     if (probes_sent > 0) {
