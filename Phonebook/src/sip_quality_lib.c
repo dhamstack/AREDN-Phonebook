@@ -15,6 +15,7 @@
 #include <time.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <fcntl.h>
 
 #define SIP_PORT 5060
 #define RTP_PAYLOAD_TYPE 0  // PCMU
@@ -155,11 +156,12 @@ static int parse_rtcp_rr(uint8_t *buf, int len, probe_result_t *result, uint32_t
     return 0;
 }
 
-// Send SIP INVITE with auto-answer
+// Send SIP INVITE with auto-answer - NOW CAPTURES SIP RTT
 static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_number,
                 const char *phone_ip, int rtp_port, char *call_id_out,
                 char *from_tag_out, char *response, int response_size,
-                int timeout_ms, probe_status_t *status, char *status_reason) {
+                int timeout_ms, probe_status_t *status, char *status_reason,
+                long *sip_rtt_ms) {
     char request[2048];
     long rand_val = time(NULL);
 
@@ -193,6 +195,10 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
         call_id_out, 145 + (rtp_port > 9999 ? 5 : rtp_port > 999 ? 4 : 3),
         rand_val, rtp_port);
 
+    // Capture time BEFORE sending INVITE
+    struct timeval invite_sent_time;
+    gettimeofday(&invite_sent_time, NULL);
+
     if (sendto(sockfd, request, strlen(request), 0,
                (struct sockaddr *)addr, sizeof(*addr)) < 0) {
         return -1;
@@ -214,6 +220,14 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
 
             // Check for final responses
             if (strstr(response, "200 OK") != NULL) {
+                // Capture time when 200 OK received
+                struct timeval ok_recv_time;
+                gettimeofday(&ok_recv_time, NULL);
+
+                // Calculate SIP RTT in milliseconds
+                *sip_rtt_ms = (ok_recv_time.tv_sec - invite_sent_time.tv_sec) * 1000 +
+                             (ok_recv_time.tv_usec - invite_sent_time.tv_usec) / 1000;
+
                 *status = PROBE_SUCCESS;
                 snprintf(status_reason, 128, "Call answered successfully");
                 return 0;  // Success
@@ -345,6 +359,78 @@ static int parse_sdp(const char *sdp, int *rtp_port, int *rtcp_port, char *ip, i
     return 0;
 }
 
+// RTP statistics tracking structure
+typedef struct {
+    int initialized;
+    uint16_t first_seq;
+    uint16_t highest_seq;
+    uint32_t packets_received;
+    uint32_t prev_timestamp;
+    double prev_transit;
+    double jitter;
+    struct timeval prev_arrival;
+} rtp_stats_t;
+
+// Process received RTP packet and update statistics (RFC 3550)
+static void process_rtp_packet(uint8_t *packet, ssize_t len, rtp_stats_t *stats) {
+    if (len < sizeof(rtp_header_t)) return;
+
+    rtp_header_t *rtp = (rtp_header_t *)packet;
+    uint16_t seq = ntohs(rtp->seq);
+    uint32_t timestamp = ntohl(rtp->ts);
+    struct timeval arrival_time;
+    gettimeofday(&arrival_time, NULL);
+
+    // Convert arrival time to milliseconds
+    double arrival_ms = arrival_time.tv_sec * 1000.0 + arrival_time.tv_usec / 1000.0;
+
+    if (!stats->initialized) {
+        // First packet
+        stats->first_seq = seq;
+        stats->highest_seq = seq;
+        stats->packets_received = 1;
+        stats->prev_timestamp = timestamp;
+        stats->prev_transit = arrival_ms - (timestamp / 8.0);  // Convert to ms
+        stats->jitter = 0;
+        stats->prev_arrival = arrival_time;
+        stats->initialized = 1;
+    } else {
+        // Update highest sequence number (handle wrap-around)
+        int16_t diff = (int16_t)(seq - stats->highest_seq);
+        if (diff > 0) {
+            stats->highest_seq = seq;
+        }
+
+        stats->packets_received++;
+
+        // Calculate jitter (RFC 3550 A.8)
+        double transit = arrival_ms - (timestamp / 8.0);  // Convert RTP timestamp to ms
+        double d = transit - stats->prev_transit;
+        if (d < 0) d = -d;
+        stats->jitter = stats->jitter + (d - stats->jitter) / 16.0;
+
+        stats->prev_transit = transit;
+        stats->prev_timestamp = timestamp;
+        stats->prev_arrival = arrival_time;
+    }
+}
+
+// Drain incoming RTP packets from socket (non-blocking)
+static void drain_rtp_packets(int rtp_sock, rtp_stats_t *stats) {
+    uint8_t rtp_buf[2048];
+    struct sockaddr_in from;
+    socklen_t fromlen = sizeof(from);
+
+    while (1) {
+        ssize_t len = recvfrom(rtp_sock, rtp_buf, sizeof(rtp_buf), MSG_DONTWAIT,
+                              (struct sockaddr *)&from, &fromlen);
+        if (len <= 0) {
+            break;  // No more packets or error
+        }
+        process_rtp_packet(rtp_buf, len, stats);
+    }
+}
+
 // Public API implementation
 int test_phone_quality(const char *phone_number, const char *phone_ip,
                        probe_result_t *result, const probe_config_t *config) {
@@ -412,10 +498,12 @@ int test_phone_quality(const char *phone_number, const char *phone_ip,
     sip_addr.sin_port = htons(SIP_PORT);
     sip_addr.sin_addr.s_addr = inet_addr(phone_ip);
 
-    // Send INVITE with configured timeout
+    // Send INVITE with configured timeout and capture SIP RTT
+    long sip_rtt_ms = 0;
     int invite_result = send_invite(sip_sock, &sip_addr, phone_number, phone_ip, rtp_port,
                                     call_id, from_tag, sip_response, sizeof(sip_response),
-                                    config->invite_timeout_ms, &result->status, result->status_reason);
+                                    config->invite_timeout_ms, &result->status, result->status_reason,
+                                    &sip_rtt_ms);
     if (invite_result < 0) {
         goto cleanup;
     }
@@ -452,7 +540,15 @@ int test_phone_quality(const char *phone_number, const char *phone_ip,
     rtcp_addr.sin_port = htons(phone_rtcp_port);
     rtcp_addr.sin_addr.s_addr = inet_addr(phone_media_ip);
 
-    // Send RTCP SR+SDES compound immediately after ACK
+    // Make RTP socket non-blocking to receive packets from phone
+    int flags = fcntl(rtp_sock, F_GETFL, 0);
+    fcntl(rtp_sock, F_SETFL, flags | O_NONBLOCK);
+
+    // Initialize RTP statistics
+    rtp_stats_t rtp_stats;
+    memset(&rtp_stats, 0, sizeof(rtp_stats));
+
+    // Send RTCP SR+SDES compound immediately after ACK (keep for compatibility)
     gettimeofday(&sr_time, NULL);
     send_rtcp_sr(rtcp_sock, &rtcp_addr, ssrc, 0, 0, 0, &lsr);
 
@@ -486,7 +582,10 @@ int test_phone_quality(const char *phone_number, const char *phone_ip,
         result->packets_sent++;
         timestamp += 320; // 40ms at 8000 Hz
 
-        // Send another SR at ~1s to encourage RR
+        // Drain any incoming RTP packets from phone
+        drain_rtp_packets(rtp_sock, &rtp_stats);
+
+        // Send another SR at ~1s to encourage RR (keep for compatibility)
         if (i == sr_at_1s) {
             send_rtcp_sr(rtcp_sock, &rtcp_addr, ssrc, timestamp,
                         result->packets_sent, result->packets_sent * 160, &lsr);
@@ -495,33 +594,43 @@ int test_phone_quality(const char *phone_number, const char *phone_ip,
         usleep(config->rtp_ptime_ms * 1000);
     }
 
-    // Send final RTCP SR
+    // Send final RTCP SR (keep for compatibility)
     send_rtcp_sr(rtcp_sock, &rtcp_addr, ssrc, timestamp,
                  result->packets_sent, result->packets_sent * 160, &lsr);
 
-    // Wait for RTCP RR
-    struct timeval tv = {config->rtcp_wait_ms / 1000, (config->rtcp_wait_ms % 1000) * 1000};
-    setsockopt(rtcp_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    // Drain any remaining RTP packets
+    drain_rtp_packets(rtp_sock, &rtp_stats);
 
-    uint8_t rtcp_buf[512];
-    struct sockaddr_in rtcp_from;
-    socklen_t rtcp_from_len = sizeof(rtcp_from);
-    ssize_t rtcp_len = recvfrom(rtcp_sock, rtcp_buf, sizeof(rtcp_buf), 0,
-                                (struct sockaddr *)&rtcp_from, &rtcp_from_len);
-    if (rtcp_len > 0) {
-        if (parse_rtcp_rr(rtcp_buf, rtcp_len, result, lsr, &sr_time) == 0) {
-            result->status = PROBE_SUCCESS;
-            snprintf(result->status_reason, sizeof(result->status_reason),
-                     "Probe successful with RTCP metrics");
-        } else {
-            result->status = PROBE_NO_RR;
-            snprintf(result->status_reason, sizeof(result->status_reason),
-                     "RTCP received but not a valid RR");
-        }
+    // Wait a bit more for any late RTP packets
+    usleep(config->rtcp_wait_ms * 1000);
+    drain_rtp_packets(rtp_sock, &rtp_stats);
+
+    // Calculate LOCAL RTP-based metrics
+    if (rtp_stats.initialized && rtp_stats.packets_received >= 5) {
+        // SUCCESS: We received enough RTP packets
+        result->status = PROBE_SUCCESS;
+
+        // Store SIP RTT in media_rtt_ms field
+        result->media_rtt_ms = sip_rtt_ms;
+
+        // Store locally calculated jitter
+        result->jitter_ms = rtp_stats.jitter;
+
+        // Calculate packet loss
+        uint32_t expected = (uint32_t)(rtp_stats.highest_seq - rtp_stats.first_seq + 1);
+        uint32_t lost = expected - rtp_stats.packets_received;
+        result->packets_lost = lost;
+        result->loss_fraction = (double)lost / (double)expected;
+
+        snprintf(result->status_reason, sizeof(result->status_reason),
+                 "Probe successful with local RTP metrics (%u packets received)",
+                 rtp_stats.packets_received);
     } else {
+        // FAILURE: Not enough RTP packets received
         result->status = PROBE_NO_RR;
         snprintf(result->status_reason, sizeof(result->status_reason),
-                 "No RTCP RR received within %dms", config->rtcp_wait_ms);
+                 "No/insufficient RTP received from phone (%u packets, need 5)",
+                 rtp_stats.packets_received);
     }
 
     // Send BYE
