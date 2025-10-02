@@ -78,20 +78,22 @@ int probe_engine_init(mesh_monitor_config_t *config) {
         return -1;
     }
 
-    // Bind to 0.0.0.0:0 (all interfaces, ephemeral port)
-    // This ensures we receive responses regardless of which interface they arrive on
+    // Bind to LAN IP with ephemeral port
+    // This ensures outgoing probes use LAN IP as source (matching return address)
     struct sockaddr_in probe_addr;
     memset(&probe_addr, 0, sizeof(probe_addr));
     probe_addr.sin_family = AF_INET;
-    probe_addr.sin_addr.s_addr = INADDR_ANY;  // Listen on all interfaces
+    inet_pton(AF_INET, local_lan_ip, &probe_addr.sin_addr);  // Bind to LAN IP
     probe_addr.sin_port = 0;  // Let OS pick ephemeral port
 
     if (bind(probe_socket, (struct sockaddr *)&probe_addr, sizeof(probe_addr)) < 0) {
-        LOG_ERROR("Failed to bind probe socket: %s", strerror(errno));
+        LOG_ERROR("Failed to bind probe socket to %s: %s", local_lan_ip, strerror(errno));
         close(probe_socket);
         probe_socket = -1;
         return -1;
     }
+
+    LOG_INFO("Probe sender socket bound to %s (ensures source IP matches return address)", local_lan_ip);
 
     // Set socket to non-blocking
     int flags = fcntl(probe_socket, F_GETFL, 0);
