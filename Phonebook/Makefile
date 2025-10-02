@@ -58,6 +58,7 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/mesh_monitor/health_reporter.c \
 		$(PKG_BUILD_DIR)/mesh_monitor/http_client.c \
 		$(PKG_BUILD_DIR)/mesh_monitor/remote_reporter.c \
+		$(PKG_BUILD_DIR)/sip_quality_lib.c \
 		-lpthread
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
 		-static \
@@ -65,8 +66,10 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/udp_send.c
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
 		-static \
+		-I$(PKG_BUILD_DIR) \
 		-o $(PKG_BUILD_DIR)/sip-quality-test \
-		$(PKG_BUILD_DIR)/sip_quality_test.c
+		$(PKG_BUILD_DIR)/sip_quality_test.c \
+		$(PKG_BUILD_DIR)/sip_quality_lib.c
 endef
 
 define Package/aredn-phonebook/preinst
