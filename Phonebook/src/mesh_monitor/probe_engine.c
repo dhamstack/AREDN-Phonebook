@@ -44,36 +44,17 @@ int probe_engine_init(mesh_monitor_config_t *config) {
     }
 
     // Create UDP socket for sending probes and receiving responses
+    // DON'T bind this socket - let it use an ephemeral port!
+    // This allows responses to come back on a different port than 40050
     probe_socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (probe_socket < 0) {
         LOG_ERROR("Failed to create probe socket: %s", strerror(errno));
         return -1;
     }
 
-    // Enable SO_REUSEADDR to allow multiple sockets on same port
-    int reuse = 1;
-    if (setsockopt(probe_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-        LOG_WARN("Failed to set SO_REUSEADDR on probe socket");
-    }
-
     // Set socket to non-blocking
     int flags = fcntl(probe_socket, F_GETFL, 0);
     fcntl(probe_socket, F_SETFL, flags | O_NONBLOCK);
-
-    // Bind to probe port
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(probe_config.probe_port);
-
-    if (bind(probe_socket, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        LOG_ERROR("Failed to bind probe socket to port %d: %s",
-                  probe_config.probe_port, strerror(errno));
-        close(probe_socket);
-        probe_socket = -1;
-        return -1;
-    }
 
     // Set DSCP EF (Expedited Forwarding) if requested
     if (probe_config.dscp_ef) {
@@ -84,6 +65,7 @@ int probe_engine_init(mesh_monitor_config_t *config) {
     }
 
     // Create separate socket for probe responder (echo server)
+    // This socket listens on port 40050 for incoming probes from OTHER nodes
     responder_socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (responder_socket < 0) {
         LOG_ERROR("Failed to create responder socket: %s", strerror(errno));
@@ -92,16 +74,17 @@ int probe_engine_init(mesh_monitor_config_t *config) {
         return -1;
     }
 
-    // Enable SO_REUSEADDR on responder socket too
-    if (setsockopt(responder_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-        LOG_WARN("Failed to set SO_REUSEADDR on responder socket");
-    }
-
     // Set responder socket to non-blocking
     flags = fcntl(responder_socket, F_GETFL, 0);
     fcntl(responder_socket, F_SETFL, flags | O_NONBLOCK);
 
-    // Bind responder socket to same port (SO_REUSEADDR allows this)
+    // Bind responder socket to probe port 40050
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(probe_config.probe_port);
+
     if (bind(responder_socket, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         LOG_ERROR("Failed to bind responder socket to port %d: %s",
                   probe_config.probe_port, strerror(errno));
