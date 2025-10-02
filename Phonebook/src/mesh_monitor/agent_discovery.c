@@ -342,22 +342,26 @@ static bool test_agent_http_ping(const char *nodename, char *resolved_ip, char *
 
     char response[512];
     if (http_get_localhost(resolved_ip, 8080, hello_path, response, sizeof(response)) == 0) {
-        // Check if response contains "OK" (not just HTTP success)
-        if (strstr(response, "OK") != NULL) {
-            // Parse LAN_IP from response (format: "OK\nLAN_IP=10.x.x.x")
-            const char *lan_ip_line = strstr(response, "LAN_IP=");
-            if (lan_ip_line) {
-                // Extract IP after "LAN_IP="
-                sscanf(lan_ip_line, "LAN_IP=%15s", lan_ip);
-                LOG_DEBUG("Agent hello successful for %s (%s) with LAN IP %s", nodename, resolved_ip, lan_ip);
-            } else {
-                // Fallback: use mesh IP if LAN IP not provided (older agents)
-                strncpy(lan_ip, resolved_ip, INET_ADDRSTRLEN - 1);
-                LOG_DEBUG("Agent hello successful for %s (%s), no LAN IP provided, using mesh IP", nodename, resolved_ip);
-            }
+        // Response is just the LAN IP address (e.g., "10.51.55.233\n")
+        // Strip whitespace and validate it's an IP
+        char *start = response;
+        while (*start && (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n')) start++;
+
+        char *end = start;
+        while (*end && *end != ' ' && *end != '\t' && *end != '\r' && *end != '\n') end++;
+        *end = '\0';
+
+        // Simple validation: check if it looks like an IP (contains dots and digits)
+        if (strchr(start, '.') && strlen(start) >= 7 && strlen(start) <= 15) {
+            strncpy(lan_ip, start, INET_ADDRSTRLEN - 1);
+            lan_ip[INET_ADDRSTRLEN - 1] = '\0';
+            LOG_DEBUG("Agent hello successful for %s (mesh=%s, LAN=%s)", nodename, resolved_ip, lan_ip);
             return true;
+        } else {
+            // Fallback: use mesh IP if response doesn't look like an IP
+            strncpy(lan_ip, resolved_ip, INET_ADDRSTRLEN - 1);
+            LOG_DEBUG("Agent hello returned invalid IP '%s', using mesh IP %s", start, resolved_ip);
         }
-        LOG_DEBUG("HTTP succeeded but no 'OK' response from %s (%s)", nodename, resolved_ip);
     }
 
     LOG_DEBUG("Agent hello failed for %s (%s)", nodename, resolved_ip);

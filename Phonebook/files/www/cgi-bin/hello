@@ -1,14 +1,4 @@
 #!/bin/sh
-
-# AREDN Phonebook Agent Discovery Hello
-# Returns OK and the router's LAN IP for probe targeting
-
 echo "Content-Type: text/plain"
 echo ""
-echo "OK"
-
-# Get LAN IP from br-lan interface (busybox-compatible)
-LAN_IP=$(ip -4 addr show br-lan | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
-if [ -n "$LAN_IP" ]; then
-    echo "LAN_IP=$LAN_IP"
-fi
+ip -4 addr show br-lan | grep 'inet ' | awk '{print $2}' | cut -d/ -f1
