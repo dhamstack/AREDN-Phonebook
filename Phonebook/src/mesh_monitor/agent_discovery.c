@@ -295,9 +295,12 @@ static bool test_agent_http_ping(const char *nodename, char *resolved_ip) {
 
     char response[512];
     if (http_get_localhost(resolved_ip, 8080, hello_path, response, sizeof(response)) == 0) {
-        // Check if response contains "OK" or just succeeded
-        LOG_DEBUG("Agent hello successful for %s (%s)", nodename, resolved_ip);
-        return true;
+        // Check if response contains "OK" (not just HTTP success)
+        if (strstr(response, "OK") != NULL) {
+            LOG_DEBUG("Agent hello successful for %s (%s)", nodename, resolved_ip);
+            return true;
+        }
+        LOG_DEBUG("HTTP succeeded but no 'OK' response from %s (%s)", nodename, resolved_ip);
     }
 
     LOG_DEBUG("Agent hello failed for %s (%s)", nodename, resolved_ip);
