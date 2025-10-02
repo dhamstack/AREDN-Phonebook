@@ -192,10 +192,13 @@ int send_probes(const char *dst_ip, int count, int interval_ms) {
 }
 
 void* probe_responder_thread(void *arg) {
-    LOG_INFO("Probe responder thread started");
+    LOG_INFO("Probe responder thread started (responder_socket=%d)", responder_socket);
 
     char buffer[1024];
     struct sockaddr_in src_addr;
+    int recv_count = 0;
+    int echo_count = 0;
+    int invalid_size_count = 0;
 
     while (engine_running) {
         socklen_t addr_len = sizeof(src_addr);  // Reset for each recvfrom()
@@ -207,11 +210,21 @@ void* probe_responder_thread(void *arg) {
                 usleep(10000);  // 10ms sleep
                 continue;
             }
-            LOG_ERROR("recvfrom error: %s", strerror(errno));
+            LOG_ERROR("recvfrom error: %s (errno=%d)", strerror(errno), errno);
             break;
         }
 
+        recv_count++;
+
+        // Log every 10th packet to avoid spam
+        if (recv_count % 10 == 0) {
+            LOG_INFO("Responder received %d packets (echoed: %d, invalid size: %d)",
+                     recv_count, echo_count, invalid_size_count);
+        }
+
         if (n < sizeof(probe_packet_t)) {
+            invalid_size_count++;
+            LOG_DEBUG("Received packet too small: %d bytes (need %d)", n, sizeof(probe_packet_t));
             continue;  // Invalid packet size
         }
 
@@ -220,11 +233,14 @@ void* probe_responder_thread(void *arg) {
                               (struct sockaddr *)&src_addr, addr_len);
 
         if (sent < 0) {
-            LOG_ERROR("Failed to echo probe: %s", strerror(errno));
+            LOG_ERROR("Failed to echo probe: %s (errno=%d)", strerror(errno), errno);
+        } else {
+            echo_count++;
         }
     }
 
-    LOG_INFO("Probe responder thread stopped");
+    LOG_INFO("Probe responder thread stopped (received: %d, echoed: %d, invalid: %d)",
+             recv_count, echo_count, invalid_size_count);
     return NULL;
 }
 
