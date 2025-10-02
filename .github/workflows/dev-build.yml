@@ -26,8 +26,9 @@ jobs:
             subtarget: generic
           - arch: x86
             subtarget: 64
-          - arch: ipq40xx
-            subtarget: generic
+          # TEMPORARILY DISABLED FOR FASTER DEBUG BUILDS
+          # - arch: ipq40xx
+          #   subtarget: generic
 
     steps:
       - name: Checkout code
