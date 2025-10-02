@@ -61,6 +61,19 @@ define Build/Compile
 		-lpthread
 endef
 
+define Package/aredn-phonebook/preinst
+#!/bin/sh
+# Remove old CGI files to ensure they get updated
+rm -f /www/cgi-bin/loadphonebook
+rm -f /www/cgi-bin/showphonebook
+rm -f /www/cgi-bin/health
+rm -f /www/cgi-bin/crash
+rm -f /www/cgi-bin/network
+rm -f /www/cgi-bin/version
+rm -f /www/cgi-bin/hello
+exit 0
+endef
+
 define Package/aredn-phonebook/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/aredn-phonebook $(1)/usr/bin/
