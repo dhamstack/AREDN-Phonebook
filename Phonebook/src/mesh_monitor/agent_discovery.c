@@ -88,19 +88,20 @@ int perform_agent_discovery_scan(void) {
         return 0;
     }
 
-    // Parse unique IPs and names from hosts array
-    // Allocate on heap to avoid stack overflow with large MAX_DISCOVERED_AGENTS
-    char (*unique_ips)[INET_ADDRSTRLEN] = malloc(MAX_DISCOVERED_AGENTS * sizeof(*unique_ips));
-    char (*node_names)[64] = malloc(MAX_DISCOVERED_AGENTS * sizeof(*node_names));
+    // Parse ALL hosts first (we need the full list to iterate through)
+    // Use a larger limit to get all hosts
+    #define PARSE_LIMIT 500
+    char (*unique_ips)[INET_ADDRSTRLEN] = malloc(PARSE_LIMIT * sizeof(*unique_ips));
+    char (*node_names)[64] = malloc(PARSE_LIMIT * sizeof(*node_names));
 
     if (!unique_ips || !node_names) {
-        LOG_ERROR("Failed to allocate memory for discovery arrays");
+        LOG_ERROR("Failed to allocate memory for host list parsing");
         free(unique_ips);
         free(node_names);
         return -1;
     }
 
-    int ip_count = parse_hosts_ips(sysinfo_json, unique_ips, node_names, MAX_DISCOVERED_AGENTS);
+    int ip_count = parse_hosts_ips(sysinfo_json, unique_ips, node_names, PARSE_LIMIT);
 
     if (ip_count == 0) {
         LOG_WARN("No IPs found in AREDN hosts");
@@ -109,47 +110,34 @@ int perform_agent_discovery_scan(void) {
         return 0;
     }
 
-    LOG_INFO("Found %d hosts in mesh, discovering agents via HTTP ping", ip_count);
-
-    // Debug: Check if all array entries are valid
-    LOG_INFO("Validating parsed arrays: checking first and last entries");
-    if (ip_count > 0) {
-        LOG_INFO("First entry: name='%s', ip='%s'", node_names[0], unique_ips[0]);
-        LOG_INFO("Last entry: name='%s', ip='%s'", node_names[ip_count-1], unique_ips[ip_count-1]);
-    }
+    LOG_INFO("Found %d hosts in mesh, will test one at a time to minimize memory", ip_count);
 
     pthread_mutex_lock(&discovery_mutex);
     int new_agents = 0;
     int existing_agents = 0;
     int routers_tested = 0;
 
-    LOG_INFO("Starting discovery loop: will test up to %d hosts", ip_count);
-
-    // Test each host for agent (skip phones and LAN interfaces)
+    // Test each host one at a time (minimal memory footprint)
     for (int i = 0; i < ip_count; i++) {
-        // Debug: Check for invalid/empty entries that might cause early exit
+        // Skip invalid entries
         if (node_names[i][0] == '\0' || unique_ips[i][0] == '\0') {
-            LOG_WARN("Invalid entry at index %d: name='%s', ip='%s' - stopping scan",
-                     i, node_names[i], unique_ips[i]);
-            break;
+            continue;
         }
 
         // Skip telephones (numeric-only names)
         if (is_numeric_name(node_names[i])) {
-            LOG_DEBUG("Skipping telephone: %s", node_names[i]);
             continue;
         }
 
         // Skip LAN interface entries (lan.*)
         if (is_lan_interface(node_names[i])) {
-            LOG_DEBUG("Skipping LAN interface: %s", node_names[i]);
             continue;
         }
 
         routers_tested++;
-        LOG_INFO("Testing %d/%d: %s for agent (loop index i=%d)", routers_tested, ip_count, node_names[i], i);
+        LOG_INFO("Testing %d/%d: %s for agent", routers_tested, ip_count, node_names[i]);
 
-        // Test agent via HTTP ping (includes DNS resolution and reachability check)
+        // Test agent via HTTP ping
         char resolved_ip[INET_ADDRSTRLEN];
         if (test_agent_http_ping(node_names[i], resolved_ip)) {
             // Check if already in cache
@@ -171,12 +159,14 @@ int perform_agent_discovery_scan(void) {
                     LOG_INFO("Discovered new agent at %s (%s)", resolved_ip, node_names[i]);
                 }
             }
-        } else {
-            LOG_DEBUG("No agent response from %s", node_names[i]);
         }
     }
 
     LOG_INFO("Discovery loop completed: tested %d routers out of %d total hosts", routers_tested, ip_count);
+
+    // Free the host list now that we're done
+    free(unique_ips);
+    free(node_names);
 
     last_discovery_scan = time(NULL);
 
@@ -186,12 +176,8 @@ int perform_agent_discovery_scan(void) {
     pthread_mutex_unlock(&discovery_mutex);
 
     time_t scan_duration = time(NULL) - scan_start;
-    LOG_INFO("Agent discovery complete: %d new, %d existing, %d total agents (scan took %ld seconds, tested %d/%d hosts)",
-             new_agents, existing_agents, agent_count, scan_duration, routers_tested, ip_count);
-
-    // Free allocated memory
-    free(unique_ips);
-    free(node_names);
+    LOG_INFO("Agent discovery complete: %d new, %d existing, %d total agents (scan took %ld seconds, tested %d routers)",
+             new_agents, existing_agents, agent_count, scan_duration, total_routers_tested);
 
     return agent_count;
 }
