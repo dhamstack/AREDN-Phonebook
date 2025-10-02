@@ -44,11 +44,25 @@ int probe_engine_init(mesh_monitor_config_t *config) {
     }
 
     // Create UDP socket for sending probes and receiving responses
-    // DON'T bind this socket - let it use an ephemeral port!
-    // This allows responses to come back on a different port than 40050
+    // Bind to INADDR_ANY with port 0 (ephemeral) so it receives on all interfaces
     probe_socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (probe_socket < 0) {
         LOG_ERROR("Failed to create probe socket: %s", strerror(errno));
+        return -1;
+    }
+
+    // Bind to 0.0.0.0:0 (all interfaces, ephemeral port)
+    // This ensures we receive responses regardless of which interface they arrive on
+    struct sockaddr_in probe_addr;
+    memset(&probe_addr, 0, sizeof(probe_addr));
+    probe_addr.sin_family = AF_INET;
+    probe_addr.sin_addr.s_addr = INADDR_ANY;  // Listen on all interfaces
+    probe_addr.sin_port = 0;  // Let OS pick ephemeral port
+
+    if (bind(probe_socket, (struct sockaddr *)&probe_addr, sizeof(probe_addr)) < 0) {
+        LOG_ERROR("Failed to bind probe socket: %s", strerror(errno));
+        close(probe_socket);
+        probe_socket = -1;
         return -1;
     }
 
