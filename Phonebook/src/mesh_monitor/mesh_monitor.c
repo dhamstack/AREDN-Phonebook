@@ -110,8 +110,10 @@ void* mesh_monitor_thread(void *arg) {
     LOG_INFO("Mesh monitor thread started");
     monitor_running = true;
 
-    time_t last_probe_time = 0;
-    time_t last_discovery_time = 0;
+    // Start with timestamps in the past to trigger immediate first probe/discovery
+    time_t now = time(NULL);
+    time_t last_probe_time = now - g_monitor_config.network_status_interval_s;
+    time_t last_discovery_time = now;  // Skip discovery, use cached agents
 
     while (monitor_running) {
         time_t now = time(NULL);
@@ -121,10 +123,6 @@ void* mesh_monitor_thread(void *arg) {
         if (0 && now - last_discovery_time >= 3600) {  // AGENT_DISCOVERY_INTERVAL_S
             LOG_INFO("Running periodic agent discovery scan");
             perform_agent_discovery_scan();
-            last_discovery_time = now;
-        }
-        // Mark discovery as done so probing can start immediately
-        if (last_discovery_time == 0) {
             last_discovery_time = now;
         }
 
