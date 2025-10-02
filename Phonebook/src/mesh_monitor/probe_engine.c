@@ -226,6 +226,10 @@ void* probe_responder_thread(void *arg) {
         }
 
         // Echo the packet back
+        if (recv_count % 10 == 1) {  // Log first of every 10
+            LOG_INFO("[TRACE-ECHO] Echoing to %s:%d",
+                     inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
+        }
         ssize_t sent = sendto(responder_socket, buffer, n, 0,
                               (struct sockaddr *)&src_addr, addr_len);
 
