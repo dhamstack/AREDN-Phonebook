@@ -256,10 +256,11 @@ int send_probes(const char *dst_hostname, int count, int interval_ms) {
             continue;
         }
 
-        // Log every 10th packet to trace packet flow
+        // Log first and last packet to trace packet flow with full details
         if (i == 0 || i == count - 1) {
-            LOG_INFO("[TRACE-TX] Sent probe seq=%d to %s:%d (return address: %s:%d)",
-                     i, resolved_ip, probe_config.probe_port, return_ip_str, return_port);
+            LOG_INFO("[TRACE-TX] Sent probe seq=%d to %s:%d (packet: src_node=%s, return=%s:%d)",
+                     i, resolved_ip, probe_config.probe_port,
+                     packet.src_node, return_ip_str, return_port);
         }
 
         // Track pending probe
@@ -336,10 +337,10 @@ void* probe_responder_thread(void *arg) {
 
         // Log packet reception and echo details for first of every 10
         if (recv_count % 10 == 1) {
-            LOG_INFO("[TRACE-RX-ECHO] Received probe seq=%u from %s:%d, embedded return: %s:%d",
+            LOG_INFO("[TRACE-RX-ECHO] Received probe seq=%u from %s:%d (packet: src_node=%s, return=%s:%d)",
                      ntohl(pkt->sequence),
                      inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port),
-                     pkt->return_ip, ntohs(pkt->return_port));
+                     pkt->src_node, pkt->return_ip, ntohs(pkt->return_port));
         }
 
         // Echo the packet back using embedded return address
@@ -352,8 +353,9 @@ void* probe_responder_thread(void *arg) {
             echo_count++;
             // Log successful echo for first of every 10
             if (recv_count % 10 == 1) {
-                LOG_INFO("[TRACE-TX-ECHO] Echoed %zd bytes to %s:%d",
-                         sent, pkt->return_ip, ntohs(pkt->return_port));
+                LOG_INFO("[TRACE-TX-ECHO] Echoed %zd bytes to %s:%d (for src_node=%s, seq=%u)",
+                         sent, pkt->return_ip, ntohs(pkt->return_port),
+                         pkt->src_node, ntohl(pkt->sequence));
             }
         }
     }
@@ -413,15 +415,25 @@ int calculate_probe_metrics(const char *dst_ip, probe_result_t *result) {
         LOG_INFO("[TRACE-RX-3] select() ready! Calling recvfrom()...");
         ssize_t n = recvfrom(probe_socket, buffer, sizeof(buffer), 0,
                              (struct sockaddr *)&src_addr, &addr_len);
-        LOG_INFO("[TRACE-RX-RESPONSE] recvfrom() returned %d bytes from %s:%d",
-                 n, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
+
+        // Extract and log response details
+        probe_packet_t *response = (probe_packet_t *)buffer;
+        if (n >= sizeof(probe_packet_t)) {
+            LOG_INFO("[TRACE-RX-RESPONSE] Received %d bytes from %s:%d (packet: src_node=%s, seq=%u, return=%s:%d)",
+                     n, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port),
+                     response->src_node, ntohl(response->sequence),
+                     response->return_ip, ntohs(response->return_port));
+        } else {
+            LOG_INFO("[TRACE-RX-RESPONSE] Received %d bytes from %s:%d (too small for full packet)",
+                     n, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
+        }
 
         if (n < sizeof(probe_packet_t)) {
             LOG_INFO("[TRACE-RX-5] Packet too small: %d bytes (need %d)", n, sizeof(probe_packet_t));
             continue;  // Invalid packet
         }
 
-        probe_packet_t *response = (probe_packet_t *)buffer;
+        // response pointer already declared above
         struct timeval recv_time;
         gettimeofday(&recv_time, NULL);
 
