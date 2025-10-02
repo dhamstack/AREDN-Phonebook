@@ -26,8 +26,8 @@ static pthread_mutex_t discovery_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], char names[][64], int max_ips);
 static bool is_numeric_name(const char *name);
 static bool is_lan_interface(const char *name);
-static bool test_agent_http_ping(const char *nodename, char *resolved_ip);
-static int add_agent_to_cache(const char *ip, const char *node);
+static bool test_agent_http_ping(const char *nodename, char *resolved_ip, char *lan_ip);
+static int add_agent_to_cache(const char *ip, const char *lan_ip, const char *node);
 
 //=============================================================================
 // Initialization and Shutdown
@@ -151,7 +151,8 @@ int perform_agent_discovery_scan(void) {
 
         // Test agent via HTTP ping
         char resolved_ip[INET_ADDRSTRLEN];
-        if (test_agent_http_ping(node_names[i], resolved_ip)) {
+        char lan_ip[INET_ADDRSTRLEN] = {0};
+        if (test_agent_http_ping(node_names[i], resolved_ip, lan_ip)) {
             // Check if already in cache
             bool already_cached = false;
             for (int j = 0; j < agent_count; j++) {
@@ -159,16 +160,18 @@ int perform_agent_discovery_scan(void) {
                     already_cached = true;
                     agent_cache[j].last_seen = time(NULL);
                     agent_cache[j].is_active = true;
+                    // Update LAN IP in case it changed
+                    strncpy(agent_cache[j].lan_ip, lan_ip, sizeof(agent_cache[j].lan_ip) - 1);
                     existing_agents++;
-                    LOG_INFO("Agent %s (%s) already in cache, refreshed", node_names[i], resolved_ip);
+                    LOG_INFO("Agent %s (%s, LAN=%s) already in cache, refreshed", node_names[i], resolved_ip, lan_ip);
                     break;
                 }
             }
 
             if (!already_cached) {
-                if (add_agent_to_cache(resolved_ip, node_names[i]) == 0) {
+                if (add_agent_to_cache(resolved_ip, lan_ip, node_names[i]) == 0) {
                     new_agents++;
-                    LOG_INFO("Discovered new agent at %s (%s)", resolved_ip, node_names[i]);
+                    LOG_INFO("Discovered new agent at %s (mesh=%s, LAN=%s)", node_names[i], resolved_ip, lan_ip);
                 }
             }
         }
@@ -228,13 +231,25 @@ int load_agent_cache(void) {
     agent_count = 0;
 
     while (fgets(line, sizeof(line), fp) && agent_count < MAX_DISCOVERED_AGENTS) {
-        // Parse: ip,node,timestamp
+        // Parse: ip,lan_ip,node,timestamp
         char ip[INET_ADDRSTRLEN];
+        char lan_ip[INET_ADDRSTRLEN];
         char node[64];
         long timestamp;
 
-        if (sscanf(line, "%[^,],%[^,],%ld", ip, node, &timestamp) == 3) {
+        // Try new format first (ip,lan_ip,node,timestamp)
+        if (sscanf(line, "%[^,],%[^,],%[^,],%ld", ip, lan_ip, node, &timestamp) == 4) {
             strncpy(agent_cache[agent_count].ip, ip, sizeof(agent_cache[agent_count].ip) - 1);
+            strncpy(agent_cache[agent_count].lan_ip, lan_ip, sizeof(agent_cache[agent_count].lan_ip) - 1);
+            strncpy(agent_cache[agent_count].node, node, sizeof(agent_cache[agent_count].node) - 1);
+            agent_cache[agent_count].last_seen = (time_t)timestamp;
+            agent_cache[agent_count].is_active = true;
+            agent_count++;
+        }
+        // Fall back to old format (ip,node,timestamp) for backward compatibility
+        else if (sscanf(line, "%[^,],%[^,],%ld", ip, node, &timestamp) == 3) {
+            strncpy(agent_cache[agent_count].ip, ip, sizeof(agent_cache[agent_count].ip) - 1);
+            strncpy(agent_cache[agent_count].lan_ip, ip, sizeof(agent_cache[agent_count].lan_ip) - 1);  // Use mesh IP as fallback
             strncpy(agent_cache[agent_count].node, node, sizeof(agent_cache[agent_count].node) - 1);
             agent_cache[agent_count].last_seen = (time_t)timestamp;
             agent_cache[agent_count].is_active = true;
@@ -255,8 +270,9 @@ int save_agent_cache(void) {
     }
 
     for (int i = 0; i < agent_count; i++) {
-        fprintf(fp, "%s,%s,%ld\n",
+        fprintf(fp, "%s,%s,%s,%ld\n",
                 agent_cache[i].ip,
+                agent_cache[i].lan_ip,
                 agent_cache[i].node,
                 (long)agent_cache[i].last_seen);
     }
@@ -293,9 +309,9 @@ static bool is_lan_interface(const char *name) {
 }
 
 // Test if node has an agent via HTTP ping endpoint
-// Returns true if agent found, and fills resolved_ip with the node's IP
-static bool test_agent_http_ping(const char *nodename, char *resolved_ip) {
-    if (!nodename || !resolved_ip) {
+// Returns true if agent found, fills resolved_ip with mesh IP and lan_ip with LAN IP
+static bool test_agent_http_ping(const char *nodename, char *resolved_ip, char *lan_ip) {
+    if (!nodename || !resolved_ip || !lan_ip) {
         return false;
     }
 
@@ -328,7 +344,17 @@ static bool test_agent_http_ping(const char *nodename, char *resolved_ip) {
     if (http_get_localhost(resolved_ip, 8080, hello_path, response, sizeof(response)) == 0) {
         // Check if response contains "OK" (not just HTTP success)
         if (strstr(response, "OK") != NULL) {
-            LOG_DEBUG("Agent hello successful for %s (%s)", nodename, resolved_ip);
+            // Parse LAN_IP from response (format: "OK\nLAN_IP=10.x.x.x")
+            const char *lan_ip_line = strstr(response, "LAN_IP=");
+            if (lan_ip_line) {
+                // Extract IP after "LAN_IP="
+                sscanf(lan_ip_line, "LAN_IP=%15s", lan_ip);
+                LOG_DEBUG("Agent hello successful for %s (%s) with LAN IP %s", nodename, resolved_ip, lan_ip);
+            } else {
+                // Fallback: use mesh IP if LAN IP not provided (older agents)
+                strncpy(lan_ip, resolved_ip, INET_ADDRSTRLEN - 1);
+                LOG_DEBUG("Agent hello successful for %s (%s), no LAN IP provided, using mesh IP", nodename, resolved_ip);
+            }
             return true;
         }
         LOG_DEBUG("HTTP succeeded but no 'OK' response from %s (%s)", nodename, resolved_ip);
@@ -439,12 +465,13 @@ static int parse_hosts_ips(const char *json, char ips[][INET_ADDRSTRLEN], char n
 }
 
 
-static int add_agent_to_cache(const char *ip, const char *node) {
+static int add_agent_to_cache(const char *ip, const char *lan_ip, const char *node) {
     if (!ip || agent_count >= MAX_DISCOVERED_AGENTS) {
         return -1;
     }
 
     strncpy(agent_cache[agent_count].ip, ip, sizeof(agent_cache[agent_count].ip) - 1);
+    strncpy(agent_cache[agent_count].lan_ip, lan_ip ? lan_ip : ip, sizeof(agent_cache[agent_count].lan_ip) - 1);
     strncpy(agent_cache[agent_count].node, node ? node : ip, sizeof(agent_cache[agent_count].node) - 1);
     agent_cache[agent_count].last_seen = time(NULL);
     agent_cache[agent_count].is_active = true;

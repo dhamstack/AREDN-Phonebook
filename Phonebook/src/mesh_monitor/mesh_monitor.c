@@ -146,11 +146,11 @@ void* mesh_monitor_thread(void *arg) {
                 LOG_INFO("[TRACE-8] Probing %d discovered agents", agent_count);
 
                 for (int i = 0; i < agent_count; i++) {
-                    LOG_INFO("[TRACE-9] Probing agent %d: %s (%s)", i, agents[i].node, agents[i].ip);
+                    LOG_INFO("[TRACE-9] Probing agent %d: %s (mesh=%s, LAN=%s)", i, agents[i].node, agents[i].ip, agents[i].lan_ip);
 
-                    // Send probes using hostname (DNS will resolve correct IP)
-                    LOG_INFO("[TRACE-10] Calling send_probes() to send UDP packets to %s.local.mesh...", agents[i].node);
-                    int probes_sent = send_probes(agents[i].node, 10, 100);  // 10 probes, 100ms apart
+                    // Send probes to LAN IP (phone-like behavior)
+                    LOG_INFO("[TRACE-10] Calling send_probes() to send UDP packets to LAN IP %s...", agents[i].lan_ip);
+                    int probes_sent = send_probes(agents[i].lan_ip, 10, 100);  // 10 probes, 100ms apart
                     LOG_INFO("[TRACE-11] send_probes() sent %d UDP packets", probes_sent);
 
                     if (probes_sent > 0) {
@@ -158,9 +158,9 @@ void* mesh_monitor_thread(void *arg) {
                         // NO SLEEP - calculate_probe_metrics() has its own timeout logic with select()
 
                         LOG_INFO("[TRACE-13] Calling calculate_probe_metrics()...");
-                        // Calculate metrics
+                        // Calculate metrics using LAN IP
                         probe_result_t result;
-                        int calc_result = calculate_probe_metrics(agents[i].ip, &result);
+                        int calc_result = calculate_probe_metrics(agents[i].lan_ip, &result);
                         LOG_INFO("[TRACE-14] calculate_probe_metrics() returned %d (RTT=%.2f, loss=%.1f%%)",
                                  calc_result, result.rtt_ms_avg, result.loss_pct);
                         if (calc_result == 0) {

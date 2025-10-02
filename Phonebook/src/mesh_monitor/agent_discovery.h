@@ -9,8 +9,9 @@
 #define DISCOVERY_SCAN_INTERVAL_S 3600  // 1 hour
 
 typedef struct {
-    char ip[INET_ADDRSTRLEN];
-    char node[64];  // Same as neighbor_info_t
+    char ip[INET_ADDRSTRLEN];          // Mesh IP (for routing)
+    char lan_ip[INET_ADDRSTRLEN];      // LAN IP (for probing, like phones)
+    char node[64];                      // Hostname
     time_t last_seen;
     bool is_active;
 } discovered_agent_t;

@@ -1,8 +1,14 @@
 #!/bin/sh
 
 # AREDN Phonebook Agent Discovery Hello
-# Minimal endpoint for agent discovery - just returns 200 OK
+# Returns OK and the router's LAN IP for probe targeting
 
 echo "Content-Type: text/plain"
 echo ""
 echo "OK"
+
+# Get LAN IP from br-lan interface
+LAN_IP=$(ip -4 addr show br-lan | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+if [ -n "$LAN_IP" ]; then
+    echo "LAN_IP=$LAN_IP"
+fi
