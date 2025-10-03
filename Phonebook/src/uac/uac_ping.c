@@ -7,6 +7,9 @@
 #include <math.h>
 #include <sys/time.h>
 #include <errno.h>
+#include <string.h>
+#include <time.h>
+#include <stdlib.h>
 
 // Helper: Get current time in milliseconds
 static double get_time_ms(void) {

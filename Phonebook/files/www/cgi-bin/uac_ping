@@ -1,0 +1,84 @@
+#!/bin/sh
+# UAC OPTIONS Ping Test
+# Usage: curl "http://node/cgi-bin/uac_ping?target=441422&count=5"
+
+echo "Content-Type: application/json"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+# Parse query string for parameters
+TARGET=""
+COUNT="5"
+if [ -n "$QUERY_STRING" ]; then
+    # Extract parameters from query string
+    for param in $(echo "$QUERY_STRING" | tr '&' ' '); do
+        key=$(echo "$param" | cut -d'=' -f1)
+        value=$(echo "$param" | cut -d'=' -f2)
+        if [ "$key" = "target" ]; then
+            TARGET="$value"
+        elif [ "$key" = "count" ]; then
+            COUNT="$value"
+        fi
+    done
+fi
+
+# Validate target parameter
+if [ -z "$TARGET" ]; then
+    echo '{"status":"error","message":"Missing target parameter. Usage: /cgi-bin/uac_ping?target=441422&count=5"}'
+    exit 1
+fi
+
+# Validate target is numeric
+case "$TARGET" in
+    ''|*[!0-9]*)
+        echo "{\"status\":\"error\",\"message\":\"Invalid target number. Must be numeric: $TARGET\"}"
+        exit 1
+        ;;
+esac
+
+# Validate count is numeric and within range
+case "$COUNT" in
+    ''|*[!0-9]*)
+        echo "{\"status\":\"error\",\"message\":\"Invalid count. Must be numeric: $COUNT\"}"
+        exit 1
+        ;;
+esac
+
+if [ "$COUNT" -lt 1 ] || [ "$COUNT" -gt 20 ]; then
+    echo "{\"status\":\"error\",\"message\":\"Count must be between 1 and 20, got: $COUNT\"}"
+    exit 1
+fi
+
+# Send SIGUSR2 to AREDN-Phonebook with target number and ping count
+# We'll use a temporary file to pass the parameters
+UAC_PING_FILE="/tmp/uac_ping_request"
+echo "$TARGET" > "$UAC_PING_FILE"
+echo "$COUNT" >> "$UAC_PING_FILE"
+
+# Find AREDN-Phonebook PID
+PID=$(pgrep -f "AREDN-Phonebook" | head -n1)
+
+if [ -z "$PID" ]; then
+    echo '{"status":"error","message":"AREDN-Phonebook is not running"}'
+    rm -f "$UAC_PING_FILE"
+    exit 1
+fi
+
+# Send signal to trigger UAC ping test (we'll use SIGUSR1 for ping tests)
+if kill -USR1 "$PID" 2>/dev/null; then
+    echo "{"
+    echo "  \"status\": \"success\","
+    echo "  \"message\": \"UAC OPTIONS ping test triggered to $TARGET with $COUNT pings\","
+    echo "  \"pid\": $PID,"
+    echo "  \"target\": \"$TARGET\","
+    echo "  \"count\": $COUNT,"
+    echo "  \"note\": \"Check logs with: logread | grep UAC_PING\""
+    echo "}"
+else
+    echo "{"
+    echo "  \"status\": \"error\","
+    echo "  \"message\": \"Failed to send signal to process $PID\""
+    echo "}"
+    rm -f "$UAC_PING_FILE"
+    exit 1
+fi

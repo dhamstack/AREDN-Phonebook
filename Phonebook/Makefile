@@ -68,6 +68,7 @@ define Package/AREDN-Phonebook/install
 	$(INSTALL_BIN) ./files/www/cgi-bin/showphonebook $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/uac_test $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/uac_test_all $(1)/www/cgi-bin/
+	$(INSTALL_BIN) ./files/www/cgi-bin/uac_ping $(1)/www/cgi-bin/
 endef
 
 $(eval $(call BuildPackage,AREDN-Phonebook))

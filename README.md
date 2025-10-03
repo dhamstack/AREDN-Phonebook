@@ -12,6 +12,8 @@ AREDN Phonebook is a SIP server that provides directory services for Amateur Rad
 - 🔌 **Plug-and-Play**: Works immediately after installation
 - 📱 **Phone Integration**: Provides XML directory for SIP phones (tested with Yealink)
 - 🔧 **Passive Safety**: Self-healing with automatic error recovery
+- 📊 **Phone Monitoring**: SIP OPTIONS ping tests with RTT/jitter measurement (v1.4.5+)
+- 🎯 **Dual-Mode Testing**: Non-intrusive OPTIONS ping + optional INVITE fallback
 
 ## 📦 Installation
 
@@ -47,6 +49,29 @@ The phonebook server automatically configures itself. Default settings:
 - 🔌 **SIP Port**: 5060
 - 🌐 **Directory URL**: `http://[your-node].local.mesh/arednstack/phonebook_generic_direct.xml`
 
+### 🧪 Phone Monitoring Configuration
+
+Edit `/etc/sipserver.conf` to customize phone testing:
+
+```ini
+# UAC Test Interval - how often to test all phones (seconds)
+UAC_TEST_INTERVAL_SECONDS=60
+
+# UAC Call Test - enable INVITE testing (0=OPTIONS only, 1=OPTIONS+INVITE)
+# Default: 0 (non-intrusive OPTIONS ping only)
+UAC_CALL_TEST_ENABLED=0
+
+# Number of OPTIONS pings per phone (1-20)
+UAC_OPTIONS_PING_COUNT=5
+
+# Only test phones with this prefix
+UAC_TEST_PREFIX=4415
+```
+
+**Monitoring Modes:**
+- 📊 **OPTIONS Only** (default): Non-intrusive latency/jitter measurement
+- 📞 **OPTIONS + INVITE**: Fallback to ring test if OPTIONS fails
+
 ## 📱 Phone Setup
 
 Configure your SIP phone to use the node's directory:
@@ -70,6 +95,18 @@ Configure your SIP phone to use the node's directory:
 - 📖 **Function**: Returns current phonebook contents as JSON
 - 📋 **Response**: JSON with entry count, last updated time, and full contact list
 - 🎯 **Use Case**: Integration with other tools, status checking
+
+### 📡 UAC Ping Test (Phone Monitoring)
+- 🌐 **URL**: `http://[your-node].local.mesh/cgi-bin/uac_ping?target=441530&count=5`
+- 📡 **Method**: GET
+- 🎯 **Parameters**:
+  - `target`: Phone number to test (required)
+  - `count`: Number of pings (1-20, default: 5)
+- ⚡ **Function**: Sends SIP OPTIONS ping requests and measures RTT/jitter
+- 📋 **Response**: JSON with test status
+- 📈 **Metrics**: Min/max/avg RTT, jitter, packet loss percentage
+- 🎯 **Use Case**: Diagnose phone connectivity, measure network quality
+- 💡 **Note**: Non-intrusive test (doesn't ring the phone)
 
 ## 🔧 Troubleshooting
 
@@ -98,6 +135,9 @@ curl http://localhost/arednstack/phonebook_generic_direct.xml
 - 🛡️ **Flash Protection**: Only writes when phonebook content changes
 - 🧵 **Multi-threaded**: Background fetching doesn't affect SIP performance
 - 🔧 **Auto-healing**: Recovers from network failures and corrupt data
+- 📊 **RFC3550 Metrics**: Industry-standard jitter calculation for voice quality
+- 🎯 **Smart Testing**: DNS pre-check reduces unnecessary SIP traffic
+- ⚡ **Fast Detection**: 50ms polling for sub-second phone status updates
 
 ## 🆘 Support
 
