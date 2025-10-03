@@ -24,7 +24,8 @@ int quality_monitor_init(int sip_sock, const char *server_ip) {
     memset(&g_monitor_context, 0, sizeof(g_monitor_context));
     memset(g_quality_records, 0, sizeof(g_quality_records));
 
-    g_monitor_context.sip_socket = sip_sock;
+    // Don't share socket - create our own when needed
+    g_monitor_context.sip_socket = -1;
     if (server_ip) {
         strncpy(g_monitor_context.server_ip, server_ip, sizeof(g_monitor_context.server_ip) - 1);
     }
@@ -35,8 +36,8 @@ int quality_monitor_init(int sip_sock, const char *server_ip) {
     g_monitor_context.config.cycle_delay_sec = 0;      // No delay - OPTIONS is lightweight
     g_monitor_context.config.probe_config.timeout_ms = 3000;  // 3 second timeout
 
-    LOG_INFO("Quality monitor initialized (socket=%d, server_ip=%s)",
-             sip_sock, server_ip ? server_ip : "auto");
+    LOG_INFO("Quality monitor initialized (server_ip=%s)",
+             server_ip ? server_ip : "auto");
 
     return 0;
 }
@@ -266,8 +267,9 @@ void* quality_monitor_thread(void *arg) {
             LOG_INFO("[%d/%d] Testing phone %s (%s)...", i+1, test_count,
                      users_to_test[i].phone_number, users_to_test[i].phone_ip);
 
+            // Use -1 to create separate socket (don't share with SIP server)
             int rc = test_phone_quality_with_socket(
-                ctx->sip_socket,
+                -1,
                 users_to_test[i].phone_number,
                 users_to_test[i].phone_ip,
                 ctx->server_ip,
