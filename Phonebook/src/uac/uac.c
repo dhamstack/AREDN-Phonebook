@@ -110,6 +110,18 @@ const char* uac_state_to_string(uac_call_state_t state) {
     }
 }
 
+// Reset UAC to IDLE state
+void uac_reset_state(void) {
+    uac_call_state_t old_state = g_uac_ctx.call.state;
+    g_uac_ctx.call.state = UAC_STATE_IDLE;
+    memset(&g_uac_ctx.call, 0, sizeof(g_uac_ctx.call));
+    g_uac_ctx.call.state = UAC_STATE_IDLE;
+
+    if (old_state != UAC_STATE_IDLE) {
+        LOG_INFO("[UAC_RESET] Reset UAC from %s to IDLE state", uac_state_to_string(old_state));
+    }
+}
+
 // Make a call
 int uac_make_call(const char *target_number, const char *server_ip) {
     LOG_INFO("[UAC_CALL] Making call to %s via server %s",
@@ -343,7 +355,8 @@ int uac_process_response(const char *response, size_t response_len) {
 
         default:
             LOG_WARN("[UAC_RESPONSE] Unexpected response code: %d", status_code);
-            LOG_DEBUG("[UAC_RESPONSE] Current state: %s", uac_state_to_string(g_uac_ctx.call.state));
+            LOG_DEBUG("[UAC_RESPONSE] Resetting UAC to IDLE state after unexpected response");
+            g_uac_ctx.call.state = UAC_STATE_IDLE;
             break;
     }
 

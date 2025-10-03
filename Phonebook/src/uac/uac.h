@@ -94,4 +94,10 @@ uac_call_state_t uac_get_state(void);
  */
 const char* uac_state_to_string(uac_call_state_t state);
 
+/**
+ * Reset UAC to IDLE state (clears any stuck call state)
+ * Useful for error recovery and bulk testing
+ */
+void uac_reset_state(void);
+
 #endif // UAC_H

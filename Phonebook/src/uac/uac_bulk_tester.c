@@ -89,19 +89,27 @@ void *uac_bulk_tester_thread(void *arg) {
                 }
 
                 if (uac_get_state() != UAC_STATE_IDLE) {
-                    LOG_WARN("✗ UAC busy (state: %s), skipping %s (%s)",
+                    LOG_WARN("✗ UAC busy (state: %s), forcing reset before testing %s (%s)",
                              uac_state_to_string(uac_get_state()), user->user_id, user->display_name);
-                } else {
-                    // Trigger UAC test call using global server IP
-                    if (uac_make_call(user->user_id, g_server_ip) == 0) {
-                        tests_triggered++;
-                        LOG_INFO("✓ UAC test triggered for %s (%s)", user->user_id, user->display_name);
+                    uac_reset_state();
+                }
 
-                        // Wait for call to complete (receive response and reset to IDLE)
-                        sleep(3);
-                    } else {
-                        LOG_WARN("✗ Failed to trigger UAC test for %s (%s)", user->user_id, user->display_name);
+                // Trigger UAC test call using global server IP
+                if (uac_make_call(user->user_id, g_server_ip) == 0) {
+                    tests_triggered++;
+                    LOG_INFO("✓ UAC test triggered for %s (%s)", user->user_id, user->display_name);
+
+                    // Wait for call to complete (receive response and reset to IDLE)
+                    sleep(3);
+
+                    // Force reset to IDLE after test (especially if error response)
+                    if (uac_get_state() != UAC_STATE_IDLE) {
+                        LOG_DEBUG("Force resetting UAC to IDLE after test");
+                        uac_reset_state();
                     }
+                } else {
+                    LOG_WARN("✗ Failed to trigger UAC test for %s (%s)", user->user_id, user->display_name);
+                    uac_reset_state(); // Reset even on failure
                 }
 
                 // Re-acquire mutex for next iteration
