@@ -35,6 +35,8 @@ void *uac_bulk_tester_thread(void *arg) {
         int dns_resolved = 0;
         int dns_failed = 0;
         int tests_triggered = 0;
+        int phones_online = 0;      // Phones that responded to SIP INVITE
+        int phones_offline = 0;     // DNS resolved but no SIP response
 
         // Lock the user table and iterate through all registered users
         pthread_mutex_lock(&registered_users_mutex);
@@ -125,14 +127,24 @@ void *uac_bulk_tester_thread(void *arg) {
                     }
 
                     // Handle final state
-                    if (state == UAC_STATE_CALLING || state == UAC_STATE_RINGING) {
-                        LOG_INFO("📞 Phone %s ringing - canceling immediately", user->user_id);
+                    if (state == UAC_STATE_CALLING) {
+                        // Phone never responded - offline
+                        LOG_WARN("✗ Phone %s OFFLINE (no SIP response)", user->user_id);
+                        phones_offline++;
+                    } else if (state == UAC_STATE_RINGING) {
+                        LOG_INFO("✓ Phone %s ONLINE (ringing) - canceling", user->user_id);
+                        phones_online++;
                         uac_cancel_call();
                         sleep(1); // Wait for CANCEL to be sent
                     } else if (state == UAC_STATE_ESTABLISHED) {
-                        LOG_INFO("📞 Phone %s answered - hanging up", user->user_id);
+                        LOG_INFO("✓ Phone %s ONLINE (answered) - hanging up", user->user_id);
+                        phones_online++;
                         uac_hang_up();
                         sleep(1); // Wait for BYE to be sent
+                    } else if (state == UAC_STATE_IDLE) {
+                        // Got error response (like 488) - phone is online but rejected
+                        LOG_INFO("✓ Phone %s ONLINE (rejected call)", user->user_id);
+                        phones_online++;
                     }
 
                     // Force reset to IDLE after test (for error responses like 488)
@@ -160,6 +172,8 @@ void *uac_bulk_tester_thread(void *arg) {
         LOG_INFO("=== UAC bulk test cycle complete ===");
         LOG_INFO("Total users: %d | DNS resolved: %d | DNS failed: %d | Tests triggered: %d",
                  total_users, dns_resolved, dns_failed, tests_triggered);
+        LOG_INFO("Phones ONLINE: %d | Phones OFFLINE: %d (DNS ok, no SIP response)",
+                 phones_online, phones_offline);
 
         // Wait for next cycle
         LOG_INFO("Next UAC bulk test in %d seconds...", g_uac_test_interval_seconds);
