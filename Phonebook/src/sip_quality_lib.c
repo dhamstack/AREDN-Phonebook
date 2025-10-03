@@ -201,7 +201,7 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
                 const char *phone_ip, int rtp_port, char *call_id_out,
                 char *from_tag_out, char *response, int response_size,
                 int timeout_ms, voip_probe_status_t *status, char *status_reason,
-                long *sip_rtt_ms, const char *local_ip) {
+                long *sip_rtt_ms, const char *local_ip, int local_sip_port) {
     char request[2048];
     long rand_val = time(NULL);
     const char *debug = getenv("SIP_DEBUG");
@@ -212,12 +212,12 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
 
     snprintf(request, sizeof(request),
         "INVITE sip:%s@%s SIP/2.0\r\n"
-        "Via: SIP/2.0/UDP %s:5060;branch=z9hG4bK%ld\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld\r\n"
         "From: <sip:test@%s>;tag=%s\r\n"
         "To: <sip:%s@%s>\r\n"
         "Call-ID: %s\r\n"
         "CSeq: 1 INVITE\r\n"
-        "Contact: <sip:test@%s:5060>\r\n"
+        "Contact: <sip:test@%s:%d>\r\n"
         "Max-Forwards: 70\r\n"
         "Call-Info: <sip:%s>;answer-after=0\r\n"
         "Alert-Info: <sip:%s>;info=alert-autoanswer\r\n"
@@ -236,8 +236,8 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
         "a=ptime:40\r\n"
         "a=maxptime:40\r\n"
         "a=sendrecv\r\n",
-        phone_number, phone_ip, local_ip, rand_val, local_ip, from_tag_out, phone_number, phone_ip,
-        call_id_out, local_ip, local_ip, local_ip,
+        phone_number, phone_ip, local_ip, local_sip_port, rand_val, local_ip, from_tag_out, phone_number, phone_ip,
+        call_id_out, local_ip, local_sip_port, local_ip, local_ip,
         171 + (rtp_port > 9999 ? 10 : rtp_port > 999 ? 8 : 6) + strlen(local_ip) * 3 + 38,
         rand_val, local_ip, local_ip, rtp_port, rtp_port + 1);
 
@@ -334,11 +334,11 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
 // Send ACK
 static void send_ack(int sockfd, struct sockaddr_in *addr, const char *phone_number,
               const char *phone_ip, const char *call_id, const char *from_tag,
-              const char *to_tag, const char *local_ip) {
+              const char *to_tag, const char *local_ip, int local_sip_port) {
     char request[1024];
     snprintf(request, sizeof(request),
         "ACK sip:%s@%s SIP/2.0\r\n"
-        "Via: SIP/2.0/UDP %s:5060;branch=z9hG4bK%ld\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld\r\n"
         "From: <sip:test@%s>;tag=%s\r\n"
         "To: <sip:%s@%s>;tag=%s\r\n"
         "Call-ID: %s\r\n"
@@ -356,11 +356,11 @@ static void send_ack(int sockfd, struct sockaddr_in *addr, const char *phone_num
 // Send BYE
 static void send_bye(int sockfd, struct sockaddr_in *addr, const char *phone_number,
               const char *phone_ip, const char *call_id, const char *from_tag,
-              const char *to_tag, const char *local_ip) {
+              const char *to_tag, const char *local_ip, int local_sip_port) {
     char request[1024];
     snprintf(request, sizeof(request),
         "BYE sip:%s@%s SIP/2.0\r\n"
-        "Via: SIP/2.0/UDP %s:5060;branch=z9hG4bK%ld\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld\r\n"
         "From: <sip:test@%s>;tag=%s\r\n"
         "To: <sip:%s@%s>;tag=%s\r\n"
         "Call-ID: %s\r\n"
@@ -524,14 +524,42 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     struct timeval sr_time;
 
     // Use external SIP socket if provided, otherwise create new one
+    int local_sip_port = 5060;  // Default: try to bind to 5060
     if (external_sip_sock >= 0) {
         sip_sock = external_sip_sock;
         sip_sock_created = 0;
+        // Get actual port from external socket
+        struct sockaddr_in local_addr;
+        socklen_t addr_len = sizeof(local_addr);
+        if (getsockname(external_sip_sock, (struct sockaddr *)&local_addr, &addr_len) == 0) {
+            local_sip_port = ntohs(local_addr.sin_port);
+        }
     } else {
         sip_sock = socket(AF_INET, SOCK_DGRAM, 0);
         if (sip_sock < 0) {
             snprintf(result->status_reason, sizeof(result->status_reason), "SIP socket creation failed");
             return -1;
+        }
+
+        // Bind to port 5060 (or ephemeral if 5060 is busy)
+        struct sockaddr_in bind_addr;
+        memset(&bind_addr, 0, sizeof(bind_addr));
+        bind_addr.sin_family = AF_INET;
+        bind_addr.sin_addr.s_addr = INADDR_ANY;
+        bind_addr.sin_port = htons(5060);
+
+        if (bind(sip_sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
+            // Port 5060 busy, use ephemeral port
+            bind_addr.sin_port = 0;
+            if (bind(sip_sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
+                close(sip_sock);
+                snprintf(result->status_reason, sizeof(result->status_reason), "Failed to bind SIP socket");
+                return -1;
+            }
+            // Get actual ephemeral port assigned
+            socklen_t len = sizeof(bind_addr);
+            getsockname(sip_sock, (struct sockaddr *)&bind_addr, &len);
+            local_sip_port = ntohs(bind_addr.sin_port);
         }
         sip_sock_created = 1;
     }
@@ -617,21 +645,21 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     char options_req[1024];
     snprintf(options_req, sizeof(options_req),
         "OPTIONS sip:%s@%s SIP/2.0\r\n"
-        "Via: SIP/2.0/UDP %s:5060;branch=%s\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=%s\r\n"
         "From: <sip:test@%s>;tag=%ld\r\n"
         "To: <sip:%s@%s>\r\n"
         "Call-ID: %s\r\n"
         "CSeq: 1 OPTIONS\r\n"
-        "Contact: <sip:test@%s:5060>\r\n"
+        "Contact: <sip:test@%s:%d>\r\n"
         "Max-Forwards: 70\r\n"
         "User-Agent: AREDN-Phonebook-Monitor\r\n"
         "Content-Length: 0\r\n\r\n",
         phone_number, phone_ip,
-        local_ip, options_branch,
+        local_ip, local_sip_port, options_branch,
         local_ip, (long)time(NULL) + 200,
         phone_number, phone_ip,
         options_callid,
-        local_ip);
+        local_ip, local_sip_port);
 
     if (is_debug) fprintf(stderr, "[DEBUG] Sending OPTIONS first to verify phone responds...\n");
 
@@ -668,7 +696,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     int invite_result = send_invite(sip_sock, &sip_addr, phone_number, phone_ip, rtp_port,
                                     call_id, from_tag, sip_response, sizeof(sip_response),
                                     config->invite_timeout_ms, &result->status, result->status_reason,
-                                    &sip_rtt_ms, local_ip);
+                                    &sip_rtt_ms, local_ip, local_sip_port);
     if (invite_result < 0) {
         if (is_debug) fprintf(stderr, "[DEBUG] INVITE failed for %s: %s\n",
                               phone_number, result->status_reason);
@@ -697,7 +725,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     }
 
     // Send ACK
-    send_ack(sip_sock, &sip_addr, phone_number, phone_ip, call_id, from_tag, to_tag, local_ip);
+    send_ack(sip_sock, &sip_addr, phone_number, phone_ip, call_id, from_tag, to_tag, local_ip, local_sip_port);
 
     // Setup RTP destination using parsed SDP
     memset(&rtp_addr, 0, sizeof(rtp_addr));
@@ -830,7 +858,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     }
 
     // Send BYE
-    send_bye(sip_sock, &sip_addr, phone_number, phone_ip, call_id, from_tag, to_tag, local_ip);
+    send_bye(sip_sock, &sip_addr, phone_number, phone_ip, call_id, from_tag, to_tag, local_ip, local_sip_port);
 
 cleanup:
     if (sip_sock_created) close(sip_sock);  // Only close if we created it
