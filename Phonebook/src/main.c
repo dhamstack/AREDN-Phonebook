@@ -1,8 +1,8 @@
 // main.c
 
+#include <syslog.h> // Must be included BEFORE common.h to avoid macro conflicts
 #include "common.h" // This now includes most necessary headers and common declarations
 #include "config_loader/config_loader.h" // Include the new config loader header
-#include <syslog.h> // For direct syslog calls in UAC test debugging
 
 // --- Module Headers (for function prototypes not already in common.h) ---
 // It's good practice to include specific module headers for their prototypes,
