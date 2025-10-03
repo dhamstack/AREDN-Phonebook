@@ -55,6 +55,8 @@ jobs:
 
       - name: Inject AREDN-Phonebook package
         run: |
+          # Clean up any existing package directory first
+          rm -rf sdk/package/AREDN-Phonebook
           mkdir -p sdk/package/AREDN-Phonebook
           cp -r Phonebook/* sdk/package/AREDN-Phonebook/
 
