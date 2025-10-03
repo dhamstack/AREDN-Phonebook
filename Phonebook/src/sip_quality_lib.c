@@ -219,14 +219,15 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
         "CSeq: 1 INVITE\r\n"
         "Contact: <sip:test@%s:5060>\r\n"
         "Max-Forwards: 70\r\n"
-        "Call-Info: answer-after=0\r\n"
-        "Alert-Info: info=alert-autoanswer\r\n"
+        "Call-Info: <sip:%s>;answer-after=0\r\n"
+        "Alert-Info: <sip:%s>;info=alert-autoanswer\r\n"
+        "User-Agent: AREDN-Phonebook-Monitor\r\n"
         "Content-Type: application/sdp\r\n"
         "Content-Length: %d\r\n"
         "\r\n"
         "v=0\r\n"
         "o=test %ld 1 IN IP4 %s\r\n"
-        "s=Test Call\r\n"
+        "s=Quality Test\r\n"
         "c=IN IP4 %s\r\n"
         "t=0 0\r\n"
         "m=audio %d RTP/AVP 0\r\n"
@@ -234,8 +235,8 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
         "a=ptime:40\r\n"
         "a=sendrecv\r\n",
         phone_number, phone_ip, local_ip, rand_val, local_ip, from_tag_out, phone_number, phone_ip,
-        call_id_out, local_ip,
-        145 + (rtp_port > 9999 ? 5 : rtp_port > 999 ? 4 : 3) + strlen(local_ip) * 3,
+        call_id_out, local_ip, local_ip, local_ip,
+        145 + (rtp_port > 9999 ? 5 : rtp_port > 999 ? 4 : 3) + strlen(local_ip) * 3 + 38,
         rand_val, local_ip, local_ip, rtp_port);
 
     // Capture time BEFORE sending INVITE
