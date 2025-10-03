@@ -660,10 +660,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     rtp_stats_t rtp_stats;
     memset(&rtp_stats, 0, sizeof(rtp_stats));
 
-    const char *debug = getenv("SIP_DEBUG");
-    int is_debug_rtp = (debug && strcmp(debug, "1") == 0);
-
-    if (is_debug_rtp) {
+    if (is_debug) {
         fprintf(stderr, "[DEBUG] Starting RTP session: phone_rtp=%s:%d, local_rtp=%d\n",
                 phone_media_ip, phone_rtp_port, rtp_port);
     }
@@ -678,7 +675,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     int packets_to_send = config->burst_duration_ms / config->rtp_ptime_ms;
     int sr_at_1s = 1000 / config->rtp_ptime_ms;  // Send SR again at ~1s
 
-    if (is_debug_rtp) {
+    if (is_debug) {
         fprintf(stderr, "[DEBUG] Sending %d RTP packets over %dms (ptime=%dms)...\n",
                 packets_to_send, config->burst_duration_ms, config->rtp_ptime_ms);
     }
@@ -730,7 +727,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     usleep(config->rtcp_wait_ms * 1000);
     drain_rtp_packets(rtp_sock, &rtp_stats);
 
-    if (is_debug_rtp) {
+    if (is_debug) {
         fprintf(stderr, "[DEBUG] RTP session complete for %s: Sent=%u, Received=%u\n",
                 phone_number, result->packets_sent, rtp_stats.packets_received);
     }
@@ -756,7 +753,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
                  "Probe successful with local RTP metrics (%u packets received)",
                  rtp_stats.packets_received);
 
-        if (is_debug_rtp) {
+        if (is_debug) {
             fprintf(stderr, "[DEBUG] ✓ %s: RTT=%ld ms, Jitter=%.2f ms, Loss=%.1f%% (%u/%u)\n",
                     phone_number, sip_rtt_ms, rtp_stats.jitter,
                     result->loss_fraction * 100.0, lost, expected);
@@ -768,7 +765,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
                  "No/insufficient RTP received from phone (%u packets, need 5)",
                  rtp_stats.packets_received);
 
-        if (is_debug_rtp) {
+        if (is_debug) {
             fprintf(stderr, "[DEBUG] ✗ %s: Failed - only %u RTP packets received (need 5)\n",
                     phone_number, rtp_stats.packets_received);
         }
