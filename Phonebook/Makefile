@@ -2,7 +2,11 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=AREDN-Phonebook
 PKG_VERSION:=1.4.5
+ifeq ($(BUILD_SHA),)
 PKG_RELEASE:=1
+else
+PKG_RELEASE:=1-$(BUILD_SHA)
+endif
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 

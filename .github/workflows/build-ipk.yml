@@ -60,15 +60,7 @@ jobs:
           mkdir -p sdk/package/AREDN-Phonebook
           cp -r Phonebook/* sdk/package/AREDN-Phonebook/
 
-          # Update version with build number in Makefile
-          BUILD_NUM="${{ github.run_number }}"
-          GIT_SHA="$(echo ${{ github.sha }} | cut -c1-7)"
-
-          # Replace PKG_RELEASE with build number
-          sed -i "s/^PKG_RELEASE:=1$/PKG_RELEASE:=${BUILD_NUM}.${GIT_SHA}/" sdk/package/AREDN-Phonebook/Makefile
-
-          echo "Updated Makefile with build number:"
-          grep -E "PKG_VERSION|PKG_RELEASE" sdk/package/AREDN-Phonebook/Makefile
+          echo "Package injected, Makefile will use BUILD_SHA from make command"
 
           # Verify Makefile was copied correctly
           echo "Verifying Makefile:"
@@ -111,7 +103,7 @@ jobs:
           make package/AREDN-Phonebook/info V=99 || echo "Package info failed"
 
           echo "Now attempting compilation with full verbosity:"
-          make package/AREDN-Phonebook/compile V=99 -j1 2>&1 | tee build.log
+          BUILD_SHA="${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)" make package/AREDN-Phonebook/compile V=99 -j1 2>&1 | tee build.log
 
           echo ""
           echo "=== Checking compilation result ==="
