@@ -9,8 +9,26 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
+#include <errno.h>
 
 #define MODULE_NAME "QUALITY"
+#define MAX_RESPONSE_QUEUE 10
+#define MAX_RESPONSE_SIZE 4096
+
+// Response queue entry
+typedef struct {
+    char buffer[MAX_RESPONSE_SIZE];
+    int len;
+    int valid;
+} response_queue_entry_t;
+
+// Response queue for SIP messages routed from main server
+static response_queue_entry_t g_response_queue[MAX_RESPONSE_QUEUE];
+static int g_response_queue_read = 0;
+static int g_response_queue_write = 0;
+static pthread_mutex_t g_response_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_response_queue_cond = PTHREAD_COND_INITIALIZER;
 
 // Global state
 static phone_quality_record_t g_quality_records[MAX_QUALITY_RECORDS];
@@ -152,6 +170,79 @@ int quality_monitor_get_all_records(phone_quality_record_t *records, int max_rec
 
     pthread_mutex_unlock(&g_records_mutex);
     return count;
+}
+
+// Handle SIP response routed from main server
+void quality_monitor_handle_response(const char *buffer, int len) {
+    if (!buffer || len <= 0 || len >= MAX_RESPONSE_SIZE) {
+        return;
+    }
+
+    pthread_mutex_lock(&g_response_queue_mutex);
+
+    // Check if queue is full
+    int next_write = (g_response_queue_write + 1) % MAX_RESPONSE_QUEUE;
+    if (next_write == g_response_queue_read) {
+        // Queue full - drop oldest message
+        LOG_WARN("Response queue full, dropping oldest message");
+        g_response_queue_read = (g_response_queue_read + 1) % MAX_RESPONSE_QUEUE;
+    }
+
+    // Enqueue response
+    memcpy(g_response_queue[g_response_queue_write].buffer, buffer, len);
+    g_response_queue[g_response_queue_write].len = len;
+    g_response_queue[g_response_queue_write].valid = 1;
+    g_response_queue_write = next_write;
+
+    // Signal waiting thread
+    pthread_cond_signal(&g_response_queue_cond);
+
+    pthread_mutex_unlock(&g_response_queue_mutex);
+}
+
+// Dequeue SIP response (internal, called by quality monitor library)
+// Returns: number of bytes read, 0 on timeout, -1 on error
+int quality_monitor_dequeue_response(char *buffer, int buffer_size, int timeout_ms) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += timeout_ms / 1000;
+    ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+    if (ts.tv_nsec >= 1000000000) {
+        ts.tv_sec++;
+        ts.tv_nsec -= 1000000000;
+    }
+
+    pthread_mutex_lock(&g_response_queue_mutex);
+
+    // Wait for response or timeout
+    while (g_response_queue_read == g_response_queue_write) {
+        int rc = pthread_cond_timedwait(&g_response_queue_cond,
+                                        &g_response_queue_mutex, &ts);
+        if (rc == ETIMEDOUT) {
+            pthread_mutex_unlock(&g_response_queue_mutex);
+            return 0;  // Timeout
+        }
+        if (rc != 0) {
+            pthread_mutex_unlock(&g_response_queue_mutex);
+            return -1;  // Error
+        }
+    }
+
+    // Dequeue response
+    int len = g_response_queue[g_response_queue_read].len;
+    if (len > buffer_size - 1) {
+        len = buffer_size - 1;
+    }
+
+    memcpy(buffer, g_response_queue[g_response_queue_read].buffer, len);
+    buffer[len] = '\0';
+
+    g_response_queue[g_response_queue_read].valid = 0;
+    g_response_queue_read = (g_response_queue_read + 1) % MAX_RESPONSE_QUEUE;
+
+    pthread_mutex_unlock(&g_response_queue_mutex);
+
+    return len;
 }
 
 // Write quality records to JSON file

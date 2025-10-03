@@ -364,7 +364,16 @@ int main(int argc, char *argv[]) {
         }
         buffer[n] = '\0';
 
-        process_incoming_sip_message(sockfd, buffer, n, &cliaddr, len);
+        // Check if this is a quality monitor response
+        // Quality monitor uses "From: <sip:test@" signature
+        if (strstr(buffer, "From: <sip:test@") != NULL ||
+            strstr(buffer, "f: <sip:test@") != NULL) {
+            // This is a quality monitor response - route to quality monitor
+            quality_monitor_handle_response(buffer, n);
+        } else {
+            // Normal SIP server processing
+            process_incoming_sip_message(sockfd, buffer, n, &cliaddr, len);
+        }
     }
     // This code block will now only be reached if an unrecoverable error in the main loop occurs.
     LOG_WARN("Main SIP message processing loop unexpectedly terminated.");

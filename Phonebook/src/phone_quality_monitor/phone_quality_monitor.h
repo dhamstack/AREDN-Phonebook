@@ -81,4 +81,22 @@ int quality_monitor_get_all_records(phone_quality_record_t *records, int max_rec
  */
 void* quality_monitor_thread(void *arg);
 
+/**
+ * Handle SIP response routed from main server (called by main SIP receive loop)
+ *
+ * @param buffer SIP message buffer
+ * @param len Length of message
+ */
+void quality_monitor_handle_response(const char *buffer, int len);
+
+/**
+ * Dequeue SIP response from response queue (internal, for sip_quality_lib.c)
+ *
+ * @param buffer Output buffer
+ * @param buffer_size Size of output buffer
+ * @param timeout_ms Timeout in milliseconds
+ * @return Number of bytes read, 0 on timeout, -1 on error
+ */
+int quality_monitor_dequeue_response(char *buffer, int buffer_size, int timeout_ms);
+
 #endif /* PHONE_QUALITY_MONITOR_H */

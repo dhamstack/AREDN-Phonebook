@@ -5,6 +5,7 @@
  */
 
 #include "sip_quality_lib.h"
+#include "phone_quality_monitor/phone_quality_monitor.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -17,6 +18,9 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <errno.h>
+
+// Flag to indicate if we should use response queue (set when using shared socket)
+static __thread int use_response_queue = 0;
 
 #define SIP_PORT 5060
 #define RTP_PAYLOAD_TYPE 0  // PCMU
@@ -196,6 +200,33 @@ static int get_local_ip(const char *dest_ip, char *local_ip, int local_ip_size) 
     return 0;
 }
 
+// Wrapper for receiving SIP responses - uses queue when in quality monitor context
+static ssize_t recv_sip_response(int sockfd, char *buffer, size_t buffer_size,
+                                  struct sockaddr_in *from, socklen_t *fromlen,
+                                  int timeout_ms) {
+    if (use_response_queue) {
+        // Use response queue (no need for socket operation)
+        int len = quality_monitor_dequeue_response(buffer, buffer_size, timeout_ms);
+        if (len > 0) {
+            buffer[len] = '\0';
+            return len;
+        } else if (len == 0) {
+            // Timeout
+            errno = EAGAIN;
+            return -1;
+        } else {
+            // Error
+            return -1;
+        }
+    } else {
+        // Use traditional recvfrom
+        struct timeval tv = {timeout_ms / 1000, (timeout_ms % 1000) * 1000};
+        setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        return recvfrom(sockfd, buffer, buffer_size - 1, 0,
+                       (struct sockaddr *)from, fromlen);
+    }
+}
+
 // Send SIP INVITE with auto-answer - NOW CAPTURES SIP RTT
 static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_number,
                 const char *phone_ip, int rtp_port, char *call_id_out,
@@ -266,16 +297,13 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
     // Wait for responses with configured timeout (no 30-second extension)
     struct sockaddr_in from;
     socklen_t fromlen = sizeof(from);
-    struct timeval tv = {timeout_ms / 1000, (timeout_ms % 1000) * 1000};
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     int got_180 = 0;
 
     while (1) {
-        ssize_t len = recvfrom(sockfd, response, response_size - 1, 0,
-                              (struct sockaddr *)&from, &fromlen);
+        ssize_t len = recv_sip_response(sockfd, response, response_size,
+                                        &from, &fromlen, timeout_ms);
         if (len > 0) {
-            response[len] = '\0';
 
             if (is_debug) {
                 fprintf(stderr, "[DEBUG] Received SIP response (%zd bytes) from %s:\n%s\n",
@@ -507,6 +535,9 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     voip_probe_config_t default_config = get_default_config();
     if (!config) config = &default_config;
 
+    // If using external socket, enable response queue mode
+    use_response_queue = (external_sip_sock >= 0) ? 1 : 0;
+
     // Initialize result
     memset(result, 0, sizeof(*result));
     result->status = VOIP_PROBE_SIP_ERROR;
@@ -671,14 +702,11 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     }
 
     // Wait for OPTIONS response
-    struct timeval tv = {config->invite_timeout_ms / 1000, (config->invite_timeout_ms % 1000) * 1000};
-    setsockopt(sip_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
     char opts_resp[4096];
     struct sockaddr_in from;
     socklen_t fromlen = sizeof(from);
-    ssize_t opts_len = recvfrom(sip_sock, opts_resp, sizeof(opts_resp) - 1, 0,
-                                (struct sockaddr *)&from, &fromlen);
+    ssize_t opts_len = recv_sip_response(sip_sock, opts_resp, sizeof(opts_resp),
+                                        &from, &fromlen, config->invite_timeout_ms);
 
     if (opts_len <= 0 || !strstr(opts_resp, "200 OK")) {
         result->status = VOIP_PROBE_SIP_TIMEOUT;
