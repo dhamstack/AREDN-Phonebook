@@ -52,7 +52,8 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/uac/uac_sip_builder.c \
 		$(PKG_BUILD_DIR)/uac/uac_sip_parser.c \
 		$(PKG_BUILD_DIR)/uac/uac_bulk_tester.c \
-		-lpthread
+		$(PKG_BUILD_DIR)/uac/uac_ping.c \
+		-lpthread -lm
 endef
 
 define Package/AREDN-Phonebook/install
