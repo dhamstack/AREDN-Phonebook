@@ -116,11 +116,8 @@ void *uac_bulk_tester_thread(void *arg) {
                 pthread_mutex_lock(&registered_users_mutex);
 
             } else {
-                // DNS failed - node not reachable
+                // DNS failed - node not reachable (don't log to reduce noise)
                 dns_failed++;
-                LOG_DEBUG("[%d/%d] Skipping %s (%s) - DNS not resolved (%s)",
-                          total_users - dns_resolved, total_users,
-                          user->user_id, user->display_name, gai_strerror(gai_status));
             }
         }
 
