@@ -10,37 +10,27 @@
 
 #include <stdint.h>
 
-// VoIP quality probe status codes
 typedef enum {
-    VOIP_PROBE_SUCCESS = 0,   // Call succeeded, metrics valid
-    VOIP_PROBE_BUSY,          // Phone returned 486 Busy
-    VOIP_PROBE_NO_RR,         // RTP sent but no RTCP RR received
-    VOIP_PROBE_SIP_TIMEOUT,   // No SIP response within timeout
-    VOIP_PROBE_SIP_ERROR,     // Other SIP error (404, 603, etc)
-    VOIP_PROBE_NO_ANSWER      // Phone rang but didn't answer
+    VOIP_PROBE_SUCCESS = 0,
+    VOIP_PROBE_BUSY,
+    VOIP_PROBE_SIP_TIMEOUT,
+    VOIP_PROBE_SIP_ERROR
 } voip_probe_status_t;
 
-// Configuration for VoIP quality probe
 typedef struct {
-    int burst_duration_ms;    // RTP burst duration (default: 1200)
-    int rtp_ptime_ms;         // RTP packet interval (default: 40)
-    int rtcp_wait_ms;         // Time to wait for RTCP RR (default: 2000)
-    int invite_timeout_ms;    // SIP INVITE timeout (default: 5000)
+    int timeout_ms;
 } voip_probe_config_t;
 
-// Result from VoIP quality probe
 typedef struct {
     voip_probe_status_t status;
+    long sip_rtt_ms;
+    char status_reason[128];
 
-    // Metrics (only valid if status == VOIP_PROBE_SUCCESS)
-    long media_rtt_ms;        // Media round-trip time from RTCP LSR/DLSR
-    double jitter_ms;         // Interarrival jitter in milliseconds
-    double loss_fraction;     // Packet loss as fraction (0.0 = 0%, 1.0 = 100%)
-    uint32_t packets_lost;    // Cumulative packets lost
-    uint32_t packets_sent;    // Total packets sent during probe
-
-    // Diagnostics
-    char status_reason[128];  // Human-readable status/error description
+    // Legacy fields (unused, kept for compatibility)
+    double jitter_ms;
+    double loss_fraction;
+    uint32_t packets_lost;
+    uint32_t packets_sent;
 } voip_probe_result_t;
 
 /**

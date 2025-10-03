@@ -33,7 +33,7 @@ int quality_monitor_init(int sip_sock, const char *server_ip) {
     g_monitor_context.config.enabled = 1;
     g_monitor_context.config.test_interval_sec = 300;  // 5 minutes
     g_monitor_context.config.cycle_delay_sec = 10;     // 10 seconds between phones
-    g_monitor_context.config.probe_config = get_default_config();
+    g_monitor_context.config.probe_config.timeout_ms = 5000;
 
     LOG_INFO("Quality monitor initialized (socket=%d, server_ip=%s)",
              sip_sock, server_ip ? server_ip : "auto");
@@ -184,7 +184,7 @@ static void write_quality_json(void) {
                 r->phone_ip,
                 (long)r->last_test_time,
                 voip_probe_status_str(r->last_result.status),
-                r->last_result.media_rtt_ms,
+                r->last_result.sip_rtt_ms,
                 r->last_result.status_reason
         );
     }
@@ -284,7 +284,7 @@ void* quality_monitor_thread(void *arg) {
                 LOG_INFO("[%d/%d] ✓ Phone %s: RTT=%ld ms - %s",
                          i+1, test_count,
                          users_to_test[i].phone_number,
-                         result.media_rtt_ms,
+                         result.sip_rtt_ms,
                          result.status_reason);
             } else {
                 fail_count++;
