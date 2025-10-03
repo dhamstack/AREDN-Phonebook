@@ -24,8 +24,8 @@ int quality_monitor_init(int sip_sock, const char *server_ip) {
     memset(&g_monitor_context, 0, sizeof(g_monitor_context));
     memset(g_quality_records, 0, sizeof(g_quality_records));
 
-    // Don't share socket - create our own when needed
-    g_monitor_context.sip_socket = -1;
+    // Store SIP server socket - we need port 5060 for phones to reply
+    g_monitor_context.sip_socket = sip_sock;
     if (server_ip) {
         strncpy(g_monitor_context.server_ip, server_ip, sizeof(g_monitor_context.server_ip) - 1);
     }
@@ -275,9 +275,9 @@ void* quality_monitor_thread(void *arg) {
             LOG_INFO("[%d/%d] Testing phone %s (%s)...", i+1, test_count,
                      users_to_test[i].phone_number, users_to_test[i].phone_ip);
 
-            // Use -1 to create separate socket (don't share with SIP server)
+            // Use SIP server socket (port 5060) - phones expect replies on 5060
             int rc = test_phone_quality_with_socket(
-                -1,
+                ctx->sip_socket,
                 users_to_test[i].phone_number,
                 users_to_test[i].phone_ip,
                 ctx->server_ip,
