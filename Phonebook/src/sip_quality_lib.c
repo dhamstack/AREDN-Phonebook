@@ -231,13 +231,15 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
         "c=IN IP4 %s\r\n"
         "t=0 0\r\n"
         "m=audio %d RTP/AVP 0\r\n"
+        "a=rtcp:%d\r\n"
         "a=rtpmap:0 PCMU/8000\r\n"
         "a=ptime:40\r\n"
+        "a=maxptime:40\r\n"
         "a=sendrecv\r\n",
         phone_number, phone_ip, local_ip, rand_val, local_ip, from_tag_out, phone_number, phone_ip,
         call_id_out, local_ip, local_ip, local_ip,
-        145 + (rtp_port > 9999 ? 5 : rtp_port > 999 ? 4 : 3) + strlen(local_ip) * 3 + 38,
-        rand_val, local_ip, local_ip, rtp_port);
+        171 + (rtp_port > 9999 ? 10 : rtp_port > 999 ? 8 : 6) + strlen(local_ip) * 3 + 38,
+        rand_val, local_ip, local_ip, rtp_port, rtp_port + 1);
 
     // Capture time BEFORE sending INVITE
     struct timeval invite_sent_time;
@@ -603,9 +605,64 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     sip_addr.sin_port = htons(SIP_PORT);
     sip_addr.sin_addr.s_addr = inet_addr(phone_ip);
 
-    // Send INVITE with configured timeout and capture SIP RTT
     if (is_debug) fprintf(stderr, "[DEBUG] Testing phone: %s @ %s (local: %s, RTP port: %d)\n",
                           phone_number, phone_ip, local_ip, rtp_port);
+
+    // Step 1: Send OPTIONS first to check if phone is ready
+    char options_branch[64];
+    snprintf(options_branch, sizeof(options_branch), "z9hG4bK%ld", (long)time(NULL));
+    char options_callid[64];
+    snprintf(options_callid, sizeof(options_callid), "%ld@%s", (long)time(NULL) + 100, local_ip);
+
+    char options_req[1024];
+    snprintf(options_req, sizeof(options_req),
+        "OPTIONS sip:%s@%s SIP/2.0\r\n"
+        "Via: SIP/2.0/UDP %s:5060;branch=%s\r\n"
+        "From: <sip:test@%s>;tag=%ld\r\n"
+        "To: <sip:%s@%s>\r\n"
+        "Call-ID: %s\r\n"
+        "CSeq: 1 OPTIONS\r\n"
+        "Contact: <sip:test@%s:5060>\r\n"
+        "Max-Forwards: 70\r\n"
+        "User-Agent: AREDN-Phonebook-Monitor\r\n"
+        "Content-Length: 0\r\n\r\n",
+        phone_number, phone_ip,
+        local_ip, options_branch,
+        local_ip, (long)time(NULL) + 200,
+        phone_number, phone_ip,
+        options_callid,
+        local_ip);
+
+    if (is_debug) fprintf(stderr, "[DEBUG] Sending OPTIONS first to verify phone responds...\n");
+
+    if (sendto(sip_sock, options_req, strlen(options_req), 0,
+               (struct sockaddr *)&sip_addr, sizeof(sip_addr)) < 0) {
+        result->status = VOIP_PROBE_SIP_ERROR;
+        snprintf(result->status_reason, sizeof(result->status_reason), "Failed to send OPTIONS");
+        goto cleanup;
+    }
+
+    // Wait for OPTIONS response
+    struct timeval tv = {config->invite_timeout_ms / 1000, (config->invite_timeout_ms % 1000) * 1000};
+    setsockopt(sip_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    char opts_resp[4096];
+    struct sockaddr_in from;
+    socklen_t fromlen = sizeof(from);
+    ssize_t opts_len = recvfrom(sip_sock, opts_resp, sizeof(opts_resp) - 1, 0,
+                                (struct sockaddr *)&from, &fromlen);
+
+    if (opts_len <= 0 || !strstr(opts_resp, "200 OK")) {
+        result->status = VOIP_PROBE_SIP_TIMEOUT;
+        snprintf(result->status_reason, sizeof(result->status_reason),
+                 "OPTIONS failed - phone not responding");
+        if (is_debug) fprintf(stderr, "[DEBUG] OPTIONS failed, skipping INVITE\n");
+        goto cleanup;
+    }
+
+    if (is_debug) fprintf(stderr, "[DEBUG] OPTIONS OK, proceeding with INVITE...\n");
+
+    // Step 2: Send INVITE with configured timeout and capture SIP RTT
 
     long sip_rtt_ms = 0;
     int invite_result = send_invite(sip_sock, &sip_addr, phone_number, phone_ip, rtp_port,
