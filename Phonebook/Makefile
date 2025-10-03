@@ -31,7 +31,6 @@ endef
 
 define Build/Compile
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
-		-static \
 		-I$(PKG_BUILD_DIR) \
 		-o $(PKG_BUILD_DIR)/aredn-phonebook \
 		$(PKG_BUILD_DIR)/main.c \
