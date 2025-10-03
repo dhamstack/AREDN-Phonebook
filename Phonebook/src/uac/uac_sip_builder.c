@@ -27,8 +27,9 @@ int uac_build_invite(char *buffer, size_t buffer_size, uac_call_t *call,
         "s=SIP Call\r\n"
         "c=IN IP4 %s\r\n"
         "t=0 0\r\n"
-        "m=audio 8000 RTP/AVP 8\r\n"
+        "m=audio 8000 RTP/AVP 8 0\r\n"
         "a=rtpmap:8 PCMA/8000\r\n"
+        "a=rtpmap:0 PCMU/8000\r\n"
         "a=sendrecv\r\n"
         "a=ptime:20\r\n",
         UAC_PHONE_NUMBER, session_id, session_id, local_ip, local_ip);
