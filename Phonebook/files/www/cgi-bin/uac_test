@@ -48,18 +48,19 @@ if [ -z "$PID" ]; then
 fi
 
 # Send signal to trigger UAC test
-kill -USR2 "$PID"
-
-# Give it a moment to process
-sleep 1
-
-# Check logs for result
-RECENT_LOGS=$(logread | grep -E "UAC_CALL|UAC_RESPONSE" | tail -20)
-
-echo "{"
-echo "  \"status\": \"success\","
-echo "  \"message\": \"UAC test call triggered to $TARGET\","
-echo "  \"pid\": $PID,"
-echo "  \"target\": \"$TARGET\","
-echo "  \"note\": \"Check logs with: logread | grep UAC\""
-echo "}"
+if kill -USR2 "$PID" 2>/dev/null; then
+    echo "{"
+    echo "  \"status\": \"success\","
+    echo "  \"message\": \"UAC test call triggered to $TARGET\","
+    echo "  \"pid\": $PID,"
+    echo "  \"target\": \"$TARGET\","
+    echo "  \"note\": \"Check logs with: logread | grep UAC\""
+    echo "}"
+else
+    echo "{"
+    echo "  \"status\": \"error\","
+    echo "  \"message\": \"Failed to send signal to process $PID\""
+    echo "}"
+    rm -f "$UAC_TARGET_FILE"
+    exit 1
+fi
