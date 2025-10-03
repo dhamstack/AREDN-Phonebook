@@ -391,6 +391,9 @@ void* quality_monitor_thread(void *arg) {
         int success_count = 0;
         int fail_count = 0;
 
+        // Pick a caller number (use first registered user if available, else NULL)
+        const char *caller_number = (test_count > 0) ? users_to_test[0].phone_number : NULL;
+
         for (int i = 0; i < test_count && g_monitor_running; i++) {
             voip_probe_result_t result;
 
@@ -404,7 +407,9 @@ void* quality_monitor_thread(void *arg) {
                 users_to_test[i].phone_ip,
                 ctx->server_ip,
                 &result,
-                &ctx->config.probe_config
+                &ctx->config.probe_config,
+                caller_number,          // From: another registered phone
+                AREDN_MESH_DOMAIN       // Use "local.mesh" domain
             );
 
             // Store result

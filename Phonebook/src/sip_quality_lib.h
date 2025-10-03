@@ -55,12 +55,14 @@ int test_phone_quality(const char *phone_number,
 /**
  * Test phone quality using an existing SIP socket (for server integration)
  *
- * @param sip_sock     Existing SIP socket to use (or -1 to create new)
- * @param phone_number Phone number to test (e.g., "441530")
- * @param phone_ip     Phone IP address (e.g., "10.197.143.20")
- * @param server_ip    Server's IP address to use in SIP headers
- * @param result       Output: probe results
- * @param config       Configuration (use NULL for defaults)
+ * @param sip_sock      Existing SIP socket to use (or -1 to create new)
+ * @param phone_number  Phone number to test (e.g., "441530")
+ * @param phone_ip      Phone IP address (e.g., "10.197.143.20")
+ * @param server_ip     Server's IP address to use in SIP headers
+ * @param result        Output: probe results
+ * @param config        Configuration (use NULL for defaults)
+ * @param caller_number Caller phone number for From header (NULL = "test")
+ * @param domain        SIP domain for URIs (NULL = use IP addresses)
  * @return 0 on success, -1 on error
  */
 int test_phone_quality_with_socket(int sip_sock,
@@ -68,7 +70,9 @@ int test_phone_quality_with_socket(int sip_sock,
                                    const char *phone_ip,
                                    const char *server_ip,
                                    voip_probe_result_t *result,
-                                   const voip_probe_config_t *config);
+                                   const voip_probe_config_t *config,
+                                   const char *caller_number,
+                                   const char *domain);
 
 /**
  * Get default configuration

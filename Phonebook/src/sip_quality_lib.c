@@ -240,7 +240,8 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
                 const char *phone_ip, int rtp_port, char *call_id_out,
                 char *from_tag_out, char *response, int response_size,
                 int timeout_ms, voip_probe_status_t *status, char *status_reason,
-                long *sip_rtt_ms, const char *local_ip, int local_sip_port) {
+                long *sip_rtt_ms, const char *local_ip, int local_sip_port,
+                const char *caller_number, const char *domain) {
     char request[2048];
     long rand_val = time(NULL);
     // Generate unique branch ID (combine time + random for uniqueness)
@@ -251,23 +252,29 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
     snprintf(call_id_out, 64, "%ld@%s", rand_val, local_ip);
     snprintf(from_tag_out, 32, "%ld", rand_val + 1);
 
+    // Use caller_number for From header (if not provided, use "test")
+    const char *from_user = (caller_number && strlen(caller_number) > 0) ? caller_number : "test";
+
+    // Use domain for SIP URIs (if not provided, fallback to IP addresses)
+    const char *sip_domain = (domain && strlen(domain) > 0) ? domain : phone_ip;
+
     snprintf(request, sizeof(request),
         "INVITE sip:%s@%s SIP/2.0\r\n"
         "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld;rport\r\n"
-        "From: <sip:test@%s>;tag=%s\r\n"
+        "From: <sip:%s@%s>;tag=%s\r\n"
         "To: <sip:%s@%s>\r\n"
         "Call-ID: %s\r\n"
         "CSeq: 1 INVITE\r\n"
-        "Contact: <sip:test@%s:%d>\r\n"
+        "Contact: <sip:%s@%s:%d>\r\n"
         "Max-Forwards: 70\r\n"
-        "Call-Info: <sip:%s>;answer-after=0\r\n"
-        "Alert-Info: <sip:%s>;info=alert-autoanswer\r\n"
+        "Call-Info: <sip:%s@%s>;answer-after=0\r\n"
+        "Alert-Info: <sip:%s@%s>;info=alert-autoanswer\r\n"
         "User-Agent: AREDN-Phonebook-Monitor\r\n"
         "Content-Type: application/sdp\r\n"
         "Content-Length: %d\r\n"
         "\r\n"
         "v=0\r\n"
-        "o=test %ld 1 IN IP4 %s\r\n"
+        "o=%s %ld 1 IN IP4 %s\r\n"
         "s=Quality Test\r\n"
         "c=IN IP4 %s\r\n"
         "t=0 0\r\n"
@@ -277,10 +284,10 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
         "a=ptime:40\r\n"
         "a=maxptime:40\r\n"
         "a=sendrecv\r\n",
-        phone_number, phone_ip, local_ip, local_sip_port, branch_id, local_ip, from_tag_out, phone_number, phone_ip,
-        call_id_out, local_ip, local_sip_port, local_ip, local_ip,
-        171 + (rtp_port > 9999 ? 10 : rtp_port > 999 ? 8 : 6) + strlen(local_ip) * 3 + 38,
-        rand_val, local_ip, local_ip, rtp_port, rtp_port + 1);
+        phone_number, sip_domain, local_ip, local_sip_port, branch_id, from_user, sip_domain, from_tag_out, phone_number, sip_domain,
+        call_id_out, from_user, sip_domain, local_sip_port, phone_number, sip_domain, phone_number, sip_domain,
+        171 + (rtp_port > 9999 ? 10 : rtp_port > 999 ? 8 : 6) + strlen(local_ip) * 3 + strlen(from_user) + 38,
+        from_user, rand_val, local_ip, local_ip, rtp_port, rtp_port + 1);
 
     // Capture time BEFORE sending INVITE
     struct timeval invite_sent_time;
@@ -542,7 +549,8 @@ static void drain_rtp_packets(int rtp_sock, rtp_stats_t *stats) {
 // Internal core implementation
 static int test_phone_quality_internal(int external_sip_sock, const char *phone_number,
                                        const char *phone_ip, const char *server_ip,
-                                       voip_probe_result_t *result, const voip_probe_config_t *config) {
+                                       voip_probe_result_t *result, const voip_probe_config_t *config,
+                                       const char *caller_number, const char *domain) {
     // Use defaults if config not provided
     voip_probe_config_t default_config = get_default_config();
     if (!config) config = &default_config;
@@ -737,7 +745,7 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     int invite_result = send_invite(sip_sock, &sip_addr, phone_number, phone_ip, rtp_port,
                                     call_id, from_tag, sip_response, sizeof(sip_response),
                                     config->invite_timeout_ms, &result->status, result->status_reason,
-                                    &sip_rtt_ms, local_ip, local_sip_port);
+                                    &sip_rtt_ms, local_ip, local_sip_port, caller_number, domain);
     if (invite_result < 0) {
         if (is_debug) fprintf(stderr, "[DEBUG] INVITE failed for %s: %s\n",
                               phone_number, result->status_reason);
@@ -911,14 +919,15 @@ cleanup:
 // Public API: Standalone mode (creates own socket)
 int test_phone_quality(const char *phone_number, const char *phone_ip,
                        voip_probe_result_t *result, const voip_probe_config_t *config) {
-    return test_phone_quality_internal(-1, phone_number, phone_ip, NULL, result, config);
+    return test_phone_quality_internal(-1, phone_number, phone_ip, NULL, result, config, NULL, NULL);
 }
 
 // Public API: Integrated mode (uses existing socket and server IP)
 int test_phone_quality_with_socket(int sip_sock, const char *phone_number,
                                    const char *phone_ip, const char *server_ip,
-                                   voip_probe_result_t *result, const voip_probe_config_t *config) {
-    return test_phone_quality_internal(sip_sock, phone_number, phone_ip, server_ip, result, config);
+                                   voip_probe_result_t *result, const voip_probe_config_t *config,
+                                   const char *caller_number, const char *domain) {
+    return test_phone_quality_internal(sip_sock, phone_number, phone_ip, server_ip, result, config, caller_number, domain);
 }
 
 // Get default configuration
