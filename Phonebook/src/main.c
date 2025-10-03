@@ -366,9 +366,20 @@ int main(int argc, char *argv[]) {
 
         // Check if this is a quality monitor response
         // Quality monitor uses "From: <sip:test@" signature
-        if (strstr(buffer, "From: <sip:test@") != NULL ||
-            strstr(buffer, "f: <sip:test@") != NULL) {
-            // This is a quality monitor response - route to quality monitor
+        int is_quality_msg = (strstr(buffer, "From: <sip:test@") != NULL ||
+                              strstr(buffer, "f: <sip:test@") != NULL);
+
+        if (is_quality_msg) {
+            // Extract first line for logging
+            char first_line[128];
+            int line_len = 0;
+            for (int i = 0; i < n && i < 127 && buffer[i] != '\r' && buffer[i] != '\n'; i++) {
+                first_line[i] = buffer[i];
+                line_len = i + 1;
+            }
+            first_line[line_len] = '\0';
+
+            LOG_DEBUG("TRIAGE: Routing to quality monitor: %s", first_line);
             quality_monitor_handle_response(buffer, n);
         } else {
             // Normal SIP server processing

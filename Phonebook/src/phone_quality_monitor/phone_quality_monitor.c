@@ -175,8 +175,18 @@ int quality_monitor_get_all_records(phone_quality_record_t *records, int max_rec
 // Handle SIP response routed from main server
 void quality_monitor_handle_response(const char *buffer, int len) {
     if (!buffer || len <= 0 || len >= MAX_RESPONSE_SIZE) {
+        LOG_DEBUG("Rejected message: buffer=%p, len=%d", buffer, len);
         return;
     }
+
+    // Extract first line for logging
+    char first_line[128];
+    int line_len = 0;
+    for (int i = 0; i < len && i < 127 && buffer[i] != '\r' && buffer[i] != '\n'; i++) {
+        first_line[i] = buffer[i];
+        line_len = i + 1;
+    }
+    first_line[line_len] = '\0';
 
     pthread_mutex_lock(&g_response_queue_mutex);
 
@@ -192,6 +202,10 @@ void quality_monitor_handle_response(const char *buffer, int len) {
     memcpy(g_response_queue[g_response_queue_write].buffer, buffer, len);
     g_response_queue[g_response_queue_write].len = len;
     g_response_queue[g_response_queue_write].valid = 1;
+
+    LOG_DEBUG("Enqueued message [slot %d]: %s (%d bytes)",
+              g_response_queue_write, first_line, len);
+
     g_response_queue_write = next_write;
 
     // Signal waiting thread
@@ -212,6 +226,9 @@ int quality_monitor_dequeue_response(char *buffer, int buffer_size, int timeout_
         ts.tv_nsec -= 1000000000;
     }
 
+    LOG_DEBUG("Dequeue: waiting for response (timeout=%dms, queue empty=%d)",
+              timeout_ms, (g_response_queue_read == g_response_queue_write));
+
     pthread_mutex_lock(&g_response_queue_mutex);
 
     // Wait for response or timeout
@@ -219,10 +236,12 @@ int quality_monitor_dequeue_response(char *buffer, int buffer_size, int timeout_
         int rc = pthread_cond_timedwait(&g_response_queue_cond,
                                         &g_response_queue_mutex, &ts);
         if (rc == ETIMEDOUT) {
+            LOG_DEBUG("Dequeue: timeout waiting for response");
             pthread_mutex_unlock(&g_response_queue_mutex);
             return 0;  // Timeout
         }
         if (rc != 0) {
+            LOG_DEBUG("Dequeue: error waiting for response (rc=%d)", rc);
             pthread_mutex_unlock(&g_response_queue_mutex);
             return -1;  // Error
         }
@@ -236,6 +255,18 @@ int quality_monitor_dequeue_response(char *buffer, int buffer_size, int timeout_
 
     memcpy(buffer, g_response_queue[g_response_queue_read].buffer, len);
     buffer[len] = '\0';
+
+    // Extract first line for logging
+    char first_line[128];
+    int line_len = 0;
+    for (int i = 0; i < len && i < 127 && buffer[i] != '\r' && buffer[i] != '\n'; i++) {
+        first_line[i] = buffer[i];
+        line_len = i + 1;
+    }
+    first_line[line_len] = '\0';
+
+    LOG_DEBUG("Dequeued message [slot %d]: %s (%d bytes)",
+              g_response_queue_read, first_line, len);
 
     g_response_queue[g_response_queue_read].valid = 0;
     g_response_queue_read = (g_response_queue_read + 1) % MAX_RESPONSE_QUEUE;
