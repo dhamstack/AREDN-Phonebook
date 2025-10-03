@@ -379,7 +379,7 @@ int main(int argc, char *argv[]) {
             }
             first_line[line_len] = '\0';
 
-            LOG_DEBUG("TRIAGE: Routing to quality monitor: %s", first_line);
+            LOG_INFO("TRIAGE: Routing to quality monitor: %s", first_line);
             quality_monitor_handle_response(buffer, n);
         } else {
             // Normal SIP server processing

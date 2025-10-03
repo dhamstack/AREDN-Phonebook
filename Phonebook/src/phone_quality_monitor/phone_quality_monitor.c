@@ -203,8 +203,8 @@ void quality_monitor_handle_response(const char *buffer, int len) {
     g_response_queue[g_response_queue_write].len = len;
     g_response_queue[g_response_queue_write].valid = 1;
 
-    LOG_DEBUG("Enqueued message [slot %d]: %s (%d bytes)",
-              g_response_queue_write, first_line, len);
+    LOG_INFO("Enqueued message [slot %d]: %s (%d bytes)",
+             g_response_queue_write, first_line, len);
 
     g_response_queue_write = next_write;
 
@@ -226,8 +226,8 @@ int quality_monitor_dequeue_response(char *buffer, int buffer_size, int timeout_
         ts.tv_nsec -= 1000000000;
     }
 
-    LOG_DEBUG("Dequeue: waiting for response (timeout=%dms, queue empty=%d)",
-              timeout_ms, (g_response_queue_read == g_response_queue_write));
+    LOG_INFO("Dequeue: waiting for response (timeout=%dms, queue empty=%d)",
+             timeout_ms, (g_response_queue_read == g_response_queue_write));
 
     pthread_mutex_lock(&g_response_queue_mutex);
 
@@ -236,12 +236,12 @@ int quality_monitor_dequeue_response(char *buffer, int buffer_size, int timeout_
         int rc = pthread_cond_timedwait(&g_response_queue_cond,
                                         &g_response_queue_mutex, &ts);
         if (rc == ETIMEDOUT) {
-            LOG_DEBUG("Dequeue: timeout waiting for response");
+            LOG_INFO("Dequeue: timeout waiting for response");
             pthread_mutex_unlock(&g_response_queue_mutex);
             return 0;  // Timeout
         }
         if (rc != 0) {
-            LOG_DEBUG("Dequeue: error waiting for response (rc=%d)", rc);
+            LOG_INFO("Dequeue: error waiting for response (rc=%d)", rc);
             pthread_mutex_unlock(&g_response_queue_mutex);
             return -1;  // Error
         }
@@ -265,8 +265,8 @@ int quality_monitor_dequeue_response(char *buffer, int buffer_size, int timeout_
     }
     first_line[line_len] = '\0';
 
-    LOG_DEBUG("Dequeued message [slot %d]: %s (%d bytes)",
-              g_response_queue_read, first_line, len);
+    LOG_INFO("Dequeued message [slot %d]: %s (%d bytes)",
+             g_response_queue_read, first_line, len);
 
     g_response_queue[g_response_queue_read].valid = 0;
     g_response_queue_read = (g_response_queue_read + 1) % MAX_RESPONSE_QUEUE;
