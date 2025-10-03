@@ -380,12 +380,6 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
         return;
     }
 
-    // Always log incoming SIP messages for debugging
-    LOG_INFO("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    LOG_INFO("📥 RECEIVED from %s:%d (%zd bytes)",
-             sockaddr_to_ip_str(cliaddr), ntohs(cliaddr->sin_port), n);
-    LOG_INFO("   %s", first_line);
-
     char via_hdr[MAX_CONTACT_URI_LEN]     = "";
     char from_hdr[MAX_CONTACT_URI_LEN]    = "";
     char to_hdr[MAX_CONTACT_URI_LEN]      = "";
@@ -400,22 +394,17 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
     extract_sip_header(buffer, "CSeq:", cseq_hdr, sizeof(cseq_hdr));
     extract_sip_header(buffer, "Contact:", contact_hdr, sizeof(contact_hdr));
 
-    LOG_INFO("   From: %s", from_hdr);
-    LOG_INFO("   To: %s", to_hdr);
-    LOG_INFO("   Call-ID: %s", call_id_hdr);
-
 
     if (strncmp(first_line, "SIP/2.0", 7) == 0) {
-        LOG_INFO("📨 SIP Response: %s", first_line);
+        LOG_INFO("Received SIP Response: %s", first_line);
 
                     CallSession *session = find_call_session_by_callid(call_id_hdr);
                     if (session) {
-                        LOG_INFO("   🔍 Found matching session");
-                        LOG_INFO("   📤 Proxying response to caller: %s:%d",
-                                 sockaddr_to_ip_str(&session->original_caller_addr),
-                                 ntohs(session->original_caller_addr.sin_port));
+                        LOG_DEBUG("Matching session found for response: %s", session->call_id);
                         send_sip_message(sockfd, &session->original_caller_addr, sizeof(session->original_caller_addr), buffer);
-                        LOG_INFO("   ✅ Response forwarded");
+                        LOG_DEBUG("Proxied response for Call-ID %s to original caller (%s:%d).",
+                                    session->call_id, sockaddr_to_ip_str(&session->original_caller_addr),
+                                    ntohs(session->original_caller_addr.sin_port));
             if (strstr(first_line, "200 OK") && strstr(cseq_hdr, "INVITE")) {
                 session->state = CALL_STATE_ESTABLISHED;
                 LOG_INFO("Call-ID %s state changed to ESTABLISHED.", session->call_id);
@@ -503,7 +492,7 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                         ntohs(cliaddr->sin_port), expires);
 
         } else if (strcmp(method, "INVITE") == 0) {
-            LOG_INFO("🔔 INVITE: %s → %s", from_user_id, to_user_id);
+            LOG_INFO("Received INVITE for %s from %s.", to_user_id, from_user_id);
             RegisteredUser *callee = find_registered_user(to_user_id);
             if (callee) {
                 // For simplified model, callee's IP/port are always derived via DNS + SIP_PORT
@@ -514,8 +503,6 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                 char hostname_to_resolve[MAX_USER_ID_LEN + sizeof(AREDN_MESH_DOMAIN) + 1];
                 snprintf(hostname_to_resolve, sizeof(hostname_to_resolve), "%s.%s", to_user_id, AREDN_MESH_DOMAIN);
 
-                LOG_INFO("   🔍 Resolving DNS: %s", hostname_to_resolve);
-
                 struct addrinfo hints, *res;
                 int status;
                 bool resolved = false;
@@ -525,20 +512,20 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                 hints.ai_socktype = SOCK_DGRAM; // Or SOCK_STREAM depending on proxy type
 
                 if ((status = getaddrinfo(hostname_to_resolve, NULL, &hints, &res)) != 0) {
-                    LOG_ERROR("   ❌ DNS failed: %s", gai_strerror(status));
+                    LOG_ERROR("DNS resolution failed for %s: %s", hostname_to_resolve, gai_strerror(status));
                 } else {
                     struct sockaddr_in *ipv4 = (struct sockaddr_in *)res->ai_addr;
                     if (inet_pton(AF_INET, sockaddr_to_ip_str(ipv4), &resolved_callee_addr.sin_addr) > 0) {
                         resolved = true;
-                        LOG_INFO("   ✅ Resolved to: %s", sockaddr_to_ip_str(&resolved_callee_addr));
+                        LOG_DEBUG("Successfully resolved '%s' to IP %s", to_user_id, sockaddr_to_ip_str(&resolved_callee_addr));
                     } else {
-                        LOG_ERROR("   ❌ inet_pton failed");
+                        LOG_ERROR("inet_pton failed for resolved address");
                     }
                     freeaddrinfo(res);
                 }
 
                 if (!resolved) {
-                    LOG_ERROR("   📤 Sending 404 Not Found");
+                    LOG_ERROR("Sending 404 Not Found - DNS resolution failed for %s", to_user_id);
                     send_response_to_registered(sockfd, from_user_id, cliaddr, cli_len,
                                                 "SIP/2.0 404 Not Found", call_id_hdr, cseq_hdr,
                                                 from_hdr, to_hdr, via_hdr, NULL, NULL, NULL);
@@ -546,7 +533,6 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                 }
                 resolved_callee_addr.sin_port = htons(SIP_PORT); // Always use SIP_PORT
 
-                LOG_INFO("   📞 Creating call session");
                 CallSession *session = create_call_session();
                 if (!session) {
                     LOG_ERROR("Failed to create call session - sending 503");
@@ -583,15 +569,11 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                 snprintf(new_request_line_uri, sizeof(new_request_line_uri),
                          "sip:%s@%s:%d", to_user_id, sockaddr_to_ip_str(&resolved_callee_addr), SIP_PORT); // Construct URI from resolved data
 
-                LOG_INFO("   📨 Forwarding INVITE to %s:%d",
-                         sockaddr_to_ip_str(&session->callee_addr), ntohs(session->callee_addr.sin_port));
-                LOG_INFO("   📋 Request-URI: %s", new_request_line_uri);
-
                 char proxied_invite[MAX_SIP_MSG_LEN];
                 reconstruct_invite_message(buffer, new_request_line_uri, proxied_invite, sizeof(proxied_invite));
 
                 send_sip_message(sockfd, &session->callee_addr, sizeof(session->callee_addr), proxied_invite);
-                LOG_INFO("   ✅ INVITE sent to callee");
+                LOG_DEBUG("INVITE forwarded to %s:%d", sockaddr_to_ip_str(&session->callee_addr), ntohs(session->callee_addr.sin_port));
 
             } else {
                 LOG_WARN("Callee %s not found in registered users - sending 404", to_user_id);
