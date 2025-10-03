@@ -7,12 +7,12 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <time.h>
 #include <stdio.h>
 #include <errno.h>
+#include <poll.h>
 
 #define SIP_PORT 5060
 
@@ -92,20 +92,29 @@ static int send_options(int sock, struct sockaddr_in *addr, const char *phone_nu
 }
 
 static int wait_for_response(int sock, const char *branch, int timeout_ms, int *resp_code) {
-    struct timeval tv = {timeout_ms / 1000, (timeout_ms % 1000) * 1000};
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
     int is_debug = getenv("SIP_DEBUG") && strcmp(getenv("SIP_DEBUG"), "1") == 0;
     char buf[4096];
     struct sockaddr_in from;
     socklen_t len = sizeof(from);
+    double deadline = now_monotonic() + timeout_ms / 1000.0;
 
     while (1) {
-        ssize_t n = recvfrom(sock, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&from, &len);
-        if (n <= 0) {
+        double remaining = deadline - now_monotonic();
+        if (remaining <= 0) {
             if (is_debug) fprintf(stderr, "[DEBUG] Timeout\n");
             return 0;
         }
+
+        struct pollfd pfd = {.fd = sock, .events = POLLIN};
+        int rc = poll(&pfd, 1, (int)(remaining * 1000));
+
+        if (rc <= 0) {
+            if (is_debug) fprintf(stderr, "[DEBUG] Timeout\n");
+            return 0;
+        }
+
+        ssize_t n = recvfrom(sock, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&from, &len);
+        if (n <= 0) continue;
 
         buf[n] = '\0';
         if (is_debug) fprintf(stderr, "[DEBUG] Response:\n%s\n", buf);
