@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/ip_icmp.h>
 #include <arpa/inet.h>
 #include <time.h>
 #include <stdio.h>
@@ -20,6 +21,84 @@ static double now_monotonic(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+// Calculate ICMP checksum
+static uint16_t icmp_checksum(uint16_t *buf, int len) {
+    uint32_t sum = 0;
+    while (len > 1) {
+        sum += *buf++;
+        len -= 2;
+    }
+    if (len == 1) {
+        sum += *(uint8_t *)buf;
+    }
+    sum = (sum >> 16) + (sum & 0xFFFF);
+    sum += (sum >> 16);
+    return ~sum;
+}
+
+// Send ICMP ping and measure RTT
+static long ping_host(const char *ip, int timeout_ms) {
+    int sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (sock < 0) {
+        // Not running as root, can't send raw ICMP
+        return -1;
+    }
+
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_addr.s_addr = inet_addr(ip)
+    };
+
+    // Build ICMP echo request
+    struct {
+        struct icmp hdr;
+        char data[32];
+    } packet;
+
+    memset(&packet, 0, sizeof(packet));
+    packet.hdr.icmp_type = ICMP_ECHO;
+    packet.hdr.icmp_code = 0;
+    packet.hdr.icmp_id = getpid();
+    packet.hdr.icmp_seq = 1;
+    packet.hdr.icmp_cksum = icmp_checksum((uint16_t *)&packet, sizeof(packet));
+
+    double t0 = now_monotonic();
+
+    if (sendto(sock, &packet, sizeof(packet), 0, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(sock);
+        return -1;
+    }
+
+    // Wait for reply
+    struct pollfd pfd = {.fd = sock, .events = POLLIN};
+    if (poll(&pfd, 1, timeout_ms) <= 0) {
+        close(sock);
+        return -1;
+    }
+
+    char buf[1024];
+    struct sockaddr_in from;
+    socklen_t len = sizeof(from);
+    ssize_t n = recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr *)&from, &len);
+
+    double rtt_ms = (now_monotonic() - t0) * 1000.0;
+    close(sock);
+
+    if (n < 0) return -1;
+
+    // Verify it's an echo reply from the right host
+    struct ip *ip_hdr = (struct ip *)buf;
+    struct icmp *icmp_hdr = (struct icmp *)(buf + (ip_hdr->ip_hl << 2));
+
+    if (icmp_hdr->icmp_type == ICMP_ECHOREPLY &&
+        icmp_hdr->icmp_id == getpid() &&
+        from.sin_addr.s_addr == addr.sin_addr.s_addr) {
+        return (long)rtt_ms;
+    }
+
+    return -1;
 }
 
 static int get_local_ip(const char *dest_ip, char *local_ip, int size) {

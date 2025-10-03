@@ -179,13 +179,15 @@ static void write_quality_json(void) {
                 "\"ip\":\"%s\","
                 "\"last_test\":%ld,"
                 "\"status\":\"%s\","
-                "\"rtt_ms\":%ld,"
+                "\"sip_rtt_ms\":%ld,"
+                "\"icmp_rtt_ms\":%ld,"
                 "\"reason\":\"%s\"}",
                 r->phone_number,
                 r->phone_ip,
                 (long)r->last_test_time,
                 voip_probe_status_str(r->last_result.status),
                 r->last_result.sip_rtt_ms,
+                r->last_result.icmp_rtt_ms,
                 r->last_result.status_reason
         );
     }
@@ -283,11 +285,20 @@ void* quality_monitor_thread(void *arg) {
 
             if (result.status == VOIP_PROBE_SUCCESS) {
                 success_count++;
-                LOG_INFO("[%d/%d] ✓ Phone %s: RTT=%ld ms - %s",
-                         i+1, test_count,
-                         users_to_test[i].phone_number,
-                         result.sip_rtt_ms,
-                         result.status_reason);
+                if (result.icmp_rtt_ms >= 0) {
+                    LOG_INFO("[%d/%d] ✓ Phone %s: SIP RTT=%ld ms, ICMP RTT=%ld ms - %s",
+                             i+1, test_count,
+                             users_to_test[i].phone_number,
+                             result.sip_rtt_ms,
+                             result.icmp_rtt_ms,
+                             result.status_reason);
+                } else {
+                    LOG_INFO("[%d/%d] ✓ Phone %s: RTT=%ld ms - %s",
+                             i+1, test_count,
+                             users_to_test[i].phone_number,
+                             result.sip_rtt_ms,
+                             result.status_reason);
+                }
             } else {
                 fail_count++;
                 LOG_WARN("[%d/%d] ✗ Phone %s: %s - %s",

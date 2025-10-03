@@ -24,6 +24,7 @@ typedef struct {
 typedef struct {
     voip_probe_status_t status;
     long sip_rtt_ms;
+    long icmp_rtt_ms;  // ICMP ping RTT for comparison
     char status_reason[128];
 
     // Legacy fields (unused, kept for compatibility)
