@@ -332,9 +332,12 @@ int main(int argc, char *argv[]) {
         retval = select(max_fd + 1, &readfds, NULL, NULL, &tv);
 
         if (retval < 0) {
-            // if (errno == EINTR) continue; // REMOVED
-            LOG_ERROR("select() error.");
-            break; // Exit on select error
+            if (errno == EINTR) {
+                syslog(7, "[MAIN_LOOP] select() interrupted by signal (EINTR), continuing...");
+                continue; // Signal interrupted select, continue loop
+            }
+            LOG_ERROR("select() error: %s", strerror(errno));
+            break; // Exit on real select error
         } else if (retval == 0) {
             // Timeout - check for UAC test request
             syslog(7, "[MAIN_LOOP] Select timeout (uac_test_requested=%d, have_server_ip=%d)", uac_test_requested, have_server_ip);
