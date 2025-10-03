@@ -148,13 +148,17 @@ jobs:
             exit 1
           fi
 
-          # Rename IPK file to include architecture
-          ARCH_IPK="AREDN-Phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}.ipk"
+          # Create unique build number from git commit and run number
+          BUILD_NUM="${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)"
+
+          # Rename IPK file to include architecture and build number
+          ARCH_IPK="AREDN-Phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}-${BUILD_NUM}.ipk"
           cp "$IPK_FILE" "$ARCH_IPK"
 
           echo "ipk_path=$ARCH_IPK" >> $GITHUB_OUTPUT
           echo "Original IPK: $IPK_FILE"
           echo "Renamed to: $ARCH_IPK"
+          echo "Build number: ${BUILD_NUM}"
           ls -la "$ARCH_IPK"
 
       # Upload IPK as artifact for development builds
