@@ -42,12 +42,15 @@ RegisteredUser* find_registered_user(const char *user_id) {
     return NULL;
 }
 
-// Simplified add_or_update_registered_user
+// Add or update registered user
 RegisteredUser* add_or_update_registered_user(const char *user_id,
                                           const char *display_name,
-                                          int expires) {
-    LOG_DEBUG("add_or_update_registered_user called for user '%s' (Display: '%s'), expires %d.",
-                user_id, display_name, expires);
+                                          int expires,
+                                          const char *contact_uri,
+                                          const char *ip_address,
+                                          int port) {
+    LOG_DEBUG("add_or_update_registered_user called for user '%s' (Display: '%s'), expires %d, contact '%s'.",
+                user_id, display_name, expires, contact_uri ? contact_uri : "NULL");
 
     pthread_mutex_lock(&registered_users_mutex);
 
@@ -67,8 +70,19 @@ RegisteredUser* add_or_update_registered_user(const char *user_id,
             // user->user_id is already MAX_PHONE_NUMBER_LEN, assumed to be same as user_id from REGISTER
             // strncpy(user->user_id, user_id, MAX_PHONE_NUMBER_LEN - 1); // Not needed here, user_id is the key
             user->user_id[MAX_PHONE_NUMBER_LEN - 1] = '\0'; // Ensure null-termination if user_id was updated
-            // No longer storing contact_uri, ip_address, port, registration_time here
-            
+
+            // Store contact information from REGISTER
+            if (contact_uri) {
+                strncpy(user->contact_uri, contact_uri, MAX_CONTACT_URI_LEN - 1);
+                user->contact_uri[MAX_CONTACT_URI_LEN - 1] = '\0';
+            }
+            if (ip_address) {
+                strncpy(user->ip_address, ip_address, MAX_IP_ADDR_LEN - 1);
+                user->ip_address[MAX_IP_ADDR_LEN - 1] = '\0';
+            }
+            user->port = port;
+            user->registration_time = time(NULL);
+
             if (strlen(display_name) > 0 && strcmp(user->display_name, display_name) != 0) {
                 strncpy(user->display_name, display_name, MAX_DISPLAY_NAME_LEN - 1);
                 user->display_name[MAX_DISPLAY_NAME_LEN - 1] = '\0';
@@ -116,6 +130,23 @@ RegisteredUser* add_or_update_registered_user(const char *user_id,
                         newu->display_name[MAX_DISPLAY_NAME_LEN - 1] = '\0';
                         newu->is_active = true;
                         newu->is_known_from_directory = false; // This is a new dynamic registration
+
+                        // Store contact information
+                        if (contact_uri) {
+                            strncpy(newu->contact_uri, contact_uri, MAX_CONTACT_URI_LEN - 1);
+                            newu->contact_uri[MAX_CONTACT_URI_LEN - 1] = '\0';
+                        } else {
+                            newu->contact_uri[0] = '\0';
+                        }
+                        if (ip_address) {
+                            strncpy(newu->ip_address, ip_address, MAX_IP_ADDR_LEN - 1);
+                            newu->ip_address[MAX_IP_ADDR_LEN - 1] = '\0';
+                        } else {
+                            newu->ip_address[0] = '\0';
+                        }
+                        newu->port = port;
+                        newu->registration_time = time(NULL);
+
                         num_registered_users++;
                         LOG_INFO("New dynamic registration for user '%s' (%s). Total active dynamic: %d.", user_id, display_name, num_registered_users);
                         pthread_mutex_unlock(&registered_users_mutex);
@@ -182,6 +213,11 @@ RegisteredUser* add_csv_user_to_registered_users_table(const char *user_id_numer
 
                 u->is_active = true; // Directory users are considered active by default
                 u->is_known_from_directory = true;
+                // Initialize Contact fields (will be filled when user REGISTERs)
+                u->contact_uri[0] = '\0';
+                u->ip_address[0] = '\0';
+                u->port = -1;
+                u->registration_time = 0;
                 num_directory_entries++;
                 // Changed log level from INFO to DEBUG and removed total count
                 LOG_DEBUG("Added new CSV/directory user '%s' (%s).", user_id_numeric, display_name);

@@ -100,13 +100,17 @@ typedef enum {
     CALL_STATE_TERMINATING
 } CallState;
 
-// Registered User Structure (SIMPLIFIED)
+// Registered User Structure
 typedef struct {
     char user_id[MAX_PHONE_NUMBER_LEN]; // User ID from phonebook/REGISTER
     char display_name[MAX_DISPLAY_NAME_LEN];
     bool is_active;                     // Active = user is registered / known, has valid DNS entry
     bool is_known_from_directory;       // Did this entry originate from the CSV directory?
-    // Removed: contact_uri, ip_address, port, registration_time
+    // Contact information from REGISTER (for routing quality tests)
+    char contact_uri[MAX_CONTACT_URI_LEN];  // Full Contact URI from REGISTER
+    char ip_address[MAX_IP_ADDR_LEN];       // Extracted IP from Contact
+    int port;                                // Extracted port from Contact (-1 if not specified)
+    time_t registration_time;                // When the user last registered
 } RegisteredUser;
 
 // Call Session Structure
@@ -202,9 +206,10 @@ int file_utils_publish_file_to_destination(const char *source_path, const char *
 void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                                   const struct sockaddr_in *cliaddr, socklen_t cli_len);
 
-// User Manager (Prototypes adjusted for simplified struct)
+// User Manager
 RegisteredUser* find_registered_user(const char *user_id);
-RegisteredUser* add_or_update_registered_user(const char *user_id, const char *display_name, int expires); // Simplified parameters
+RegisteredUser* add_or_update_registered_user(const char *user_id, const char *display_name, int expires,
+                                              const char *contact_uri, const char *ip_address, int port);
 RegisteredUser* add_csv_user_to_registered_users_table(const char *user_id_numeric, const char *display_name);
 void init_registered_users_table();
 void populate_registered_users_from_csv(const char *filepath);

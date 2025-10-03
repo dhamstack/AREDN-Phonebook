@@ -466,8 +466,18 @@ void process_incoming_sip_message(int sockfd, const char *buffer, ssize_t n,
                 display_name[sizeof(display_name)-1] = '\0';
             }
 
-            // Call simplified add_or_update_registered_user
-            add_or_update_registered_user(from_user_id, display_name, expires);
+            // Extract IP and port from Contact header
+            char contact_ip[MAX_IP_ADDR_LEN] = "";
+            int contact_port = -1;
+            if (contact_hdr && *contact_hdr) {
+                extract_ip_from_uri(contact_hdr, contact_ip, sizeof(contact_ip));
+                contact_port = extract_port_from_uri(contact_hdr);
+                if (contact_port == -1) contact_port = SIP_PORT; // Default to 5060
+            }
+
+            // Call add_or_update_registered_user with Contact info
+            add_or_update_registered_user(from_user_id, display_name, expires,
+                                         contact_hdr, contact_ip, contact_port);
 
             send_response_to_registered(sockfd,
                                         from_user_id,

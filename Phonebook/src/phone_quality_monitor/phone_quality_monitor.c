@@ -397,19 +397,28 @@ void* quality_monitor_thread(void *arg) {
         for (int i = 0; i < test_count && g_monitor_running; i++) {
             voip_probe_result_t result;
 
-            LOG_INFO("[%d/%d] Testing phone %s (%s)...", i+1, test_count,
-                     users_to_test[i].phone_number, users_to_test[i].phone_ip);
+            // Look up registered user to get their Contact info
+            RegisteredUser *user = find_registered_user(users_to_test[i].phone_number);
+            if (!user || user->ip_address[0] == '\0') {
+                LOG_WARN("[%d/%d] Skipping %s - no registered Contact found",
+                         i+1, test_count, users_to_test[i].phone_number);
+                continue;
+            }
+
+            LOG_INFO("[%d/%d] Testing phone %s (Contact: %s:%d)...", i+1, test_count,
+                     users_to_test[i].phone_number, user->ip_address, user->port);
 
             // Use SIP server socket (port 5060) - phones expect replies on 5060
+            // Route to registered Contact (not DNS-resolved IP)
             int rc = test_phone_quality_with_socket(
                 ctx->sip_socket,
                 users_to_test[i].phone_number,
-                users_to_test[i].phone_ip,
+                user->ip_address,        // Use Contact IP from REGISTER
                 ctx->server_ip,
                 &result,
                 &ctx->config.probe_config,
-                caller_number,          // From: another registered phone
-                AREDN_MESH_DOMAIN       // Use "local.mesh" domain
+                caller_number,            // From: another registered phone
+                AREDN_MESH_DOMAIN         // Use "local.mesh" domain
             );
 
             // Store result
