@@ -243,6 +243,8 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
                 long *sip_rtt_ms, const char *local_ip, int local_sip_port) {
     char request[2048];
     long rand_val = time(NULL);
+    // Generate unique branch ID (combine time + random for uniqueness)
+    long branch_id = rand_val + (rand() % 10000);
     const char *debug = getenv("SIP_DEBUG");
     int is_debug = (debug && strcmp(debug, "1") == 0);
 
@@ -251,7 +253,7 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
 
     snprintf(request, sizeof(request),
         "INVITE sip:%s@%s SIP/2.0\r\n"
-        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld;rport\r\n"
         "From: <sip:test@%s>;tag=%s\r\n"
         "To: <sip:%s@%s>\r\n"
         "Call-ID: %s\r\n"
@@ -275,7 +277,7 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
         "a=ptime:40\r\n"
         "a=maxptime:40\r\n"
         "a=sendrecv\r\n",
-        phone_number, phone_ip, local_ip, local_sip_port, rand_val, local_ip, from_tag_out, phone_number, phone_ip,
+        phone_number, phone_ip, local_ip, local_sip_port, branch_id, local_ip, from_tag_out, phone_number, phone_ip,
         call_id_out, local_ip, local_sip_port, local_ip, local_ip,
         171 + (rtp_port > 9999 ? 10 : rtp_port > 999 ? 8 : 6) + strlen(local_ip) * 3 + 38,
         rand_val, local_ip, local_ip, rtp_port, rtp_port + 1);
@@ -372,9 +374,10 @@ static void send_ack(int sockfd, struct sockaddr_in *addr, const char *phone_num
               const char *phone_ip, const char *call_id, const char *from_tag,
               const char *to_tag, const char *local_ip, int local_sip_port) {
     char request[1024];
+    long branch_id = time(NULL) + (rand() % 10000);
     snprintf(request, sizeof(request),
         "ACK sip:%s@%s SIP/2.0\r\n"
-        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld;rport\r\n"
         "From: <sip:test@%s>;tag=%s\r\n"
         "To: <sip:%s@%s>;tag=%s\r\n"
         "Call-ID: %s\r\n"
@@ -382,7 +385,7 @@ static void send_ack(int sockfd, struct sockaddr_in *addr, const char *phone_num
         "Max-Forwards: 70\r\n"
         "Content-Length: 0\r\n"
         "\r\n",
-        phone_number, phone_ip, local_ip, (long)time(NULL),
+        phone_number, phone_ip, local_ip, local_sip_port, branch_id,
         local_ip, from_tag, phone_number, phone_ip, to_tag, call_id);
 
     sendto(sockfd, request, strlen(request), 0,
@@ -394,9 +397,10 @@ static void send_bye(int sockfd, struct sockaddr_in *addr, const char *phone_num
               const char *phone_ip, const char *call_id, const char *from_tag,
               const char *to_tag, const char *local_ip, int local_sip_port) {
     char request[1024];
+    long branch_id = time(NULL) + (rand() % 10000);
     snprintf(request, sizeof(request),
         "BYE sip:%s@%s SIP/2.0\r\n"
-        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld;rport\r\n"
         "From: <sip:test@%s>;tag=%s\r\n"
         "To: <sip:%s@%s>;tag=%s\r\n"
         "Call-ID: %s\r\n"
@@ -404,7 +408,7 @@ static void send_bye(int sockfd, struct sockaddr_in *addr, const char *phone_num
         "Max-Forwards: 70\r\n"
         "Content-Length: 0\r\n"
         "\r\n",
-        phone_number, phone_ip, local_ip, (long)time(NULL),
+        phone_number, phone_ip, local_ip, local_sip_port, branch_id,
         local_ip, from_tag, phone_number, phone_ip, to_tag, call_id);
 
     sendto(sockfd, request, strlen(request), 0,
@@ -677,14 +681,15 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
 
     // Step 1: Send OPTIONS first to check if phone is ready
     char options_branch[64];
-    snprintf(options_branch, sizeof(options_branch), "z9hG4bK%ld", (long)time(NULL));
+    long options_branch_id = (long)time(NULL) + (rand() % 10000);
+    snprintf(options_branch, sizeof(options_branch), "z9hG4bK%ld", options_branch_id);
     char options_callid[64];
     snprintf(options_callid, sizeof(options_callid), "%ld@%s", (long)time(NULL) + 100, local_ip);
 
     char options_req[1024];
     snprintf(options_req, sizeof(options_req),
         "OPTIONS sip:%s@%s SIP/2.0\r\n"
-        "Via: SIP/2.0/UDP %s:%d;branch=%s\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=%s;rport\r\n"
         "From: <sip:test@%s>;tag=%ld\r\n"
         "To: <sip:%s@%s>\r\n"
         "Call-ID: %s\r\n"
