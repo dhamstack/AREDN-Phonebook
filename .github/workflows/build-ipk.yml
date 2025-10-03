@@ -103,11 +103,13 @@ jobs:
 
           echo ""
           echo "=== Checking compilation result ==="
-          if [ -f build_dir/target-*/AREDN-Phonebook-*/AREDN-Phonebook ]; then
-            echo "✓ Binary compiled successfully!"
-            ls -lh build_dir/target-*/AREDN-Phonebook-*/AREDN-Phonebook
+          # Check if IPK was created (most reliable indicator of success)
+          IPK_CHECK=$(find sdk/bin/packages -name "*AREDN-Phonebook*.ipk" -type f | head -n 1)
+          if [ -n "$IPK_CHECK" ]; then
+            echo "✓ Build succeeded! IPK file created:"
+            ls -lh "$IPK_CHECK"
           else
-            echo "✗ Binary not found - compilation likely failed"
+            echo "✗ Build failed - no IPK file created"
             echo ""
             echo "=== Full build log ==="
             cat build.log
