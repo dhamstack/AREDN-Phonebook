@@ -326,6 +326,8 @@ int main(int argc, char *argv[]) {
     syslog(6, "[MAIN_LOOP] Server listening on UDP port %d", SIP_PORT);
     syslog(6, "[MAIN_LOOP] Entering main loop (have_server_ip=%d, UAC port 5070)", have_server_ip);
 
+    int timeout_count = 0; // Counter for select timeout logging
+
     while (1) { // Changed from while(keep_running) to while(1)
         len = sizeof(cliaddr);
         FD_ZERO(&readfds);
@@ -352,7 +354,11 @@ int main(int argc, char *argv[]) {
             break; // Exit on real select error
         } else if (retval == 0) {
             // Timeout - check for UAC test request
-            syslog(7, "[MAIN_LOOP] Select timeout (uac_test_requested=%d, have_server_ip=%d)", uac_test_requested, have_server_ip);
+            timeout_count++;
+            if (timeout_count % 100 == 0) {
+                syslog(7, "[MAIN_LOOP] Select timeout #%d (uac_test_requested=%d, have_server_ip=%d)",
+                       timeout_count, uac_test_requested, have_server_ip);
+            }
 
             if (uac_test_requested && have_server_ip) {
                 uac_test_requested = 0; // Reset flag
