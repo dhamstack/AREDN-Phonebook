@@ -169,7 +169,7 @@ jobs:
       - name: Upload IPK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AREDN-Phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}
+          name: AREDN-Phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}-${{ github.run_number }}-${{ github.sha }}
           path: ${{ steps.find_ipk.outputs.ipk_path }}
           retention-days: 30
 
