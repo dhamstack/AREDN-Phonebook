@@ -33,8 +33,8 @@ int quality_monitor_init(int sip_sock, const char *server_ip) {
     // Set default configuration
     g_monitor_context.config.enabled = 1;
     g_monitor_context.config.test_interval_sec = 300;  // 5 minutes
-    g_monitor_context.config.cycle_delay_sec = 0;      // No delay - OPTIONS is lightweight
-    g_monitor_context.config.probe_config.timeout_ms = 3000;  // 3 second timeout
+    g_monitor_context.config.cycle_delay_sec = 1;      // 1 second delay between tests
+    g_monitor_context.config.probe_config = get_default_config();
 
     LOG_INFO("Quality monitor initialized (server_ip=%s)",
              server_ip ? server_ip : "auto");
@@ -179,15 +179,21 @@ static void write_quality_json(void) {
                 "\"ip\":\"%s\","
                 "\"last_test\":%ld,"
                 "\"status\":\"%s\","
-                "\"sip_rtt_ms\":%ld,"
-                "\"icmp_rtt_ms\":%ld,"
+                "\"media_rtt_ms\":%ld,"
+                "\"jitter_ms\":%.2f,"
+                "\"loss_percent\":%.2f,"
+                "\"packets_lost\":%u,"
+                "\"packets_sent\":%u,"
                 "\"reason\":\"%s\"}",
                 r->phone_number,
                 r->phone_ip,
                 (long)r->last_test_time,
                 voip_probe_status_str(r->last_result.status),
-                r->last_result.sip_rtt_ms,
-                r->last_result.icmp_rtt_ms,
+                r->last_result.media_rtt_ms,
+                r->last_result.jitter_ms,
+                r->last_result.loss_fraction * 100.0,
+                r->last_result.packets_lost,
+                r->last_result.packets_sent,
                 r->last_result.status_reason
         );
     }
@@ -285,20 +291,14 @@ void* quality_monitor_thread(void *arg) {
 
             if (result.status == VOIP_PROBE_SUCCESS) {
                 success_count++;
-                if (result.icmp_rtt_ms >= 0) {
-                    LOG_INFO("[%d/%d] ✓ Phone %s: SIP RTT=%ld ms, ICMP RTT=%ld ms - %s",
-                             i+1, test_count,
-                             users_to_test[i].phone_number,
-                             result.sip_rtt_ms,
-                             result.icmp_rtt_ms,
-                             result.status_reason);
-                } else {
-                    LOG_INFO("[%d/%d] ✓ Phone %s: RTT=%ld ms - %s",
-                             i+1, test_count,
-                             users_to_test[i].phone_number,
-                             result.sip_rtt_ms,
-                             result.status_reason);
-                }
+                LOG_INFO("[%d/%d] ✓ Phone %s: RTT=%ld ms, Jitter=%.2f ms, Loss=%.1f%%, Packets=%u/%u",
+                         i+1, test_count,
+                         users_to_test[i].phone_number,
+                         result.media_rtt_ms,
+                         result.jitter_ms,
+                         result.loss_fraction * 100.0,
+                         result.packets_sent - result.packets_lost,
+                         result.packets_sent);
             } else {
                 fail_count++;
                 LOG_WARN("[%d/%d] ✗ Phone %s: %s - %s",

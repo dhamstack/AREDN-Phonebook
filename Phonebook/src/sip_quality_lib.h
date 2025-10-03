@@ -13,25 +13,29 @@
 typedef enum {
     VOIP_PROBE_SUCCESS = 0,
     VOIP_PROBE_BUSY,
+    VOIP_PROBE_NO_RR,
     VOIP_PROBE_SIP_TIMEOUT,
-    VOIP_PROBE_SIP_ERROR
+    VOIP_PROBE_SIP_ERROR,
+    VOIP_PROBE_NO_ANSWER
 } voip_probe_status_t;
 
 typedef struct {
-    int timeout_ms;
+    int burst_duration_ms;
+    int rtp_ptime_ms;
+    int rtcp_wait_ms;
+    int invite_timeout_ms;
 } voip_probe_config_t;
 
 typedef struct {
     voip_probe_status_t status;
     long sip_rtt_ms;
-    long icmp_rtt_ms;  // ICMP ping RTT for comparison
-    char status_reason[128];
-
-    // Legacy fields (unused, kept for compatibility)
-    double jitter_ms;
-    double loss_fraction;
+    long icmp_rtt_ms;
+    long media_rtt_ms;     // RTT from RTCP (LSR/DLSR)
+    double jitter_ms;      // From RTCP RR or local calculation
+    double loss_fraction;  // From RTCP RR
     uint32_t packets_lost;
     uint32_t packets_sent;
+    char status_reason[128];
 } voip_probe_result_t;
 
 /**
