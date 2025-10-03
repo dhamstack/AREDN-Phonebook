@@ -545,8 +545,17 @@ static void drain_rtp_packets(int rtp_sock, rtp_stats_t *stats) {
     }
 }
 
-// Helper: Create test phone IP from server IP (server_ip + 1)
+// Helper: Get test phone IP (env override or server_ip + 1)
 static int get_test_phone_ip(const char *server_ip, char *test_ip, size_t test_ip_len) {
+    // Check for environment variable override
+    const char *env_test_ip = getenv("SIP_TEST_PHONE_IP");
+    if (env_test_ip && strlen(env_test_ip) > 0) {
+        strncpy(test_ip, env_test_ip, test_ip_len - 1);
+        test_ip[test_ip_len - 1] = '\0';
+        return 0;
+    }
+
+    // Default: server_ip + 1
     struct in_addr addr;
     if (inet_pton(AF_INET, server_ip, &addr) != 1) {
         return -1;
