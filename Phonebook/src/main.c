@@ -301,36 +301,42 @@ int main(int argc, char *argv[]) {
     }
     LOG_DEBUG("Socket options set.");
 
-    memset(&servaddr, 0, sizeof(servaddr));
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = INADDR_ANY;
-    servaddr.sin_port = htons(SIP_PORT);
-    LOG_DEBUG("Server address struct prepared (port: %d).", SIP_PORT);
-
-    LOG_INFO("Attempting to bind to UDP port %d...", SIP_PORT);
-    if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
-        LOG_ERROR("Socket bind failed on port %d.", SIP_PORT);
+    // Get server IP to bind to specific interface (required for phone trust)
+    char server_ip[64];
+    if (get_server_ip(server_ip, sizeof(server_ip)) != 0) {
+        LOG_ERROR("Failed to detect server IP address");
         return EXIT_FAILURE;
     }
-    LOG_INFO("Successfully bound to UDP port %d.", SIP_PORT);
 
-    LOG_INFO("AREDN Phonebook SIP Server listening on UDP port %d", SIP_PORT);
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    // Bind to specific IP (not INADDR_ANY) so packet source matches Via/Contact headers
+    if (inet_pton(AF_INET, server_ip, &servaddr.sin_addr) != 1) {
+        LOG_ERROR("Failed to parse server IP: %s", server_ip);
+        return EXIT_FAILURE;
+    }
+    servaddr.sin_port = htons(SIP_PORT);
+    LOG_DEBUG("Server address struct prepared (IP: %s, port: %d).", server_ip, SIP_PORT);
+
+    LOG_INFO("Attempting to bind to %s:%d...", server_ip, SIP_PORT);
+    if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+        LOG_ERROR("Socket bind failed on %s:%d - %s", server_ip, SIP_PORT, strerror(errno));
+        return EXIT_FAILURE;
+    }
+    LOG_INFO("Successfully bound to %s:%d (packet source will match SIP headers)", server_ip, SIP_PORT);
+
+    LOG_INFO("AREDN Phonebook SIP Server listening on %s:%d", server_ip, SIP_PORT);
 
     // --- Initialize and start phone quality monitor ---
-    char server_ip[64];
-    if (get_server_ip(server_ip, sizeof(server_ip)) == 0) {
-        LOG_INFO("Server IP detected: %s", server_ip);
-        if (quality_monitor_init(sockfd, server_ip) == 0) {
-            if (quality_monitor_start() == 0) {
-                LOG_INFO("Phone quality monitor started successfully");
-            } else {
-                LOG_WARN("Failed to start phone quality monitor");
-            }
+    LOG_INFO("Initializing phone quality monitor with server IP: %s", server_ip);
+    if (quality_monitor_init(sockfd, server_ip) == 0) {
+        if (quality_monitor_start() == 0) {
+            LOG_INFO("Phone quality monitor started successfully");
         } else {
-            LOG_WARN("Failed to initialize phone quality monitor");
+            LOG_WARN("Failed to start phone quality monitor");
         }
     } else {
-        LOG_WARN("Failed to detect server IP, quality monitor disabled");
+        LOG_WARN("Failed to initialize phone quality monitor");
     }
 
     LOG_INFO("Entering main SIP message processing loop.");
