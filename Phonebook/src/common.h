@@ -211,5 +211,13 @@ CallSession* create_call_session();
 void terminate_call_session(CallSession *session);
 void init_call_sessions();
 
+// UAC (User Agent Client) for load testing
+int uac_init(const char *local_ip);
+void uac_shutdown(void);
+int uac_get_sockfd(void);
+int uac_make_call(const char *target_number, const char *server_ip);
+int uac_hang_up(void);
+int uac_process_response(const char *response, size_t response_len);
+
 
 #endif // COMMON_H

@@ -12,6 +12,7 @@
 #include "user_manager/user_manager.h"   // For user management functions
 #include "call-sessions/call_sessions.h" // For call session management functions
 #include "passive_safety/passive_safety.h" // For passive safety and self-healing
+#include "uac/uac.h"                    // For UAC load testing module
 
 // Define MODULE_NAME specific to main.c
 #define MODULE_NAME "MAIN"
@@ -198,6 +199,22 @@ int main(int argc, char *argv[]) {
     }
     LOG_INFO("Successfully bound to UDP port %d.", SIP_PORT);
 
+    // Initialize UAC module (after SIP server is bound)
+    char server_ip[64];
+    int have_server_ip = 0;
+
+    // Try to get server IP for UAC
+    if (get_server_ip(server_ip, sizeof(server_ip)) == 0) {
+        if (uac_init(server_ip) == 0) {
+            have_server_ip = 1;
+            LOG_INFO("UAC module initialized on %s:%d", server_ip, UAC_SIP_PORT);
+        } else {
+            LOG_WARN("UAC module initialization failed");
+        }
+    } else {
+        LOG_WARN("Could not determine server IP, UAC module not initialized");
+    }
+
     LOG_INFO("AREDN Phonebook SIP Server listening on UDP port %d", SIP_PORT);
     LOG_INFO("Entering main SIP message processing loop.");
 
@@ -205,8 +222,18 @@ int main(int argc, char *argv[]) {
         len = sizeof(cliaddr);
         FD_ZERO(&readfds);
         FD_SET(sockfd, &readfds);
+
+        // Add UAC socket to select if initialized
+        int max_fd = sockfd;
+        if (have_server_ip && uac_get_sockfd() >= 0) {
+            FD_SET(uac_get_sockfd(), &readfds);
+            if (uac_get_sockfd() > max_fd) {
+                max_fd = uac_get_sockfd();
+            }
+        }
+
         tv.tv_sec = 1; tv.tv_usec = 0;
-        retval = select(sockfd + 1, &readfds, NULL, NULL, &tv);
+        retval = select(max_fd + 1, &readfds, NULL, NULL, &tv);
 
         if (retval < 0) {
             // if (errno == EINTR) continue; // REMOVED
@@ -216,19 +243,39 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        n = recvfrom(sockfd, buffer, MAX_SIP_MSG_LEN - 1, 0,
-                     (struct sockaddr*)&cliaddr, &len);
-        if (n < 0) {
-            // if (errno == EINTR) continue; // REMOVED
-            LOG_ERROR("recvfrom failed.");
-            continue;
-        }
-        buffer[n] = '\0';
+        // Handle SIP server socket
+        if (FD_ISSET(sockfd, &readfds)) {
+            n = recvfrom(sockfd, buffer, MAX_SIP_MSG_LEN - 1, 0,
+                         (struct sockaddr*)&cliaddr, &len);
+            if (n < 0) {
+                // if (errno == EINTR) continue; // REMOVED
+                LOG_ERROR("recvfrom failed on SIP socket.");
+                continue;
+            }
+            buffer[n] = '\0';
 
-        process_incoming_sip_message(sockfd, buffer, n, &cliaddr, len);
+            process_incoming_sip_message(sockfd, buffer, n, &cliaddr, len);
+        }
+
+        // Handle UAC socket responses
+        if (have_server_ip && uac_get_sockfd() >= 0 && FD_ISSET(uac_get_sockfd(), &readfds)) {
+            char uac_buffer[MAX_SIP_MSG_LEN];
+            n = recvfrom(uac_get_sockfd(), uac_buffer, sizeof(uac_buffer) - 1, 0, NULL, NULL);
+            if (n > 0) {
+                uac_buffer[n] = '\0';
+                uac_process_response(uac_buffer, n);
+            } else if (n < 0) {
+                LOG_ERROR("recvfrom failed on UAC socket.");
+            }
+        }
     }
     // This code block will now only be reached if an unrecoverable error in the main loop occurs.
     LOG_WARN("Main SIP message processing loop unexpectedly terminated.");
+
+    // Shutdown UAC if initialized
+    if (have_server_ip) {
+        uac_shutdown();
+    }
 
     close(sockfd);
 

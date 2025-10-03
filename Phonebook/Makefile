@@ -44,6 +44,9 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/log_manager/log_manager.c \
 		$(PKG_BUILD_DIR)/config_loader/config_loader.c \
 		$(PKG_BUILD_DIR)/passive_safety/passive_safety.c \
+		$(PKG_BUILD_DIR)/uac/uac.c \
+		$(PKG_BUILD_DIR)/uac/uac_sip_builder.c \
+		$(PKG_BUILD_DIR)/uac/uac_sip_parser.c \
 		-lpthread
 endef
 
