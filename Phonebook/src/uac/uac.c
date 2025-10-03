@@ -223,6 +223,55 @@ static int uac_send_ack(void) {
     return 0;
 }
 
+// Cancel a ringing call
+int uac_cancel_call(void) {
+    LOG_INFO("[UAC_CANCEL] Canceling call (current state: %s)",
+             uac_state_to_string(g_uac_ctx.call.state));
+
+    if (g_uac_ctx.call.state != UAC_STATE_CALLING && g_uac_ctx.call.state != UAC_STATE_RINGING) {
+        LOG_WARN("[UAC_CANCEL] No ringing call to cancel (state: %s)",
+                 uac_state_to_string(g_uac_ctx.call.state));
+        return -1;
+    }
+
+    // CANCEL uses same CSeq as INVITE
+    char cancel_msg[1024];
+    int written = snprintf(cancel_msg, sizeof(cancel_msg),
+        "CANCEL sip:%s@localnode.local.mesh:5060 SIP/2.0\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld\r\n"
+        "From: <sip:%s@%s:%d>;tag=%s\r\n"
+        "To: <sip:%s@localnode.local.mesh:5060>\r\n"
+        "Call-ID: %s\r\n"
+        "CSeq: %d CANCEL\r\n"
+        "Max-Forwards: 70\r\n"
+        "Content-Length: 0\r\n"
+        "\r\n",
+        g_uac_ctx.call.target_number,
+        g_uac_ctx.local_ip, g_uac_ctx.local_port, random(),
+        UAC_PHONE_NUMBER, g_uac_ctx.local_ip, g_uac_ctx.local_port, g_uac_ctx.call.from_tag,
+        g_uac_ctx.call.target_number,
+        g_uac_ctx.call.call_id,
+        g_uac_ctx.call.cseq);
+
+    if (written >= sizeof(cancel_msg)) {
+        LOG_ERROR("[UAC_CANCEL] CANCEL message truncated");
+        return -1;
+    }
+
+    LOG_DEBUG("[UAC_CANCEL] Sending CANCEL (%d bytes) to server", written);
+    ssize_t sent = sendto(g_uac_ctx.sockfd, cancel_msg, written, 0,
+                          (struct sockaddr*)&g_uac_ctx.call.server_addr,
+                          sizeof(g_uac_ctx.call.server_addr));
+    if (sent < 0) {
+        LOG_ERROR("[UAC_CANCEL] Failed to send CANCEL: %s", strerror(errno));
+        return -1;
+    }
+
+    LOG_INFO("[UAC_CANCEL] ✓ CANCEL sent successfully (%zd bytes)", sent);
+    g_uac_ctx.call.state = UAC_STATE_TERMINATING;
+    return 0;
+}
+
 // Hang up current call
 int uac_hang_up(void) {
     LOG_INFO("[UAC_BYE] Initiating hang up (current state: %s)",

@@ -68,7 +68,13 @@ int uac_get_sockfd(void);
 int uac_make_call(const char *target_number, const char *server_ip);
 
 /**
- * Hang up current call
+ * Cancel a ringing call (sends CANCEL)
+ * @return 0 on success, -1 on failure
+ */
+int uac_cancel_call(void);
+
+/**
+ * Hang up current call (sends BYE)
  * @return 0 on success, -1 on failure
  */
 int uac_hang_up(void);

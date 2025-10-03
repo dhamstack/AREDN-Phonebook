@@ -104,12 +104,25 @@ void *uac_bulk_tester_thread(void *arg) {
                     tests_triggered++;
                     LOG_INFO("✓ UAC test triggered for %s (%s)", user->user_id, user->display_name);
 
-                    // Wait for call to complete (receive response and reset to IDLE)
-                    sleep(3);
+                    // Wait for phone to respond (RINGING or OK)
+                    sleep(2);
 
-                    // Force reset to IDLE after test (especially if error response)
+                    // If call is ringing or established, hang up properly
+                    uac_call_state_t state = uac_get_state();
+                    if (state == UAC_STATE_CALLING || state == UAC_STATE_RINGING) {
+                        LOG_INFO("📞 Phone %s ringing - canceling", user->user_id);
+                        uac_cancel_call();
+                        sleep(1); // Wait for CANCEL to be sent
+                    } else if (state == UAC_STATE_ESTABLISHED) {
+                        LOG_INFO("📞 Phone %s answered - hanging up", user->user_id);
+                        uac_hang_up();
+                        sleep(1); // Wait for BYE to be sent
+                    }
+
+                    // Force reset to IDLE after test (for error responses like 488)
                     if (uac_get_state() != UAC_STATE_IDLE) {
-                        LOG_DEBUG("Force resetting UAC to IDLE after test");
+                        LOG_DEBUG("Force resetting UAC to IDLE after test (state: %s)",
+                                  uac_state_to_string(uac_get_state()));
                         uac_reset_state();
                     }
                 } else {
