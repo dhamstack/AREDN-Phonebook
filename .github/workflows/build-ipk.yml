@@ -26,8 +26,8 @@ jobs:
             subtarget: generic
           - arch: x86
             subtarget: 64
-          - arch: ipq40xx
-            subtarget: generic
+          # - arch: ipq40xx
+          #   subtarget: generic
 
     steps:
       - name: Checkout code
