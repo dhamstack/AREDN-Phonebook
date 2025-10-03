@@ -17,23 +17,24 @@ int uac_build_invite(char *buffer, size_t buffer_size, uac_call_t *call,
     LOG_DEBUG("[UAC_BUILDER] INVITE params - target: %s, local: %s:%d, Call-ID: %s",
               call->target_number, local_ip, local_port, call->call_id);
 
-    // Build proper SDP with multiple codecs for better Yealink compatibility
-    // Use standard RTP port range (Yealink phones often reject low ports like 10000)
+    // Build SDP optimized for Yealink T58 compatibility
+    // T58 is strict about SDP format - use conservative settings
     char sdp[1024];
+    long session_id = (long)time(NULL);
     snprintf(sdp, sizeof(sdp),
         "v=0\r\n"
         "o=%s %ld %ld IN IP4 %s\r\n"
-        "s=AREDN UAC Test Call\r\n"
+        "s=SIP Call\r\n"
         "c=IN IP4 %s\r\n"
         "t=0 0\r\n"
-        "m=audio 16384 RTP/AVP 8 0 101\r\n"
-        "a=rtpmap:8 PCMA/8000\r\n"
+        "m=audio 8000 RTP/AVP 0 8 101\r\n"
         "a=rtpmap:0 PCMU/8000\r\n"
+        "a=rtpmap:8 PCMA/8000\r\n"
         "a=rtpmap:101 telephone-event/8000\r\n"
         "a=fmtp:101 0-15\r\n"
-        "a=ptime:20\r\n"
-        "a=sendrecv\r\n",
-        UAC_PHONE_NUMBER, (long)time(NULL), (long)time(NULL), local_ip, local_ip);
+        "a=sendrecv\r\n"
+        "a=ptime:20\r\n",
+        UAC_PHONE_NUMBER, session_id, session_id, local_ip, local_ip);
 
     int content_length = strlen(sdp);
     LOG_DEBUG("[UAC_BUILDER] SDP body created (%d bytes)", content_length);
