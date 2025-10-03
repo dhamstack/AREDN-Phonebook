@@ -248,10 +248,16 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
         fprintf(stderr, "[DEBUG] INVITE message:\n%s\n", request);
     }
 
-    if (sendto(sockfd, request, strlen(request), 0,
-               (struct sockaddr *)addr, sizeof(*addr)) < 0) {
+    ssize_t sent = sendto(sockfd, request, strlen(request), 0,
+                         (struct sockaddr *)addr, sizeof(*addr));
+    if (sent < 0) {
         if (is_debug) fprintf(stderr, "[DEBUG] sendto() failed: %s\n", strerror(errno));
         return -1;
+    }
+
+    if (is_debug) {
+        fprintf(stderr, "[DEBUG] INVITE sent (%zd bytes), waiting for response (timeout=%dms)...\n",
+                sent, timeout_ms);
     }
 
     // Wait for responses with configured timeout (no 30-second extension)
@@ -597,14 +603,22 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     sip_addr.sin_addr.s_addr = inet_addr(phone_ip);
 
     // Send INVITE with configured timeout and capture SIP RTT
+    if (is_debug) fprintf(stderr, "[DEBUG] Testing phone: %s @ %s (local: %s, RTP port: %d)\n",
+                          phone_number, phone_ip, local_ip, rtp_port);
+
     long sip_rtt_ms = 0;
     int invite_result = send_invite(sip_sock, &sip_addr, phone_number, phone_ip, rtp_port,
                                     call_id, from_tag, sip_response, sizeof(sip_response),
                                     config->invite_timeout_ms, &result->status, result->status_reason,
                                     &sip_rtt_ms, local_ip);
     if (invite_result < 0) {
+        if (is_debug) fprintf(stderr, "[DEBUG] INVITE failed for %s: %s\n",
+                              phone_number, result->status_reason);
         goto cleanup;
     }
+
+    if (is_debug) fprintf(stderr, "[DEBUG] Call established with %s, SIP RTT: %ld ms\n",
+                          phone_number, sip_rtt_ms);
 
     // Extract To tag
     if (extract_to_tag(sip_response, to_tag, sizeof(to_tag)) < 0) {
@@ -646,6 +660,14 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     rtp_stats_t rtp_stats;
     memset(&rtp_stats, 0, sizeof(rtp_stats));
 
+    const char *debug = getenv("SIP_DEBUG");
+    int is_debug_rtp = (debug && strcmp(debug, "1") == 0);
+
+    if (is_debug_rtp) {
+        fprintf(stderr, "[DEBUG] Starting RTP session: phone_rtp=%s:%d, local_rtp=%d\n",
+                phone_media_ip, phone_rtp_port, rtp_port);
+    }
+
     // Send RTCP SR+SDES compound immediately after ACK (keep for compatibility)
     gettimeofday(&sr_time, NULL);
     send_rtcp_sr(rtcp_sock, &rtcp_addr, ssrc, 0, 0, 0, &lsr);
@@ -655,6 +677,11 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     uint32_t timestamp = 0;
     int packets_to_send = config->burst_duration_ms / config->rtp_ptime_ms;
     int sr_at_1s = 1000 / config->rtp_ptime_ms;  // Send SR again at ~1s
+
+    if (is_debug_rtp) {
+        fprintf(stderr, "[DEBUG] Sending %d RTP packets over %dms (ptime=%dms)...\n",
+                packets_to_send, config->burst_duration_ms, config->rtp_ptime_ms);
+    }
 
     for (int i = 0; i < packets_to_send; i++) {
         rtp_header_t rtp;
@@ -703,12 +730,17 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     usleep(config->rtcp_wait_ms * 1000);
     drain_rtp_packets(rtp_sock, &rtp_stats);
 
+    if (is_debug_rtp) {
+        fprintf(stderr, "[DEBUG] RTP session complete for %s: Sent=%u, Received=%u\n",
+                phone_number, result->packets_sent, rtp_stats.packets_received);
+    }
+
     // Calculate LOCAL RTP-based metrics
     if (rtp_stats.initialized && rtp_stats.packets_received >= 5) {
         // SUCCESS: We received enough RTP packets
         result->status = VOIP_PROBE_SUCCESS;
 
-        // Store SIP RTT in media_rtt_ms field
+        // Store SIP RTT in media_rtp_ms field
         result->media_rtt_ms = sip_rtt_ms;
 
         // Store locally calculated jitter
@@ -723,12 +755,23 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
         snprintf(result->status_reason, sizeof(result->status_reason),
                  "Probe successful with local RTP metrics (%u packets received)",
                  rtp_stats.packets_received);
+
+        if (is_debug_rtp) {
+            fprintf(stderr, "[DEBUG] ✓ %s: RTT=%ld ms, Jitter=%.2f ms, Loss=%.1f%% (%u/%u)\n",
+                    phone_number, sip_rtt_ms, rtp_stats.jitter,
+                    result->loss_fraction * 100.0, lost, expected);
+        }
     } else {
         // FAILURE: Not enough RTP packets received
         result->status = VOIP_PROBE_NO_RR;
         snprintf(result->status_reason, sizeof(result->status_reason),
                  "No/insufficient RTP received from phone (%u packets, need 5)",
                  rtp_stats.packets_received);
+
+        if (is_debug_rtp) {
+            fprintf(stderr, "[DEBUG] ✗ %s: Failed - only %u RTP packets received (need 5)\n",
+                    phone_number, rtp_stats.packets_received);
+        }
     }
 
     // Send BYE

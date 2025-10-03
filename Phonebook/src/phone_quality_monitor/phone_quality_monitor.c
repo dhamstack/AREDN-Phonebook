@@ -226,17 +226,18 @@ void* quality_monitor_thread(void *arg) {
 
         // Iterate through entire registered_users array (includes both CSV and dynamic users)
         for (int i = 0; i < MAX_REGISTERED_USERS; i++) {
-            if (registered_users[i].user_id[0] != '\0' && registered_users[i].is_active) {
-                // Resolve phone IP via DNS (user_id.local.mesh)
+            if (registered_users[i].user_id[0] != '\0') {
+                // Resolve phone IP via DNS (user_id.local.mesh) to check if phone is online
                 char hostname[256];
                 snprintf(hostname, sizeof(hostname), "%s.local.mesh", registered_users[i].user_id);
 
                 struct hostent *he = gethostbyname(hostname);
                 if (he == NULL || he->h_addr_list[0] == NULL) {
-                    // Skip if DNS resolution fails
+                    // Skip if DNS resolution fails - phone is not online/reachable
                     continue;
                 }
 
+                // Phone is reachable - add to test list
                 struct in_addr addr;
                 memcpy(&addr, he->h_addr_list[0], sizeof(struct in_addr));
                 const char *ip = inet_ntoa(addr);
@@ -252,13 +253,25 @@ void* quality_monitor_thread(void *arg) {
         }
         pthread_mutex_unlock(&registered_users_mutex);
 
-        LOG_INFO("Quality monitor: Testing %d registered phones", test_count);
+        LOG_INFO("Quality monitor: Starting test cycle for %d phones", test_count);
+
+        // Log which phones will be tested
+        for (int i = 0; i < test_count && i < 10; i++) {
+            LOG_INFO("  [%d/%d] %s -> %s", i+1, test_count,
+                     users_to_test[i].phone_number, users_to_test[i].phone_ip);
+        }
+        if (test_count > 10) {
+            LOG_INFO("  ... and %d more phones", test_count - 10);
+        }
 
         // Test each phone
+        int success_count = 0;
+        int fail_count = 0;
+
         for (int i = 0; i < test_count && g_monitor_running; i++) {
             voip_probe_result_t result;
 
-            LOG_INFO("Testing phone %s (%s)...",
+            LOG_INFO("[%d/%d] Testing phone %s (%s)...", i+1, test_count,
                      users_to_test[i].phone_number, users_to_test[i].phone_ip);
 
             int rc = test_phone_quality_with_socket(
@@ -275,12 +288,18 @@ void* quality_monitor_thread(void *arg) {
                                 users_to_test[i].phone_ip, &result);
 
             if (result.status == VOIP_PROBE_SUCCESS) {
-                LOG_INFO("Phone %s: RTT=%ld ms, Jitter=%.2f ms, Loss=%.1f%%",
+                success_count++;
+                LOG_INFO("[%d/%d] ✓ Phone %s: RTT=%ld ms, Jitter=%.2f ms, Loss=%.1f%%, Packets=%u/%u",
+                         i+1, test_count,
                          users_to_test[i].phone_number,
                          result.media_rtt_ms, result.jitter_ms,
-                         result.loss_fraction * 100.0);
+                         result.loss_fraction * 100.0,
+                         result.packets_sent - result.packets_lost,
+                         result.packets_sent);
             } else {
-                LOG_WARN("Phone %s: Test failed - %s (%s)",
+                fail_count++;
+                LOG_WARN("[%d/%d] ✗ Phone %s: %s - %s",
+                         i+1, test_count,
                          users_to_test[i].phone_number,
                          voip_probe_status_str(result.status),
                          result.status_reason);
@@ -294,6 +313,14 @@ void* quality_monitor_thread(void *arg) {
 
         // Write quality data to JSON file for CGI endpoint
         write_quality_json();
+
+        // Log cycle summary
+        LOG_INFO("Quality monitor: Cycle complete - %d tested, %d succeeded, %d failed",
+                 test_count, success_count, fail_count);
+        if (success_count > 0) {
+            LOG_INFO("Quality data written to /tmp/phone_quality.json (%d results)",
+                     success_count + fail_count);
+        }
 
         // Wait for next test interval
         if (g_monitor_running) {
