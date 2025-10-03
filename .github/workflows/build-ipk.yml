@@ -132,8 +132,8 @@ jobs:
         id: find_ipk
         run: |
           echo "Searching for AREDN-Phonebook IPK file..."
-          # Look for our AREDN-Phonebook package specifically
-          IPK_FILE=$(find sdk/bin -name "*AREDN-Phonebook*.ipk" | head -n 1)
+          # Look for our AREDN-Phonebook package in bin/packages and bin/targets
+          IPK_FILE=$(find sdk/bin -name "*AREDN-Phonebook*.ipk" -type f | head -n 1)
 
           if [ -z "$IPK_FILE" ]; then
             echo "AREDN-Phonebook IPK not found! Checking all IPK files:"
