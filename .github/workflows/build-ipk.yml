@@ -119,12 +119,12 @@ jobs:
       - name: Find IPK file
         id: find_ipk
         run: |
-          echo "Searching for SIPServer IPK file..."
-          # Look for our sipserver package specifically, not dependency packages
-          IPK_FILE=$(find sdk/bin -name "*sipserver*.ipk" -o -name "*sip-server*.ipk" | head -n 1)
+          echo "Searching for AREDN-Phonebook IPK file..."
+          # Look for our AREDN-Phonebook package specifically
+          IPK_FILE=$(find sdk/bin -name "*AREDN-Phonebook*.ipk" -o -name "*aredn-phonebook*.ipk" | head -n 1)
 
           if [ -z "$IPK_FILE" ]; then
-            echo "SIPServer IPK not found! Checking all IPK files:"
+            echo "AREDN-Phonebook IPK not found! Checking all IPK files:"
             find sdk/bin -name "*.ipk" -type f
             echo "Maybe the package name is different. Checking non-library IPKs:"
             find sdk/bin -name "*.ipk" -not -name "lib*" -type f
@@ -138,7 +138,7 @@ jobs:
           fi
 
           # Rename IPK file to include architecture
-          ARCH_IPK="sipserver-${{ matrix.target.arch }}-${{ github.ref_name }}.ipk"
+          ARCH_IPK="AREDN-Phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}.ipk"
           cp "$IPK_FILE" "$ARCH_IPK"
 
           echo "ipk_path=$ARCH_IPK" >> $GITHUB_OUTPUT
@@ -150,7 +150,7 @@ jobs:
       - name: Upload IPK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sipserver-${{ matrix.target.arch }}-${{ github.ref_name }}
+          name: AREDN-Phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}
           path: ${{ steps.find_ipk.outputs.ipk_path }}
           retention-days: 30
 
