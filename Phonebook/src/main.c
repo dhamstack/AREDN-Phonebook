@@ -301,44 +301,23 @@ int main(int argc, char *argv[]) {
     }
     LOG_DEBUG("Socket options set.");
 
-    // Get server IP for logging and quality monitor
-    char server_ip[64];
-    bool have_server_ip = (get_server_ip(server_ip, sizeof(server_ip)) == 0);
-
+    // Simple binding to INADDR_ANY (works on all systems)
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_port = htons(SIP_PORT);
+    LOG_DEBUG("Server address struct prepared (port: %d).", SIP_PORT);
 
-    // Try to bind to specific IP if available (better for multi-homed hosts)
-    // Fall back to INADDR_ANY if specific IP binding fails
-    if (have_server_ip && inet_pton(AF_INET, server_ip, &servaddr.sin_addr) == 1) {
-        servaddr.sin_port = htons(SIP_PORT);
-        LOG_INFO("Attempting to bind to specific IP %s:%d...", server_ip, SIP_PORT);
-
-        if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
-            LOG_WARN("Failed to bind to %s:%d (%s), falling back to INADDR_ANY",
-                     server_ip, SIP_PORT, strerror(errno));
-            // Fall back to INADDR_ANY
-            servaddr.sin_addr.s_addr = INADDR_ANY;
-            servaddr.sin_port = htons(SIP_PORT);
-            if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
-                LOG_ERROR("Socket bind failed on INADDR_ANY:%d - %s", SIP_PORT, strerror(errno));
-                return EXIT_FAILURE;
-            }
-            LOG_INFO("Successfully bound to INADDR_ANY:%d", SIP_PORT);
-        } else {
-            LOG_INFO("Successfully bound to %s:%d (packet source will match SIP headers)", server_ip, SIP_PORT);
-        }
-    } else {
-        // No server IP detected or parse failed, use INADDR_ANY
-        LOG_WARN("Could not determine specific server IP, binding to INADDR_ANY");
-        servaddr.sin_addr.s_addr = INADDR_ANY;
-        servaddr.sin_port = htons(SIP_PORT);
-        if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
-            LOG_ERROR("Socket bind failed on INADDR_ANY:%d - %s", SIP_PORT, strerror(errno));
-            return EXIT_FAILURE;
-        }
-        LOG_INFO("Successfully bound to INADDR_ANY:%d", SIP_PORT);
+    LOG_INFO("Attempting to bind to UDP port %d...", SIP_PORT);
+    if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+        LOG_ERROR("Socket bind failed on port %d.", SIP_PORT);
+        return EXIT_FAILURE;
     }
+    LOG_INFO("Successfully bound to UDP port %d.", SIP_PORT);
+
+    // Get server IP for quality monitor
+    char server_ip[64];
+    bool have_server_ip = (get_server_ip(server_ip, sizeof(server_ip)) == 0);
 
     if (have_server_ip) {
         LOG_INFO("AREDN Phonebook SIP Server listening on %s:%d", server_ip, SIP_PORT);
