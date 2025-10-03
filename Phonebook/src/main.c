@@ -54,43 +54,70 @@ const char* sockaddr_to_ip_str(const struct sockaddr_in* addr) {
     return ip_str;
 }
 
-// Get server IP address by querying network interfaces
+// Get server IP address for UAC binding
+// AREDN nodes have multiple interfaces (DTD, WAN, LAN)
+// For SIP/UAC, we want the LAN address where phones connect
 static int get_server_ip(char *ip_buffer, size_t buffer_size) {
-    int sock;
-    struct sockaddr_in server_addr;
-    socklen_t addr_len = sizeof(server_addr);
+    // Try environment variable first (allows override)
+    const char *env_ip = getenv("SIP_SERVER_IP");
+    if (env_ip && strlen(env_ip) > 0) {
+        strncpy(ip_buffer, env_ip, buffer_size - 1);
+        ip_buffer[buffer_size - 1] = '\0';
+        LOG_INFO("Using SIP_SERVER_IP from environment: %s", ip_buffer);
+        return 0;
+    }
 
-    // Create a temporary UDP socket
-    sock = socket(AF_INET, SOCK_DGRAM, 0);
+    // Try to get IP from the socket we just bound
+    // This gives us the actual IP the SIP server is listening on
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
+        LOG_WARN("Failed to create socket for IP detection");
         return -1;
     }
 
-    // Connect to a public IP (doesn't actually send data)
-    // This makes the OS select the appropriate local IP
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = inet_addr("8.8.8.8");
-    server_addr.sin_port = htons(53);
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(5061); // Different port to avoid conflict
 
-    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         close(sock);
+        LOG_WARN("Failed to bind socket for IP detection");
         return -1;
     }
 
-    // Get the local address that was selected
-    if (getsockname(sock, (struct sockaddr*)&server_addr, &addr_len) < 0) {
+    // Connect to mesh network address to determine routing
+    // AREDN mesh uses 10.x.x.x, so connect to a mesh IP
+    struct sockaddr_in mesh_addr;
+    memset(&mesh_addr, 0, sizeof(mesh_addr));
+    mesh_addr.sin_family = AF_INET;
+    mesh_addr.sin_addr.s_addr = inet_addr("10.0.0.1"); // Generic mesh IP
+    mesh_addr.sin_port = htons(5060);
+
+    if (connect(sock, (struct sockaddr*)&mesh_addr, sizeof(mesh_addr)) < 0) {
         close(sock);
+        LOG_WARN("Failed to connect socket for IP detection");
+        return -1;
+    }
+
+    // Get the local address
+    socklen_t addr_len = sizeof(addr);
+    if (getsockname(sock, (struct sockaddr*)&addr, &addr_len) < 0) {
+        close(sock);
+        LOG_WARN("Failed to get socket name for IP detection");
         return -1;
     }
 
     close(sock);
 
     // Convert to string
-    if (inet_ntop(AF_INET, &server_addr.sin_addr, ip_buffer, buffer_size) == NULL) {
+    if (inet_ntop(AF_INET, &addr.sin_addr, ip_buffer, buffer_size) == NULL) {
+        LOG_WARN("Failed to convert IP address to string");
         return -1;
     }
 
+    LOG_INFO("Detected server IP: %s", ip_buffer);
     return 0;
 }
 
