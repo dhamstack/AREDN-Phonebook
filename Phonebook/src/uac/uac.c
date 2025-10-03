@@ -251,7 +251,8 @@ int uac_process_response(const char *response, size_t response_len) {
     int status_code = 0;
     if (sscanf(response, "SIP/2.0 %d", &status_code) != 1) {
         LOG_ERROR("[UAC_RESPONSE] Failed to parse SIP response status line");
-        LOG_DEBUG("[UAC_RESPONSE] Response: %.*s", (int)MIN(200, response_len), response);
+        int preview_len = (response_len < 200) ? (int)response_len : 200;
+        LOG_DEBUG("[UAC_RESPONSE] Response: %.*s", preview_len, response);
         return -1;
     }
 
