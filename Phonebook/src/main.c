@@ -54,6 +54,46 @@ const char* sockaddr_to_ip_str(const struct sockaddr_in* addr) {
     return ip_str;
 }
 
+// Get server IP address by querying network interfaces
+static int get_server_ip(char *ip_buffer, size_t buffer_size) {
+    int sock;
+    struct sockaddr_in server_addr;
+    socklen_t addr_len = sizeof(server_addr);
+
+    // Create a temporary UDP socket
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        return -1;
+    }
+
+    // Connect to a public IP (doesn't actually send data)
+    // This makes the OS select the appropriate local IP
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr("8.8.8.8");
+    server_addr.sin_port = htons(53);
+
+    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        close(sock);
+        return -1;
+    }
+
+    // Get the local address that was selected
+    if (getsockname(sock, (struct sockaddr*)&server_addr, &addr_len) < 0) {
+        close(sock);
+        return -1;
+    }
+
+    close(sock);
+
+    // Convert to string
+    if (inet_ntop(AF_INET, &server_addr.sin_addr, ip_buffer, buffer_size) == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
     int sockfd;
     struct sockaddr_in servaddr, cliaddr; // Defined here
