@@ -391,8 +391,8 @@ void* quality_monitor_thread(void *arg) {
         int success_count = 0;
         int fail_count = 0;
 
-        // Pick a caller number (use first registered user if available, else NULL)
-        const char *caller_number = (test_count > 0) ? users_to_test[0].phone_number : NULL;
+        // Use 999901 as caller number (never assigned but unknown to target phone)
+        const char *caller_number = "999901";
 
         for (int i = 0; i < test_count && g_monitor_running; i++) {
             voip_probe_result_t result;
