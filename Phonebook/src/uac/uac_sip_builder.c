@@ -47,6 +47,7 @@ int uac_build_invite(char *buffer, size_t buffer_size, uac_call_t *call,
         "Contact: <sip:%s@%s:%d>\r\n"
         "Max-Forwards: 70\r\n"
         "User-Agent: AREDN-Phonebook-UAC/1.0\r\n"
+        "Alert-Info: <http://www.notused.com>;info=alert-autoanswer;delay=0\r\n"
         "Content-Type: application/sdp\r\n"
         "Content-Length: %d\r\n"
         "\r\n"
