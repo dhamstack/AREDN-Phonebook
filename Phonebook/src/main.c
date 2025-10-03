@@ -41,6 +41,9 @@ volatile sig_atomic_t phonebook_reload_requested = 0; // For webhook-triggered r
 int num_registered_users = 0;
 int num_directory_entries = 0;
 
+// Global server IP for UAC
+char g_server_ip[64] = {0};
+
 // Thread IDs for passive safety monitoring
 pthread_t fetcher_tid = 0;
 pthread_t status_updater_tid = 0;
@@ -304,16 +307,15 @@ int main(int argc, char *argv[]) {
 
     // Initialize UAC module (after SIP server is bound)
     LOG_INFO("[MAIN] Initializing UAC module");
-    char server_ip[64];
     int have_server_ip = 0;
 
     // Try to get server IP for UAC
     syslog(6, "[UAC_INIT] Detecting server IP for UAC binding");
-    if (get_server_ip(server_ip, sizeof(server_ip)) == 0) {
-        syslog(6, "[UAC_INIT] Server IP detected: %s", server_ip);
-        if (uac_init(server_ip) == 0) {
+    if (get_server_ip(g_server_ip, sizeof(g_server_ip)) == 0) {
+        syslog(6, "[UAC_INIT] Server IP detected: %s", g_server_ip);
+        if (uac_init(g_server_ip) == 0) {
             have_server_ip = 1;
-            syslog(6, "[UAC_INIT] ✓ UAC initialized on %s:%d (have_server_ip=%d)", server_ip, UAC_SIP_PORT, have_server_ip);
+            syslog(6, "[UAC_INIT] ✓ UAC initialized on %s:%d (have_server_ip=%d)", g_server_ip, UAC_SIP_PORT, have_server_ip);
         } else {
             syslog(4, "[UAC_INIT] ✗ uac_init() failed");
         }
@@ -363,8 +365,8 @@ int main(int argc, char *argv[]) {
                     if (fgets(target, sizeof(target), f)) {
                         // Remove newline
                         target[strcspn(target, "\r\n")] = 0;
-                        syslog(6, "[UAC_TEST] Triggering UAC test call to %s via %s", target, server_ip); // 6 = LOG_INFO
-                        if (uac_make_call(target, server_ip) == 0) {
+                        syslog(6, "[UAC_TEST] Triggering UAC test call to %s via %s", target, g_server_ip); // 6 = LOG_INFO
+                        if (uac_make_call(target, g_server_ip) == 0) {
                             syslog(6, "[UAC_TEST] ✓ UAC test call initiated successfully"); // 6 = LOG_INFO
                         } else {
                             syslog(3, "[UAC_TEST] ✗ UAC test call failed to initiate"); // 3 = LOG_ERR

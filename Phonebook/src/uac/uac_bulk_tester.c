@@ -80,9 +80,7 @@ void *uac_bulk_tester_thread(void *arg) {
                 // Release mutex before making UAC call (UAC may take time)
                 pthread_mutex_unlock(&registered_users_mutex);
 
-                // Trigger UAC test call
-                // Note: We need the server IP - get it from main server configuration
-                extern char g_server_ip[64]; // Declared in common.h
+                // Trigger UAC test call using global server IP
                 if (uac_make_call(user->user_id, g_server_ip) == 0) {
                     tests_triggered++;
                     LOG_INFO("✓ UAC test triggered for %s (%s)", user->user_id, user->display_name);

@@ -139,6 +139,7 @@ extern int g_num_phonebook_servers;
 extern RegisteredUser registered_users[MAX_REGISTERED_USERS];
 extern int num_registered_users; // Count of active dynamic registrations
 extern int num_directory_entries; // Count of entries populated from CSV directory
+extern char g_server_ip[64]; // Global server IP for UAC (populated at startup)
 extern CallSession call_sessions[MAX_CALL_SESSIONS];
 
 // Thread IDs (defined in main.c, used by passive safety)
