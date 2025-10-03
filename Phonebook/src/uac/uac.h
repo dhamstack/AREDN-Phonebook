@@ -26,6 +26,7 @@ typedef struct {
     char call_id[256];        // Unique Call-ID
     char from_tag[64];        // From tag
     char to_tag[64];          // To tag (from 200 OK)
+    char via_branch[64];      // Via branch (must be same for INVITE and CANCEL)
     char target_number[32];   // Called number (e.g., "441530")
     int cseq;                 // CSeq counter
     struct sockaddr_in server_addr;  // SIP server address (5060)

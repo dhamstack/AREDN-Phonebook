@@ -40,7 +40,7 @@ int uac_build_invite(char *buffer, size_t buffer_size, uac_call_t *call,
 
     int written = snprintf(buffer, buffer_size,
         "INVITE sip:%s@localnode.local.mesh:5060 SIP/2.0\r\n"
-        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=%s\r\n"
         "From: <sip:%s@%s:%d>;tag=%s\r\n"
         "To: <sip:%s@localnode.local.mesh:5060>\r\n"
         "Call-ID: %s\r\n"
@@ -53,7 +53,7 @@ int uac_build_invite(char *buffer, size_t buffer_size, uac_call_t *call,
         "\r\n"
         "%s",
         call->target_number,
-        local_ip, local_port, random(),
+        local_ip, local_port, call->via_branch,
         UAC_PHONE_NUMBER, local_ip, local_port, call->from_tag,
         call->target_number,
         call->call_id,

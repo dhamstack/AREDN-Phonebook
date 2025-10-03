@@ -154,11 +154,13 @@ int uac_make_call(const char *target_number, const char *server_ip) {
 
     LOG_DEBUG("[UAC_CALL] Server address set to %s:5060", server_ip);
 
-    // Generate Call-ID and tags
+    // Generate Call-ID, tags, and Via branch
     snprintf(g_uac_ctx.call.call_id, sizeof(g_uac_ctx.call.call_id),
              "uac-%ld@%s", time(NULL), g_uac_ctx.local_ip);
     snprintf(g_uac_ctx.call.from_tag, sizeof(g_uac_ctx.call.from_tag),
              "tag-%ld", random());
+    snprintf(g_uac_ctx.call.via_branch, sizeof(g_uac_ctx.call.via_branch),
+             "z9hG4bK%ld", random());
     g_uac_ctx.call.to_tag[0] = '\0';  // No To tag yet
     strncpy(g_uac_ctx.call.target_number, target_number,
             sizeof(g_uac_ctx.call.target_number) - 1);
@@ -166,6 +168,7 @@ int uac_make_call(const char *target_number, const char *server_ip) {
 
     LOG_DEBUG("[UAC_CALL] Call-ID: %s", g_uac_ctx.call.call_id);
     LOG_DEBUG("[UAC_CALL] From-tag: %s", g_uac_ctx.call.from_tag);
+    LOG_DEBUG("[UAC_CALL] Via-branch: %s", g_uac_ctx.call.via_branch);
     LOG_DEBUG("[UAC_CALL] CSeq: %d", g_uac_ctx.call.cseq);
 
     // Build INVITE message
@@ -234,11 +237,11 @@ int uac_cancel_call(void) {
         return -1;
     }
 
-    // CANCEL uses same CSeq as INVITE
+    // CANCEL must use same CSeq and Via branch as INVITE (RFC 3261)
     char cancel_msg[1024];
     int written = snprintf(cancel_msg, sizeof(cancel_msg),
         "CANCEL sip:%s@localnode.local.mesh:5060 SIP/2.0\r\n"
-        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=%s\r\n"
         "From: <sip:%s@%s:%d>;tag=%s\r\n"
         "To: <sip:%s@localnode.local.mesh:5060>\r\n"
         "Call-ID: %s\r\n"
@@ -247,7 +250,7 @@ int uac_cancel_call(void) {
         "Content-Length: 0\r\n"
         "\r\n",
         g_uac_ctx.call.target_number,
-        g_uac_ctx.local_ip, g_uac_ctx.local_port, random(),
+        g_uac_ctx.local_ip, g_uac_ctx.local_port, g_uac_ctx.call.via_branch,
         UAC_PHONE_NUMBER, g_uac_ctx.local_ip, g_uac_ctx.local_port, g_uac_ctx.call.from_tag,
         g_uac_ctx.call.target_number,
         g_uac_ctx.call.call_id,
