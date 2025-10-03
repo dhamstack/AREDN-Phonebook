@@ -38,11 +38,22 @@ pthread_mutex_t phonebook_file_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t updater_trigger_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t updater_trigger_cond = PTHREAD_COND_INITIALIZER;
 
+// Global flag for UAC test trigger
+static volatile sig_atomic_t uac_test_requested = 0;
+
 // Signal handler for webhook-triggered phonebook reload
 void phonebook_reload_signal_handler(int sig) {
     if (sig == SIGUSR1) {
         phonebook_reload_requested = 1;
         LOG_INFO("Received SIGUSR1 - immediate phonebook reload requested via webhook");
+    }
+}
+
+// Signal handler for UAC test trigger
+void uac_test_signal_handler(int sig) {
+    if (sig == SIGUSR2) {
+        uac_test_requested = 1;
+        LOG_INFO("[MAIN] Received SIGUSR2 - UAC test call requested via webhook");
     }
 }
 
@@ -141,9 +152,12 @@ int main(int argc, char *argv[]) {
     // --- Passive Safety: Self-correct configuration ---
     validate_and_correct_config(); // Fix common config errors automatically
 
-    // --- Register signal handler for webhook-triggered phonebook reload ---
+    // --- Register signal handlers ---
     signal(SIGUSR1, phonebook_reload_signal_handler);
     LOG_INFO("Registered SIGUSR1 handler for webhook-triggered phonebook reload");
+
+    signal(SIGUSR2, uac_test_signal_handler);
+    LOG_INFO("Registered SIGUSR2 handler for UAC test calls");
 
     LOG_INFO("Attempting to set process priority...");
     if (setpriority(PRIO_PROCESS, 0, SIP_HANDLER_NICE_VALUE) == -1) { // SIP_HANDLER_NICE_VALUE from common.h
@@ -310,6 +324,31 @@ int main(int argc, char *argv[]) {
             LOG_ERROR("select() error.");
             break; // Exit on select error
         } else if (retval == 0) {
+            // Timeout - check for UAC test request
+            if (uac_test_requested && have_server_ip) {
+                uac_test_requested = 0; // Reset flag
+                LOG_INFO("[MAIN] Processing UAC test request");
+
+                // Read target number from file
+                FILE *f = fopen("/tmp/uac_test_target", "r");
+                if (f) {
+                    char target[32] = {0};
+                    if (fgets(target, sizeof(target), f)) {
+                        // Remove newline
+                        target[strcspn(target, "\r\n")] = 0;
+                        LOG_INFO("[MAIN] Triggering UAC test call to %s", target);
+                        if (uac_make_call(target, server_ip) == 0) {
+                            LOG_INFO("[MAIN] UAC test call initiated successfully");
+                        } else {
+                            LOG_ERROR("[MAIN] UAC test call failed to initiate");
+                        }
+                    }
+                    fclose(f);
+                    unlink("/tmp/uac_test_target");
+                } else {
+                    LOG_WARN("[MAIN] UAC test requested but no target file found");
+                }
+            }
             continue;
         }
 
