@@ -60,7 +60,7 @@
 #define MAX_REGISTERED_USERS 256
 #define MAX_CALL_SESSIONS 10
 
-#define AREDN_MESH_DOMAIN "local.mesh"
+#define AREDN_MESH_DOMAIN "localnode.local.mesh"
 
 #define SIP_HANDLER_NICE_VALUE    -5
 #define BACKGROUND_TASK_NICE_VALUE 10

@@ -259,15 +259,15 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
     const char *sip_domain = (domain && strlen(domain) > 0) ? domain : phone_ip;
 
     snprintf(request, sizeof(request),
-        "INVITE sip:%s@%s SIP/2.0\r\n"
-        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld;rport\r\n"
-        "From: <sip:%s@%s>;tag=%s\r\n"
-        "To: <sip:%s@%s>\r\n"
+        "INVITE sip:%s@%s:5060 SIP/2.0\r\n"
+        "Via: SIP/2.0/UDP %s:%d;branch=z9hG4bK%ld\r\n"
+        "From: <sip:%s@%s:5060>;tag=%s\r\n"
+        "To: <sip:%s@%s:5060>\r\n"
         "Call-ID: %s\r\n"
         "CSeq: 1 INVITE\r\n"
         "Contact: <sip:%s@%s:%d>\r\n"
         "Max-Forwards: 70\r\n"
-        "Supported: replaces, timer\r\n"
+        "Supported: replaces\r\n"
         "User-Agent: AREDN-Phonebook-Monitor\r\n"
         "Content-Type: application/sdp\r\n"
         "Content-Length: %d\r\n"
