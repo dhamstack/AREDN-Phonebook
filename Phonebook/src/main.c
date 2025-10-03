@@ -267,19 +267,22 @@ int main(int argc, char *argv[]) {
     LOG_INFO("Successfully bound to UDP port %d.", SIP_PORT);
 
     // Initialize UAC module (after SIP server is bound)
+    LOG_INFO("[MAIN] Initializing UAC module");
     char server_ip[64];
     int have_server_ip = 0;
 
     // Try to get server IP for UAC
+    LOG_DEBUG("[MAIN] Detecting server IP for UAC binding");
     if (get_server_ip(server_ip, sizeof(server_ip)) == 0) {
+        LOG_INFO("[MAIN] Server IP detected: %s", server_ip);
         if (uac_init(server_ip) == 0) {
             have_server_ip = 1;
-            LOG_INFO("UAC module initialized on %s:%d", server_ip, UAC_SIP_PORT);
+            LOG_INFO("[MAIN] ✓ UAC module initialized successfully on %s:%d", server_ip, UAC_SIP_PORT);
         } else {
-            LOG_WARN("UAC module initialization failed");
+            LOG_WARN("[MAIN] UAC module initialization failed");
         }
     } else {
-        LOG_WARN("Could not determine server IP, UAC module not initialized");
+        LOG_WARN("[MAIN] Could not determine server IP, UAC module not initialized");
     }
 
     LOG_INFO("AREDN Phonebook SIP Server listening on UDP port %d", SIP_PORT);

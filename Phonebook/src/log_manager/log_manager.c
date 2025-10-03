@@ -11,7 +11,8 @@
 #define MODULE_NAME "LOG" // Corrected MODULE_NAME
 
 // Define the desired compile-time log level here.
-#define LOG_COMPILE_LEVEL LOG_LEVEL_INFO
+// Set to DEBUG during UAC development phase for detailed logging
+#define LOG_COMPILE_LEVEL LOG_LEVEL_DEBUG
 
 void log_init(const char* app_name) {
     openlog(app_name, LOG_PID | LOG_CONS | LOG_NDELAY, LOG_DAEMON);

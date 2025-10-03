@@ -33,17 +33,22 @@ static uac_context_t g_uac_ctx = {
 
 // Initialize UAC module
 int uac_init(const char *local_ip) {
+    LOG_DEBUG("[UAC_INIT] Starting UAC initialization");
+    LOG_DEBUG("[UAC_INIT] Local IP parameter: %s", local_ip ? local_ip : "NULL");
+
     if (!local_ip || strlen(local_ip) == 0) {
-        LOG_ERROR("Invalid local IP provided to UAC");
+        LOG_ERROR("[UAC_INIT] Invalid local IP provided to UAC");
         return -1;
     }
 
+    LOG_DEBUG("[UAC_INIT] Creating UDP socket for UAC");
     // Create UDP socket
     g_uac_ctx.sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (g_uac_ctx.sockfd < 0) {
-        LOG_ERROR("Failed to create UAC socket: %s", strerror(errno));
+        LOG_ERROR("[UAC_INIT] Failed to create UAC socket: %s", strerror(errno));
         return -1;
     }
+    LOG_DEBUG("[UAC_INIT] Socket created successfully (fd=%d)", g_uac_ctx.sockfd);
 
     // Bind to unique port (5070)
     struct sockaddr_in bind_addr;
@@ -52,8 +57,9 @@ int uac_init(const char *local_ip) {
     bind_addr.sin_addr.s_addr = inet_addr(local_ip);
     bind_addr.sin_port = htons(UAC_SIP_PORT);
 
+    LOG_DEBUG("[UAC_INIT] Attempting to bind to %s:%d", local_ip, UAC_SIP_PORT);
     if (bind(g_uac_ctx.sockfd, (struct sockaddr*)&bind_addr, sizeof(bind_addr)) < 0) {
-        LOG_ERROR("Failed to bind UAC socket to %s:%d: %s", local_ip, UAC_SIP_PORT, strerror(errno));
+        LOG_ERROR("[UAC_INIT] Failed to bind UAC socket to %s:%d: %s", local_ip, UAC_SIP_PORT, strerror(errno));
         close(g_uac_ctx.sockfd);
         g_uac_ctx.sockfd = -1;
         return -1;
@@ -63,17 +69,22 @@ int uac_init(const char *local_ip) {
     g_uac_ctx.local_port = UAC_SIP_PORT;
     g_uac_ctx.call.state = UAC_STATE_IDLE;
 
-    LOG_INFO("UAC initialized on %s:%d (Phone: %s)", local_ip, UAC_SIP_PORT, UAC_PHONE_NUMBER);
+    LOG_INFO("[UAC_INIT] ✓ UAC initialized on %s:%d (Phone: %s)", local_ip, UAC_SIP_PORT, UAC_PHONE_NUMBER);
+    LOG_DEBUG("[UAC_INIT] UAC context - sockfd=%d, local_ip=%s, local_port=%d, state=%s",
+              g_uac_ctx.sockfd, g_uac_ctx.local_ip, g_uac_ctx.local_port,
+              uac_state_to_string(g_uac_ctx.call.state));
     return 0;
 }
 
 // Shutdown UAC module
 void uac_shutdown(void) {
+    LOG_DEBUG("[UAC_SHUTDOWN] Starting UAC shutdown");
     if (g_uac_ctx.sockfd >= 0) {
+        LOG_DEBUG("[UAC_SHUTDOWN] Closing socket fd=%d", g_uac_ctx.sockfd);
         close(g_uac_ctx.sockfd);
         g_uac_ctx.sockfd = -1;
     }
-    LOG_INFO("UAC shutdown complete");
+    LOG_INFO("[UAC_SHUTDOWN] ✓ UAC shutdown complete");
 }
 
 // Get UAC socket file descriptor
@@ -101,26 +112,35 @@ const char* uac_state_to_string(uac_call_state_t state) {
 
 // Make a call
 int uac_make_call(const char *target_number, const char *server_ip) {
+    LOG_INFO("[UAC_CALL] Making call to %s via server %s",
+             target_number ? target_number : "NULL",
+             server_ip ? server_ip : "NULL");
+
     if (!target_number || !server_ip) {
-        LOG_ERROR("Invalid parameters to uac_make_call");
+        LOG_ERROR("[UAC_CALL] Invalid parameters to uac_make_call");
         return -1;
     }
 
     if (g_uac_ctx.call.state != UAC_STATE_IDLE) {
-        LOG_ERROR("Call already in progress (state: %s)", uac_state_to_string(g_uac_ctx.call.state));
+        LOG_ERROR("[UAC_CALL] Call already in progress (state: %s)", uac_state_to_string(g_uac_ctx.call.state));
         return -1;
     }
 
     if (g_uac_ctx.sockfd < 0) {
-        LOG_ERROR("UAC not initialized");
+        LOG_ERROR("[UAC_CALL] UAC not initialized (sockfd=%d)", g_uac_ctx.sockfd);
         return -1;
     }
+
+    LOG_DEBUG("[UAC_CALL] Current state: %s, sockfd: %d",
+              uac_state_to_string(g_uac_ctx.call.state), g_uac_ctx.sockfd);
 
     // Setup server address
     memset(&g_uac_ctx.call.server_addr, 0, sizeof(g_uac_ctx.call.server_addr));
     g_uac_ctx.call.server_addr.sin_family = AF_INET;
     g_uac_ctx.call.server_addr.sin_addr.s_addr = inet_addr(server_ip);
     g_uac_ctx.call.server_addr.sin_port = htons(5060);
+
+    LOG_DEBUG("[UAC_CALL] Server address set to %s:5060", server_ip);
 
     // Generate Call-ID and tags
     snprintf(g_uac_ctx.call.call_id, sizeof(g_uac_ctx.call.call_id),
@@ -132,25 +152,37 @@ int uac_make_call(const char *target_number, const char *server_ip) {
             sizeof(g_uac_ctx.call.target_number) - 1);
     g_uac_ctx.call.cseq = 1;
 
+    LOG_DEBUG("[UAC_CALL] Call-ID: %s", g_uac_ctx.call.call_id);
+    LOG_DEBUG("[UAC_CALL] From-tag: %s", g_uac_ctx.call.from_tag);
+    LOG_DEBUG("[UAC_CALL] CSeq: %d", g_uac_ctx.call.cseq);
+
     // Build INVITE message
     char invite_msg[2048];
+    LOG_DEBUG("[UAC_CALL] Building INVITE message");
     if (uac_build_invite(invite_msg, sizeof(invite_msg), &g_uac_ctx.call,
                          g_uac_ctx.local_ip, g_uac_ctx.local_port) < 0) {
-        LOG_ERROR("Failed to build INVITE message");
+        LOG_ERROR("[UAC_CALL] Failed to build INVITE message");
         return -1;
     }
 
+    LOG_DEBUG("[UAC_CALL] INVITE message built (%zu bytes)", strlen(invite_msg));
+
     // Send INVITE
+    LOG_DEBUG("[UAC_CALL] Sending INVITE to %s:5060", server_ip);
     ssize_t sent = sendto(g_uac_ctx.sockfd, invite_msg, strlen(invite_msg), 0,
                           (struct sockaddr*)&g_uac_ctx.call.server_addr,
                           sizeof(g_uac_ctx.call.server_addr));
     if (sent < 0) {
-        LOG_ERROR("Failed to send INVITE: %s", strerror(errno));
+        LOG_ERROR("[UAC_CALL] Failed to send INVITE: %s", strerror(errno));
         return -1;
     }
 
+    LOG_DEBUG("[UAC_CALL] INVITE sent successfully (%zd bytes)", sent);
+
     g_uac_ctx.call.state = UAC_STATE_CALLING;
-    LOG_INFO("INVITE sent to %s for %s (Call-ID: %s)", server_ip, target_number, g_uac_ctx.call.call_id);
+    LOG_INFO("[UAC_CALL] ✓ INVITE sent to %s for %s (Call-ID: %s, state: %s)",
+             server_ip, target_number, g_uac_ctx.call.call_id,
+             uac_state_to_string(g_uac_ctx.call.state));
     return 0;
 }
 
@@ -208,20 +240,24 @@ int uac_hang_up(void) {
 
 // Process incoming SIP response
 int uac_process_response(const char *response, size_t response_len) {
+    LOG_DEBUG("[UAC_RESPONSE] Received response (%zu bytes)", response_len);
+
     if (!response || response_len == 0) {
-        LOG_ERROR("Invalid response parameters");
+        LOG_ERROR("[UAC_RESPONSE] Invalid response parameters");
         return -1;
     }
 
     // Parse status line
     int status_code = 0;
     if (sscanf(response, "SIP/2.0 %d", &status_code) != 1) {
-        LOG_ERROR("Failed to parse SIP response status line");
+        LOG_ERROR("[UAC_RESPONSE] Failed to parse SIP response status line");
+        LOG_DEBUG("[UAC_RESPONSE] Response: %.*s", (int)MIN(200, response_len), response);
         return -1;
     }
 
-    LOG_INFO("Received SIP response: %d (state: %s)", status_code,
+    LOG_INFO("[UAC_RESPONSE] ← Received %d response (state: %s)", status_code,
              uac_state_to_string(g_uac_ctx.call.state));
+    LOG_DEBUG("[UAC_RESPONSE] First line: %.80s", response);
 
     switch (status_code) {
         case 100:  // Trying
