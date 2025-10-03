@@ -80,16 +80,29 @@ void *uac_bulk_tester_thread(void *arg) {
                 // Release mutex before making UAC call (UAC may take time)
                 pthread_mutex_unlock(&registered_users_mutex);
 
-                // Trigger UAC test call using global server IP
-                if (uac_make_call(user->user_id, g_server_ip) == 0) {
-                    tests_triggered++;
-                    LOG_INFO("✓ UAC test triggered for %s (%s)", user->user_id, user->display_name);
-                } else {
-                    LOG_WARN("✗ Failed to trigger UAC test for %s (%s)", user->user_id, user->display_name);
+                // Wait for UAC to return to IDLE state before making next call
+                // The UAC only supports one call at a time
+                int wait_count = 0;
+                while (uac_get_state() != UAC_STATE_IDLE && wait_count < 10) {
+                    sleep(1);
+                    wait_count++;
                 }
 
-                // Wait between tests to avoid overwhelming the system
-                sleep(5);
+                if (uac_get_state() != UAC_STATE_IDLE) {
+                    LOG_WARN("✗ UAC busy (state: %s), skipping %s (%s)",
+                             uac_state_to_string(uac_get_state()), user->user_id, user->display_name);
+                } else {
+                    // Trigger UAC test call using global server IP
+                    if (uac_make_call(user->user_id, g_server_ip) == 0) {
+                        tests_triggered++;
+                        LOG_INFO("✓ UAC test triggered for %s (%s)", user->user_id, user->display_name);
+
+                        // Wait for call to complete (receive response and reset to IDLE)
+                        sleep(3);
+                    } else {
+                        LOG_WARN("✗ Failed to trigger UAC test for %s (%s)", user->user_id, user->display_name);
+                    }
+                }
 
                 // Re-acquire mutex for next iteration
                 pthread_mutex_lock(&registered_users_mutex);
