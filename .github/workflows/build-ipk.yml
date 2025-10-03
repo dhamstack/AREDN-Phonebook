@@ -58,6 +58,16 @@ jobs:
           mkdir -p sdk/package/AREDN-Phonebook
           cp -r Phonebook/* sdk/package/AREDN-Phonebook/
 
+          # Update version with build number in Makefile
+          BUILD_NUM="${{ github.run_number }}"
+          GIT_SHA="$(echo ${{ github.sha }} | cut -c1-7)"
+
+          # Replace PKG_RELEASE with build number
+          sed -i "s/^PKG_RELEASE:=1$/PKG_RELEASE:=${BUILD_NUM}.${GIT_SHA}/" sdk/package/AREDN-Phonebook/Makefile
+
+          echo "Updated Makefile with build number:"
+          grep -E "PKG_VERSION|PKG_RELEASE" sdk/package/AREDN-Phonebook/Makefile
+
           # Verify Makefile was copied correctly
           echo "Verifying Makefile:"
           if [ -f sdk/package/AREDN-Phonebook/Makefile ]; then
