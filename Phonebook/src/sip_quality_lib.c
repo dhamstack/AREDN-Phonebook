@@ -267,8 +267,7 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
         "CSeq: 1 INVITE\r\n"
         "Contact: <sip:%s@%s:%d>\r\n"
         "Max-Forwards: 70\r\n"
-        "Call-Info: <sip:%s@%s>;answer-after=0\r\n"
-        "Alert-Info: <sip:%s@%s>;info=alert-autoanswer\r\n"
+        "Supported: replaces, timer\r\n"
         "User-Agent: AREDN-Phonebook-Monitor\r\n"
         "Content-Type: application/sdp\r\n"
         "Content-Length: %d\r\n"
@@ -285,7 +284,7 @@ static int send_invite(int sockfd, struct sockaddr_in *addr, const char *phone_n
         "a=maxptime:40\r\n"
         "a=sendrecv\r\n",
         phone_number, sip_domain, local_ip, local_sip_port, branch_id, from_user, sip_domain, from_tag_out, phone_number, sip_domain,
-        call_id_out, from_user, sip_domain, local_sip_port, phone_number, sip_domain, phone_number, sip_domain,
+        call_id_out, from_user, sip_domain, local_sip_port,
         171 + (rtp_port > 9999 ? 10 : rtp_port > 999 ? 8 : 6) + strlen(local_ip) * 3 + strlen(from_user) + 38,
         from_user, rand_val, local_ip, local_ip, rtp_port, rtp_port + 1);
 
