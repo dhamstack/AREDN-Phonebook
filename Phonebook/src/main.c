@@ -298,17 +298,17 @@ int main(int argc, char *argv[]) {
     int have_server_ip = 0;
 
     // Try to get server IP for UAC
-    LOG_DEBUG("[MAIN] Detecting server IP for UAC binding");
+    syslog(6, "[UAC_INIT] Detecting server IP for UAC binding");
     if (get_server_ip(server_ip, sizeof(server_ip)) == 0) {
-        LOG_INFO("[MAIN] Server IP detected: %s", server_ip);
+        syslog(6, "[UAC_INIT] Server IP detected: %s", server_ip);
         if (uac_init(server_ip) == 0) {
             have_server_ip = 1;
-            LOG_INFO("[MAIN] ✓ UAC module initialized successfully on %s:%d", server_ip, UAC_SIP_PORT);
+            syslog(6, "[UAC_INIT] ✓ UAC initialized on %s:%d (have_server_ip=%d)", server_ip, UAC_SIP_PORT, have_server_ip);
         } else {
-            LOG_WARN("[MAIN] UAC module initialization failed");
+            syslog(4, "[UAC_INIT] ✗ uac_init() failed");
         }
     } else {
-        LOG_WARN("[MAIN] Could not determine server IP, UAC module not initialized");
+        syslog(4, "[UAC_INIT] ✗ get_server_ip() failed - UAC not initialized");
     }
 
     LOG_INFO("AREDN Phonebook SIP Server listening on UDP port %d", SIP_PORT);
