@@ -53,29 +53,29 @@ jobs:
           mv openwrt-sdk-* sdk
           echo "SDK ready for build"
 
-      - name: Inject aredn-phonebook package
+      - name: Inject AREDN-Phonebook package
         run: |
-          mkdir -p sdk/package/aredn-phonebook
-          cp -r Phonebook/* sdk/package/aredn-phonebook/
+          mkdir -p sdk/package/AREDN-Phonebook
+          cp -r Phonebook/* sdk/package/AREDN-Phonebook/
 
           # Verify Makefile was copied correctly
           echo "Verifying Makefile:"
-          if [ -f sdk/package/aredn-phonebook/Makefile ]; then
+          if [ -f sdk/package/AREDN-Phonebook/Makefile ]; then
             echo "✓ Makefile found"
-            head -15 sdk/package/aredn-phonebook/Makefile
+            head -15 sdk/package/AREDN-Phonebook/Makefile
           else
             echo "✗ Makefile missing!"
-            ls -la sdk/package/aredn-phonebook/
+            ls -la sdk/package/AREDN-Phonebook/
             exit 1
           fi
 
           # Verify all source files are present
           echo "Verifying source structure:"
-          find sdk/package/aredn-phonebook/src -name "*.c" -o -name "*.h" | sort
+          find sdk/package/AREDN-Phonebook/src -name "*.c" -o -name "*.h" | sort
 
           # Check if package is recognized
           echo "Testing package recognition:"
-          cd sdk && make package/aredn-phonebook/info V=s || echo "Package info failed"
+          cd sdk && make package/AREDN-Phonebook/info V=s || echo "Package info failed"
 
       - name: Build package
         run: |
@@ -88,24 +88,24 @@ jobs:
 
           # Show our package structure
           echo "Our package structure:"
-          find package/aredn-phonebook -type f | head -20
+          find package/AREDN-Phonebook -type f | head -20
 
           # Show package info
-          echo "Building aredn-phonebook package for ${{ matrix.target.arch }}..."
+          echo "Building AREDN-Phonebook package for ${{ matrix.target.arch }}..."
 
           # Build with maximum debugging to see compilation errors
           echo "Starting compilation with full debugging..."
           echo "First, let's see if the package is recognized:"
-          make package/aredn-phonebook/info V=99 || echo "Package info failed"
+          make package/AREDN-Phonebook/info V=99 || echo "Package info failed"
 
           echo "Now attempting compilation with full verbosity:"
-          if ! make package/aredn-phonebook/compile V=99 -j1 2>&1 | tee build.log; then
+          if ! make package/AREDN-Phonebook/compile V=99 -j1 2>&1 | tee build.log; then
             echo "BUILD FAILED! Full build log:"
             cat build.log
             echo "=== Checking for compilation errors ==="
             grep -n -A5 -B5 -i "error\|fail\|undefined\|cannot\|missing" build.log || echo "No obvious errors found"
             echo "=== Checking build directory ==="
-            find build_dir -name "*aredn-phonebook*" -o -name "*phonebook*" 2>/dev/null || echo "No aredn-phonebook build dir found"
+            find build_dir -name "*AREDN-Phonebook*" -o -name "*phonebook*" 2>/dev/null || echo "No AREDN-Phonebook build dir found"
             echo "=== Checking if any C files were processed ==="
             find . -name "*.o" | head -10
             exit 1
@@ -119,12 +119,12 @@ jobs:
       - name: Find IPK file
         id: find_ipk
         run: |
-          echo "Searching for aredn-phonebook IPK file..."
-          # Look for our aredn-phonebook package specifically
-          IPK_FILE=$(find sdk/bin -name "*aredn-phonebook*.ipk" | head -n 1)
+          echo "Searching for AREDN-Phonebook IPK file..."
+          # Look for our AREDN-Phonebook package specifically
+          IPK_FILE=$(find sdk/bin -name "*AREDN-Phonebook*.ipk" | head -n 1)
 
           if [ -z "$IPK_FILE" ]; then
-            echo "aredn-phonebook IPK not found! Checking all IPK files:"
+            echo "AREDN-Phonebook IPK not found! Checking all IPK files:"
             find sdk/bin -name "*.ipk" -type f
             echo "Maybe the package name is different. Checking non-library IPKs:"
             find sdk/bin -name "*.ipk" -not -name "lib*" -type f
@@ -138,7 +138,7 @@ jobs:
           fi
 
           # Rename IPK file to include architecture
-          ARCH_IPK="aredn-phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}.ipk"
+          ARCH_IPK="AREDN-Phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}.ipk"
           cp "$IPK_FILE" "$ARCH_IPK"
 
           echo "ipk_path=$ARCH_IPK" >> $GITHUB_OUTPUT
@@ -150,7 +150,7 @@ jobs:
       - name: Upload IPK as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aredn-phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}
+          name: AREDN-Phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}
           path: ${{ steps.find_ipk.outputs.ipk_path }}
           retention-days: 30
 

@@ -1,6 +1,6 @@
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=aredn-phonebook
+PKG_NAME:=AREDN-Phonebook
 PKG_VERSION:=1.4.5
 PKG_RELEASE:=1
 
@@ -8,16 +8,15 @@ PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
 
-define Package/aredn-phonebook
+define Package/AREDN-Phonebook
   SECTION:=net
   CATEGORY:=Network
   SUBMENU:=Telephony
   TITLE:=AREDN Phonebook
   URL:=https://github.com/dhamstack/AREDN-Phonebook
-  DEPENDS:=+libpthread
 endef
 
-define Package/aredn-phonebook/description
+define Package/AREDN-Phonebook/description
   AREDN Phonebook SIP Server with UAC load testing support.
   Includes passive safety features for Amateur Radio Emergency Data Networks.
 endef
@@ -31,8 +30,9 @@ endef
 
 define Build/Compile
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
+		-static \
 		-I$(PKG_BUILD_DIR) \
-		-o $(PKG_BUILD_DIR)/aredn-phonebook \
+		-o $(PKG_BUILD_DIR)/AREDN-Phonebook \
 		$(PKG_BUILD_DIR)/main.c \
 		$(PKG_BUILD_DIR)/call-sessions/call_sessions.c \
 		$(PKG_BUILD_DIR)/user_manager/user_manager.c \
@@ -50,9 +50,9 @@ define Build/Compile
 		-lpthread
 endef
 
-define Package/aredn-phonebook/install
+define Package/AREDN-Phonebook/install
 	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/aredn-phonebook $(1)/usr/bin/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/AREDN-Phonebook $(1)/usr/bin/
 	$(INSTALL_DIR) $(1)/etc
 	$(INSTALL_CONF) $(PKG_BUILD_DIR)/files/etc/sipserver.conf $(1)/etc/
 	$(INSTALL_DIR) $(1)/etc/init.d
@@ -62,4 +62,4 @@ define Package/aredn-phonebook/install
 	$(INSTALL_BIN) ./files/www/cgi-bin/showphonebook $(1)/www/cgi-bin/
 endef
 
-$(eval $(call BuildPackage,aredn-phonebook))
+$(eval $(call BuildPackage,AREDN-Phonebook))
