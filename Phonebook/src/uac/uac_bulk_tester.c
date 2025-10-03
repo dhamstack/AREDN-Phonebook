@@ -47,6 +47,11 @@ void *uac_bulk_tester_thread(void *arg) {
                 continue;
             }
 
+            // Only test phone numbers starting with 4415
+            if (strncmp(user->user_id, "4415", 4) != 0) {
+                continue;
+            }
+
             total_users++;
 
             // Build hostname for DNS check: <phone_number>.local.mesh
