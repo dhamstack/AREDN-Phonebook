@@ -337,6 +337,9 @@ int main(int argc, char *argv[]) {
             break; // Exit on select error
         } else if (retval == 0) {
             // Timeout - check for UAC test request
+            if (uac_test_requested) {
+                syslog(7, "[UAC_TEST] Timeout occurred, uac_test_requested=%d, have_server_ip=%d", uac_test_requested, have_server_ip);
+            }
             if (uac_test_requested && have_server_ip) {
                 uac_test_requested = 0; // Reset flag
                 syslog(6, "[UAC_TEST] Processing UAC test request (have_server_ip=%d)", have_server_ip); // 6 = LOG_INFO
