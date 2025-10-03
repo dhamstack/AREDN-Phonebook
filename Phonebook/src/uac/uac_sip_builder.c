@@ -7,10 +7,15 @@
 // Build INVITE message
 int uac_build_invite(char *buffer, size_t buffer_size, uac_call_t *call,
                      const char *local_ip, int local_port) {
+    LOG_DEBUG("[UAC_BUILDER] Building INVITE message");
+
     if (!buffer || !call || !local_ip) {
-        LOG_ERROR("Invalid parameters to uac_build_invite");
+        LOG_ERROR("[UAC_BUILDER] Invalid parameters to uac_build_invite");
         return -1;
     }
+
+    LOG_DEBUG("[UAC_BUILDER] INVITE params - target: %s, local: %s:%d, Call-ID: %s",
+              call->target_number, local_ip, local_port, call->call_id);
 
     // For Phase 1, use minimal SDP (RTP not actually sent)
     char sdp[512];
@@ -25,6 +30,7 @@ int uac_build_invite(char *buffer, size_t buffer_size, uac_call_t *call,
         UAC_PHONE_NUMBER, time(NULL), time(NULL), local_ip, local_ip);
 
     int content_length = strlen(sdp);
+    LOG_DEBUG("[UAC_BUILDER] SDP body created (%d bytes)", content_length);
 
     int written = snprintf(buffer, buffer_size,
         "INVITE sip:%s@localnode.local.mesh:5060 SIP/2.0\r\n"
@@ -51,21 +57,26 @@ int uac_build_invite(char *buffer, size_t buffer_size, uac_call_t *call,
         sdp);
 
     if (written >= buffer_size) {
-        LOG_ERROR("INVITE message truncated (needed %d bytes, have %zu)", written, buffer_size);
+        LOG_ERROR("[UAC_BUILDER] INVITE message truncated (needed %d bytes, have %zu)", written, buffer_size);
         return -1;
     }
 
-    LOG_DEBUG("Built INVITE message (%d bytes)", written);
+    LOG_DEBUG("[UAC_BUILDER] ✓ Built INVITE message (%d bytes)", written);
     return 0;
 }
 
 // Build ACK message
 int uac_build_ack(char *buffer, size_t buffer_size, uac_call_t *call,
                   const char *local_ip, int local_port) {
+    LOG_DEBUG("[UAC_BUILDER] Building ACK message");
+
     if (!buffer || !call || !local_ip) {
-        LOG_ERROR("Invalid parameters to uac_build_ack");
+        LOG_ERROR("[UAC_BUILDER] Invalid parameters to uac_build_ack");
         return -1;
     }
+
+    LOG_DEBUG("[UAC_BUILDER] ACK params - target: %s, Call-ID: %s, To-tag: %s",
+              call->target_number, call->call_id, call->to_tag);
 
     int written = snprintf(buffer, buffer_size,
         "ACK sip:%s@localnode.local.mesh:5060 SIP/2.0\r\n"
@@ -85,21 +96,26 @@ int uac_build_ack(char *buffer, size_t buffer_size, uac_call_t *call,
         call->cseq);
 
     if (written >= buffer_size) {
-        LOG_ERROR("ACK message truncated (needed %d bytes, have %zu)", written, buffer_size);
+        LOG_ERROR("[UAC_BUILDER] ACK message truncated (needed %d bytes, have %zu)", written, buffer_size);
         return -1;
     }
 
-    LOG_DEBUG("Built ACK message (%d bytes)", written);
+    LOG_DEBUG("[UAC_BUILDER] ✓ Built ACK message (%d bytes)", written);
     return 0;
 }
 
 // Build BYE message
 int uac_build_bye(char *buffer, size_t buffer_size, uac_call_t *call,
                   const char *local_ip, int local_port) {
+    LOG_DEBUG("[UAC_BUILDER] Building BYE message");
+
     if (!buffer || !call || !local_ip) {
-        LOG_ERROR("Invalid parameters to uac_build_bye");
+        LOG_ERROR("[UAC_BUILDER] Invalid parameters to uac_build_bye");
         return -1;
     }
+
+    LOG_DEBUG("[UAC_BUILDER] BYE params - target: %s, Call-ID: %s, CSeq: %d",
+              call->target_number, call->call_id, call->cseq);
 
     int written = snprintf(buffer, buffer_size,
         "BYE sip:%s@localnode.local.mesh:5060 SIP/2.0\r\n"
@@ -119,10 +135,10 @@ int uac_build_bye(char *buffer, size_t buffer_size, uac_call_t *call,
         call->cseq);
 
     if (written >= buffer_size) {
-        LOG_ERROR("BYE message truncated (needed %d bytes, have %zu)", written, buffer_size);
+        LOG_ERROR("[UAC_BUILDER] BYE message truncated (needed %d bytes, have %zu)", written, buffer_size);
         return -1;
     }
 
-    LOG_DEBUG("Built BYE message (%d bytes)", written);
+    LOG_DEBUG("[UAC_BUILDER] ✓ Built BYE message (%d bytes)", written);
     return 0;
 }

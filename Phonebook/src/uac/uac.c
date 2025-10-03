@@ -188,53 +188,63 @@ int uac_make_call(const char *target_number, const char *server_ip) {
 
 // Send ACK
 static int uac_send_ack(void) {
+    LOG_DEBUG("[UAC_ACK] Preparing to send ACK");
     char ack_msg[1024];
 
+    LOG_DEBUG("[UAC_ACK] Building ACK message");
     if (uac_build_ack(ack_msg, sizeof(ack_msg), &g_uac_ctx.call,
                       g_uac_ctx.local_ip, g_uac_ctx.local_port) < 0) {
-        LOG_ERROR("Failed to build ACK message");
+        LOG_ERROR("[UAC_ACK] Failed to build ACK message");
         return -1;
     }
 
+    LOG_DEBUG("[UAC_ACK] Sending ACK (%zu bytes) to server", strlen(ack_msg));
     ssize_t sent = sendto(g_uac_ctx.sockfd, ack_msg, strlen(ack_msg), 0,
                           (struct sockaddr*)&g_uac_ctx.call.server_addr,
                           sizeof(g_uac_ctx.call.server_addr));
     if (sent < 0) {
-        LOG_ERROR("Failed to send ACK: %s", strerror(errno));
+        LOG_ERROR("[UAC_ACK] Failed to send ACK: %s", strerror(errno));
         return -1;
     }
 
-    LOG_INFO("ACK sent");
+    LOG_INFO("[UAC_ACK] ✓ ACK sent successfully (%zd bytes)", sent);
     return 0;
 }
 
 // Hang up current call
 int uac_hang_up(void) {
+    LOG_INFO("[UAC_BYE] Initiating hang up (current state: %s)",
+             uac_state_to_string(g_uac_ctx.call.state));
+
     if (g_uac_ctx.call.state != UAC_STATE_ESTABLISHED) {
-        LOG_ERROR("No established call to hang up (state: %s)",
+        LOG_ERROR("[UAC_BYE] No established call to hang up (state: %s)",
                   uac_state_to_string(g_uac_ctx.call.state));
         return -1;
     }
 
     char bye_msg[1024];
     g_uac_ctx.call.cseq++;  // Increment CSeq for BYE
+    LOG_DEBUG("[UAC_BYE] CSeq incremented to %d", g_uac_ctx.call.cseq);
 
+    LOG_DEBUG("[UAC_BYE] Building BYE message");
     if (uac_build_bye(bye_msg, sizeof(bye_msg), &g_uac_ctx.call,
                       g_uac_ctx.local_ip, g_uac_ctx.local_port) < 0) {
-        LOG_ERROR("Failed to build BYE message");
+        LOG_ERROR("[UAC_BYE] Failed to build BYE message");
         return -1;
     }
 
+    LOG_DEBUG("[UAC_BYE] Sending BYE (%zu bytes) to server", strlen(bye_msg));
     ssize_t sent = sendto(g_uac_ctx.sockfd, bye_msg, strlen(bye_msg), 0,
                           (struct sockaddr*)&g_uac_ctx.call.server_addr,
                           sizeof(g_uac_ctx.call.server_addr));
     if (sent < 0) {
-        LOG_ERROR("Failed to send BYE: %s", strerror(errno));
+        LOG_ERROR("[UAC_BYE] Failed to send BYE: %s", strerror(errno));
         return -1;
     }
 
     g_uac_ctx.call.state = UAC_STATE_TERMINATING;
-    LOG_INFO("BYE sent");
+    LOG_INFO("[UAC_BYE] ✓ BYE sent successfully (%zd bytes, state: %s)",
+             sent, uac_state_to_string(g_uac_ctx.call.state));
     return 0;
 }
 
@@ -263,57 +273,77 @@ int uac_process_response(const char *response, size_t response_len) {
     switch (status_code) {
         case 100:  // Trying
             if (g_uac_ctx.call.state == UAC_STATE_CALLING) {
-                LOG_INFO("Call setup in progress (100 Trying)");
+                LOG_INFO("[UAC_RESPONSE] ✓ Call setup in progress (100 Trying)");
+                LOG_DEBUG("[UAC_RESPONSE] State remains: %s", uac_state_to_string(g_uac_ctx.call.state));
+            } else {
+                LOG_WARN("[UAC_RESPONSE] Unexpected 100 in state %s", uac_state_to_string(g_uac_ctx.call.state));
             }
             break;
 
         case 180:  // Ringing
             if (g_uac_ctx.call.state == UAC_STATE_CALLING) {
                 g_uac_ctx.call.state = UAC_STATE_RINGING;
-                LOG_INFO("Phone is ringing (180 Ringing)");
+                LOG_INFO("[UAC_RESPONSE] ✓ Phone is ringing (180 Ringing, state: %s)",
+                         uac_state_to_string(g_uac_ctx.call.state));
+            } else {
+                LOG_WARN("[UAC_RESPONSE] Unexpected 180 in state %s", uac_state_to_string(g_uac_ctx.call.state));
             }
             break;
 
         case 200:  // OK
             if (g_uac_ctx.call.state == UAC_STATE_RINGING ||
                 g_uac_ctx.call.state == UAC_STATE_CALLING) {
+                LOG_DEBUG("[UAC_RESPONSE] Processing 200 OK for INVITE");
+
                 // Extract To tag from 200 OK
+                LOG_DEBUG("[UAC_RESPONSE] Extracting To tag from response");
                 if (uac_extract_to_tag(response, g_uac_ctx.call.to_tag,
                                        sizeof(g_uac_ctx.call.to_tag)) < 0) {
-                    LOG_WARN("Failed to extract To tag from 200 OK");
+                    LOG_WARN("[UAC_RESPONSE] Failed to extract To tag from 200 OK");
+                } else {
+                    LOG_DEBUG("[UAC_RESPONSE] To tag extracted: %s", g_uac_ctx.call.to_tag);
                 }
 
                 // Send ACK
+                LOG_DEBUG("[UAC_RESPONSE] Sending ACK for 200 OK");
                 if (uac_send_ack() < 0) {
-                    LOG_ERROR("Failed to send ACK");
+                    LOG_ERROR("[UAC_RESPONSE] Failed to send ACK");
                     return -1;
                 }
 
                 g_uac_ctx.call.state = UAC_STATE_ESTABLISHED;
-                LOG_INFO("Call established (200 OK received, ACK sent)");
+                LOG_INFO("[UAC_RESPONSE] ✓ Call established (200 OK received, ACK sent, state: %s)",
+                         uac_state_to_string(g_uac_ctx.call.state));
 
             } else if (g_uac_ctx.call.state == UAC_STATE_TERMINATING) {
+                LOG_DEBUG("[UAC_RESPONSE] Processing 200 OK for BYE");
                 g_uac_ctx.call.state = UAC_STATE_TERMINATED;
-                LOG_INFO("Call terminated successfully (200 OK for BYE)");
+                LOG_INFO("[UAC_RESPONSE] ✓ Call terminated successfully (200 OK for BYE)");
 
                 // Reset call context
+                LOG_DEBUG("[UAC_RESPONSE] Resetting call context to IDLE");
                 g_uac_ctx.call.state = UAC_STATE_IDLE;
                 memset(&g_uac_ctx.call, 0, sizeof(g_uac_ctx.call));
+            } else {
+                LOG_WARN("[UAC_RESPONSE] Unexpected 200 OK in state %s", uac_state_to_string(g_uac_ctx.call.state));
             }
             break;
 
         case 486:  // Busy Here
-            LOG_WARN("Target phone busy (486 Busy Here)");
+            LOG_WARN("[UAC_RESPONSE] Target phone busy (486 Busy Here)");
+            LOG_DEBUG("[UAC_RESPONSE] Transitioning to IDLE state");
             g_uac_ctx.call.state = UAC_STATE_IDLE;
             break;
 
         case 487:  // Request Terminated
-            LOG_WARN("Request terminated (487)");
+            LOG_WARN("[UAC_RESPONSE] Request terminated (487)");
+            LOG_DEBUG("[UAC_RESPONSE] Transitioning to IDLE state");
             g_uac_ctx.call.state = UAC_STATE_IDLE;
             break;
 
         default:
-            LOG_WARN("Unexpected response code: %d", status_code);
+            LOG_WARN("[UAC_RESPONSE] Unexpected response code: %d", status_code);
+            LOG_DEBUG("[UAC_RESPONSE] Current state: %s", uac_state_to_string(g_uac_ctx.call.state));
             break;
     }
 
