@@ -32,8 +32,8 @@ int quality_monitor_init(int sip_sock, const char *server_ip) {
     // Set default configuration
     g_monitor_context.config.enabled = 1;
     g_monitor_context.config.test_interval_sec = 300;  // 5 minutes
-    g_monitor_context.config.cycle_delay_sec = 10;     // 10 seconds between phones
-    g_monitor_context.config.probe_config.timeout_ms = 5000;
+    g_monitor_context.config.cycle_delay_sec = 1;      // 1 second between phones
+    g_monitor_context.config.probe_config.timeout_ms = 3000;  // 3 second timeout
 
     LOG_INFO("Quality monitor initialized (socket=%d, server_ip=%s)",
              sip_sock, server_ip ? server_ip : "auto");
