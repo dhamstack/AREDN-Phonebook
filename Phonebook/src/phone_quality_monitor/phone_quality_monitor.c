@@ -334,6 +334,13 @@ void* quality_monitor_thread(void *arg) {
     LOG_INFO("Quality monitor thread running (interval=%d sec, cycle_delay=%d sec)",
              ctx->config.test_interval_sec, ctx->config.cycle_delay_sec);
 
+    // Initial startup delay to allow phones to REGISTER and populate Contact info
+    int initial_delay_sec = 60; // Default: 60 seconds
+    LOG_INFO("Quality monitor: Waiting %d seconds for phones to register...", initial_delay_sec);
+    for (int i = 0; i < initial_delay_sec && g_monitor_running; i++) {
+        sleep(1);
+    }
+
     while (g_monitor_running) {
         // Get list of ALL users to test (both CSV directory and dynamic registrations)
         pthread_mutex_lock(&registered_users_mutex);
