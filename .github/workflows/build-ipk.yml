@@ -104,30 +104,27 @@ jobs:
           echo ""
           echo "=== Checking compilation result ==="
           # Check if IPK was created (most reliable indicator of success)
-          IPK_CHECK=$(find sdk/bin/packages -name "*AREDN-Phonebook*.ipk" -type f | head -n 1)
+          IPK_CHECK=$(find bin/packages -name "*AREDN-Phonebook*.ipk" -type f 2>/dev/null | head -n 1)
           if [ -n "$IPK_CHECK" ]; then
             echo "✓ Build succeeded! IPK file created:"
             ls -lh "$IPK_CHECK"
           else
             echo "✗ Build failed - no IPK file created"
             echo ""
+            echo "=== Checking all IPK files ==="
+            find bin -name "*.ipk" -type f 2>/dev/null || echo "No IPK files found"
+            echo ""
             echo "=== Full build log ==="
-            cat build.log
+            tail -100 build.log
             echo ""
             echo "=== Checking for compilation errors ==="
             grep -n -A5 -B5 -i "error:" build.log || echo "No 'error:' found"
-            echo ""
-            echo "=== Checking build directory structure ==="
-            find build_dir -type d -name "*AREDN-Phonebook*" 2>/dev/null || echo "No AREDN-Phonebook build dir"
-            echo ""
-            echo "=== Checking for any .o files (compiled objects) ==="
-            find build_dir -name "*.o" 2>/dev/null | head -10 || echo "No .o files found"
             exit 1
           fi
 
           # Show build results
-          echo "Build completed! Searching for IPK files..."
-          find bin -name "*.ipk" -ls || echo "No IPK files found in bin/"
+          echo "Build completed successfully! All IPK files:"
+          find bin -name "*.ipk" -type f -ls || echo "No IPK files found in bin/"
 
       # Find and rename the built IPK file
       - name: Find IPK file
