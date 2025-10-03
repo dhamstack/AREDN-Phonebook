@@ -107,7 +107,7 @@ void *uac_bulk_tester_thread(void *arg) {
                     // Poll UAC state rapidly to minimize ring time
                     // Cancel as soon as we detect RINGING state
                     int poll_count = 0;
-                    int max_polls = 40; // 40 * 50ms = 2 seconds max
+                    int max_polls = 20; // 20 * 50ms = 1 second max (phones respond in <100ms)
                     uac_call_state_t state = UAC_STATE_IDLE;
 
                     while (poll_count < max_polls) {
