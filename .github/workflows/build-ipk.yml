@@ -103,7 +103,7 @@ jobs:
           make package/AREDN-Phonebook/info V=99 || echo "Package info failed"
 
           echo "Now attempting compilation with full verbosity:"
-          BUILD_SHA="${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)" make package/AREDN-Phonebook/compile V=99 -j1 2>&1 | tee build.log
+          BUILD_SHA="${{ github.run_number }}-${{ github.sha }}" make package/AREDN-Phonebook/compile V=99 -j1 2>&1 | tee build.log
 
           echo ""
           echo "=== Checking compilation result ==="
@@ -152,8 +152,8 @@ jobs:
             exit 1
           fi
 
-          # Create unique build number from git commit and run number
-          BUILD_NUM="${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)"
+          # Create unique build number from git commit and run number (full SHA)
+          BUILD_NUM="${{ github.run_number }}-${{ github.sha }}"
 
           # Rename IPK file to include architecture and build number
           ARCH_IPK="AREDN-Phonebook-${{ matrix.target.arch }}-${{ github.ref_name }}-${BUILD_NUM}.ipk"
