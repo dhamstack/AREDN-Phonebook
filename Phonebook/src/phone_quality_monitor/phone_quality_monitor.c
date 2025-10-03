@@ -399,21 +399,25 @@ void* quality_monitor_thread(void *arg) {
 
             // Look up registered user to get their Contact info
             RegisteredUser *user = find_registered_user(users_to_test[i].phone_number);
-            if (!user || user->ip_address[0] == '\0') {
-                LOG_WARN("[%d/%d] Skipping %s - no registered Contact found",
-                         i+1, test_count, users_to_test[i].phone_number);
-                continue;
+            const char *target_ip = NULL;
+
+            if (user && user->ip_address[0] != '\0') {
+                // Use registered Contact IP (preferred)
+                target_ip = user->ip_address;
+                LOG_INFO("[%d/%d] Testing phone %s (Contact: %s:%d)...", i+1, test_count,
+                         users_to_test[i].phone_number, user->ip_address, user->port);
+            } else {
+                // Fallback to DNS-resolved IP if no Contact registered yet
+                target_ip = users_to_test[i].phone_ip;
+                LOG_INFO("[%d/%d] Testing phone %s (DNS: %s) - no Contact yet", i+1, test_count,
+                         users_to_test[i].phone_number, target_ip);
             }
 
-            LOG_INFO("[%d/%d] Testing phone %s (Contact: %s:%d)...", i+1, test_count,
-                     users_to_test[i].phone_number, user->ip_address, user->port);
-
             // Use SIP server socket (port 5060) - phones expect replies on 5060
-            // Route to registered Contact (not DNS-resolved IP)
             int rc = test_phone_quality_with_socket(
                 ctx->sip_socket,
                 users_to_test[i].phone_number,
-                user->ip_address,        // Use Contact IP from REGISTER
+                target_ip,               // Use Contact IP or DNS fallback
                 ctx->server_ip,
                 &result,
                 &ctx->config.probe_config,
