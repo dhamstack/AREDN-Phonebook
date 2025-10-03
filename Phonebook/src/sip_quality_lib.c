@@ -22,6 +22,14 @@
 // Flag to indicate if we should use response queue (set when using shared socket)
 static __thread int use_response_queue = 0;
 
+// Weak symbol stub for standalone builds without phone_quality_monitor.c
+__attribute__((weak))
+int quality_monitor_dequeue_response(char *buffer, int buffer_size, int timeout_ms) {
+    (void)buffer; (void)buffer_size; (void)timeout_ms;
+    errno = ENOSYS;
+    return -1;
+}
+
 #define SIP_PORT 5060
 #define RTP_PAYLOAD_TYPE 0  // PCMU
 
