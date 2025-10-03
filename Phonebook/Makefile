@@ -51,6 +51,7 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/uac/uac.c \
 		$(PKG_BUILD_DIR)/uac/uac_sip_builder.c \
 		$(PKG_BUILD_DIR)/uac/uac_sip_parser.c \
+		$(PKG_BUILD_DIR)/uac/uac_bulk_tester.c \
 		-lpthread
 endef
 
@@ -65,6 +66,7 @@ define Package/AREDN-Phonebook/install
 	$(INSTALL_BIN) ./files/www/cgi-bin/loadphonebook $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/showphonebook $(1)/www/cgi-bin/
 	$(INSTALL_BIN) ./files/www/cgi-bin/uac_test $(1)/www/cgi-bin/
+	$(INSTALL_BIN) ./files/www/cgi-bin/uac_test_all $(1)/www/cgi-bin/
 endef
 
 $(eval $(call BuildPackage,AREDN-Phonebook))

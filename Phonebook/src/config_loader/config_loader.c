@@ -12,6 +12,7 @@
 // These are initialized with default values, which will be overwritten by the config file if present.
 int g_pb_interval_seconds = 3600; // Default: 1 hour
 int g_status_update_interval_seconds = 600; // Default: 10 minutes
+int g_uac_test_interval_seconds = 3600; // Default: 1 hour
 ConfigurableServer g_phonebook_servers_list[MAX_PB_SERVERS];
 int g_num_phonebook_servers = 0; // Will be populated by the loader
 
@@ -83,6 +84,14 @@ int load_configuration(const char *config_filepath) {
                 LOG_DEBUG("Config: STATUS_UPDATE_INTERVAL_SECONDS = %d", g_status_update_interval_seconds);
             } else {
                 LOG_WARN("Invalid STATUS_UPDATE_INTERVAL_SECONDS value '%s'. Using default %d.", value, g_status_update_interval_seconds);
+            }
+        } else if (strcmp(key, "UAC_TEST_INTERVAL_SECONDS") == 0) {
+            int parsed_value = atoi(value);
+            if (parsed_value >= 0) { // Allow 0 to disable
+                g_uac_test_interval_seconds = parsed_value;
+                LOG_DEBUG("Config: UAC_TEST_INTERVAL_SECONDS = %d", g_uac_test_interval_seconds);
+            } else {
+                LOG_WARN("Invalid UAC_TEST_INTERVAL_SECONDS value '%s'. Using default %d.", value, g_uac_test_interval_seconds);
             }
         } else if (strcmp(key, "PHONEBOOK_SERVER") == 0) {
             if (current_server_idx < MAX_PB_SERVERS) {

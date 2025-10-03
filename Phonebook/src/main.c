@@ -25,6 +25,7 @@
 #include "call-sessions/call_sessions.h" // For call session management functions
 #include "passive_safety/passive_safety.h" // For passive safety and self-healing
 #include "uac/uac.h"                    // For UAC load testing module
+#include "uac/uac_bulk_tester.h"        // For UAC bulk testing thread
 
 // Define MODULE_NAME specific to main.c
 #define MODULE_NAME "MAIN"
@@ -43,6 +44,7 @@ int num_directory_entries = 0;
 // Thread IDs for passive safety monitoring
 pthread_t fetcher_tid = 0;
 pthread_t status_updater_tid = 0;
+pthread_t bulk_tester_tid = 0;
 
 // Mutexes and Condition Variables (DEFINED here)
 pthread_mutex_t registered_users_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -262,6 +264,14 @@ int main(int argc, char *argv[]) {
     }
     LOG_DEBUG("Passive safety thread launched (silent self-healing enabled).");
     LOG_DEBUG("Passive safety thread TID: %lu", (unsigned long)g_passive_safety_tid);
+
+    LOG_INFO("Creating UAC bulk tester thread...");
+    if (pthread_create(&bulk_tester_tid, NULL, uac_bulk_tester_thread, NULL) != 0) {
+        LOG_ERROR("Failed to create UAC bulk tester thread.");
+        return EXIT_FAILURE;
+    }
+    LOG_DEBUG("UAC bulk tester thread launched.");
+    LOG_DEBUG("Bulk tester thread TID: %lu", (unsigned long)bulk_tester_tid);
 
     LOG_INFO("Initializing call sessions table...");
     init_call_sessions();

@@ -9,6 +9,7 @@
 // Thread health tracking
 time_t g_fetcher_last_heartbeat = 0;
 time_t g_updater_last_heartbeat = 0;
+time_t g_bulk_tester_last_heartbeat = 0;
 pthread_t g_passive_safety_tid = 0;
 
 // ============================================================================

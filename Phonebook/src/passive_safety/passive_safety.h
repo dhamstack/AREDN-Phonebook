@@ -22,6 +22,7 @@ void *passive_safety_thread(void *arg);
 // Thread health tracking (minimal)
 extern time_t g_fetcher_last_heartbeat;
 extern time_t g_updater_last_heartbeat;
+extern time_t g_bulk_tester_last_heartbeat;
 extern pthread_t g_passive_safety_tid;
 
 #endif // PASSIVE_SAFETY_H

@@ -7,6 +7,7 @@
 // These global variables are DECLARED here (extern) and DEFINED in config_loader.c
 extern int g_pb_interval_seconds;
 extern int g_status_update_interval_seconds;
+extern int g_uac_test_interval_seconds;
 extern ConfigurableServer g_phonebook_servers_list[MAX_PB_SERVERS];
 extern int g_num_phonebook_servers;
 

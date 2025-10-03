@@ -1,0 +1,112 @@
+#!/bin/sh
+# UAC Bulk Phone Test
+# Tests all phones in phonebook that have DNS resolution
+# Usage: curl "http://node/cgi-bin/uac_test_all"
+
+echo "Content-Type: application/json"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+# Check if AREDN-Phonebook is running
+PID=$(pgrep -f "AREDN-Phonebook" | head -n1)
+if [ -z "$PID" ]; then
+    echo '{"status":"error","message":"AREDN-Phonebook is not running"}'
+    exit 1
+fi
+
+# Check if CSV phonebook exists
+CSV_FILE="/www/arednstack/phonebook.csv"
+if [ ! -f "$CSV_FILE" ]; then
+    echo "{\"status\":\"error\",\"message\":\"Phonebook CSV not found at $CSV_FILE\"}"
+    exit 1
+fi
+
+# Initialize counters
+total_users=0
+dns_resolved=0
+dns_failed=0
+test_triggered=0
+
+# Output JSON header
+echo "{"
+echo "  \"status\": \"running\","
+echo "  \"message\": \"Testing all phones in phonebook\","
+echo "  \"results\": ["
+
+first_entry=true
+
+# Read CSV and test each phone number (skip header line)
+tail -n +2 "$CSV_FILE" | while IFS=',' read -r firstname lastname callsign unused telephone extra; do
+    # Skip if telephone is empty
+    if [ -z "$telephone" ]; then
+        continue
+    fi
+
+    # Clean up telephone number (remove whitespace, newlines)
+    telephone=$(echo "$telephone" | tr -d ' \t\r\n')
+
+    # Skip if not numeric
+    case "$telephone" in
+        ''|*[!0-9]*) continue ;;
+    esac
+
+    total_users=$((total_users + 1))
+
+    # Build hostname for DNS check
+    hostname="${telephone}.local.mesh"
+
+    # Check DNS resolution with timeout
+    if nslookup "$hostname" >/dev/null 2>&1; then
+        # DNS resolved - node is reachable
+        dns_resolved=$((dns_resolved + 1))
+        dns_status="resolved"
+
+        # Trigger UAC test call
+        echo "$telephone" > /tmp/uac_test_target
+        if kill -USR2 "$PID" 2>/dev/null; then
+            test_triggered=$((test_triggered + 1))
+            test_status="triggered"
+            # Small delay between tests to avoid overwhelming the system
+            sleep 3
+        else
+            test_status="signal_failed"
+        fi
+    else
+        # DNS failed - node not reachable
+        dns_failed=$((dns_failed + 1))
+        dns_status="not_resolved"
+        test_status="skipped"
+    fi
+
+    # Build display name
+    display_name="$firstname $lastname"
+    if [ -n "$callsign" ]; then
+        display_name="$display_name ($callsign)"
+    fi
+
+    # Output JSON for this entry (with comma separator)
+    if [ "$first_entry" = true ]; then
+        first_entry=false
+    else
+        echo ","
+    fi
+
+    echo "    {"
+    echo "      \"telephone\": \"$telephone\","
+    echo "      \"name\": \"$display_name\","
+    echo "      \"hostname\": \"$hostname\","
+    echo "      \"dns_status\": \"$dns_status\","
+    echo "      \"test_status\": \"$test_status\""
+    echo -n "    }"
+done
+
+echo ""
+echo "  ],"
+echo "  \"summary\": {"
+echo "    \"total_users\": $total_users,"
+echo "    \"dns_resolved\": $dns_resolved,"
+echo "    \"dns_failed\": $dns_failed,"
+echo "    \"tests_triggered\": $test_triggered"
+echo "  },"
+echo "  \"note\": \"Check detailed logs with: logread | grep UAC\""
+echo "}"
