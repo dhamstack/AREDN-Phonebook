@@ -1,6 +1,17 @@
 // main.c
 
-#include <syslog.h> // Must be included BEFORE common.h to avoid macro conflicts
+#include <syslog.h> // For direct syslog calls in signal handlers
+
+// Undefine syslog macros that conflict with our LOG_ macros
+#undef LOG_EMERG
+#undef LOG_ALERT
+#undef LOG_CRIT
+#undef LOG_ERR
+#undef LOG_WARNING
+#undef LOG_NOTICE
+#undef LOG_INFO
+#undef LOG_DEBUG
+
 #include "common.h" // This now includes most necessary headers and common declarations
 #include "config_loader/config_loader.h" // Include the new config loader header
 
@@ -54,7 +65,7 @@ void phonebook_reload_signal_handler(int sig) {
 void uac_test_signal_handler(int sig) {
     if (sig == SIGUSR2) {
         uac_test_requested = 1;
-        syslog(LOG_INFO, "[UAC_SIGNAL] SIGUSR2 received - setting uac_test_requested flag");
+        syslog(6, "[UAC_SIGNAL] SIGUSR2 received - setting uac_test_requested flag"); // 6 = LOG_INFO
     }
 }
 
@@ -328,7 +339,7 @@ int main(int argc, char *argv[]) {
             // Timeout - check for UAC test request
             if (uac_test_requested && have_server_ip) {
                 uac_test_requested = 0; // Reset flag
-                syslog(LOG_INFO, "[UAC_TEST] Processing UAC test request (have_server_ip=%d)", have_server_ip);
+                syslog(6, "[UAC_TEST] Processing UAC test request (have_server_ip=%d)", have_server_ip); // 6 = LOG_INFO
 
                 // Read target number from file
                 FILE *f = fopen("/tmp/uac_test_target", "r");
@@ -337,20 +348,20 @@ int main(int argc, char *argv[]) {
                     if (fgets(target, sizeof(target), f)) {
                         // Remove newline
                         target[strcspn(target, "\r\n")] = 0;
-                        syslog(LOG_INFO, "[UAC_TEST] Triggering UAC test call to %s via %s", target, server_ip);
+                        syslog(6, "[UAC_TEST] Triggering UAC test call to %s via %s", target, server_ip); // 6 = LOG_INFO
                         if (uac_make_call(target, server_ip) == 0) {
-                            syslog(LOG_INFO, "[UAC_TEST] ✓ UAC test call initiated successfully");
+                            syslog(6, "[UAC_TEST] ✓ UAC test call initiated successfully"); // 6 = LOG_INFO
                         } else {
-                            syslog(LOG_ERR, "[UAC_TEST] ✗ UAC test call failed to initiate");
+                            syslog(3, "[UAC_TEST] ✗ UAC test call failed to initiate"); // 3 = LOG_ERR
                         }
                     }
                     fclose(f);
                     unlink("/tmp/uac_test_target");
                 } else {
-                    syslog(LOG_WARNING, "[UAC_TEST] UAC test requested but no target file found at /tmp/uac_test_target");
+                    syslog(4, "[UAC_TEST] UAC test requested but no target file found at /tmp/uac_test_target"); // 4 = LOG_WARNING
                 }
             } else if (uac_test_requested && !have_server_ip) {
-                syslog(LOG_WARNING, "[UAC_TEST] UAC test requested but have_server_ip=0, cannot make call");
+                syslog(4, "[UAC_TEST] UAC test requested but have_server_ip=0, cannot make call"); // 4 = LOG_WARNING
                 uac_test_requested = 0;
             }
             continue;
