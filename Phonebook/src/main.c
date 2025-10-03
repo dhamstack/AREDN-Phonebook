@@ -53,7 +53,7 @@ void phonebook_reload_signal_handler(int sig) {
 void uac_test_signal_handler(int sig) {
     if (sig == SIGUSR2) {
         uac_test_requested = 1;
-        LOG_INFO("[MAIN] Received SIGUSR2 - UAC test call requested via webhook");
+        syslog(LOG_INFO, "[UAC_SIGNAL] SIGUSR2 received - setting uac_test_requested flag");
     }
 }
 
@@ -327,7 +327,7 @@ int main(int argc, char *argv[]) {
             // Timeout - check for UAC test request
             if (uac_test_requested && have_server_ip) {
                 uac_test_requested = 0; // Reset flag
-                LOG_INFO("[MAIN] Processing UAC test request");
+                syslog(LOG_INFO, "[UAC_TEST] Processing UAC test request (have_server_ip=%d)", have_server_ip);
 
                 // Read target number from file
                 FILE *f = fopen("/tmp/uac_test_target", "r");
@@ -336,18 +336,21 @@ int main(int argc, char *argv[]) {
                     if (fgets(target, sizeof(target), f)) {
                         // Remove newline
                         target[strcspn(target, "\r\n")] = 0;
-                        LOG_INFO("[MAIN] Triggering UAC test call to %s", target);
+                        syslog(LOG_INFO, "[UAC_TEST] Triggering UAC test call to %s via %s", target, server_ip);
                         if (uac_make_call(target, server_ip) == 0) {
-                            LOG_INFO("[MAIN] UAC test call initiated successfully");
+                            syslog(LOG_INFO, "[UAC_TEST] ✓ UAC test call initiated successfully");
                         } else {
-                            LOG_ERROR("[MAIN] UAC test call failed to initiate");
+                            syslog(LOG_ERR, "[UAC_TEST] ✗ UAC test call failed to initiate");
                         }
                     }
                     fclose(f);
                     unlink("/tmp/uac_test_target");
                 } else {
-                    LOG_WARN("[MAIN] UAC test requested but no target file found");
+                    syslog(LOG_WARNING, "[UAC_TEST] UAC test requested but no target file found at /tmp/uac_test_target");
                 }
+            } else if (uac_test_requested && !have_server_ip) {
+                syslog(LOG_WARNING, "[UAC_TEST] UAC test requested but have_server_ip=0, cannot make call");
+                uac_test_requested = 0;
             }
             continue;
         }
