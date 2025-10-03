@@ -392,19 +392,36 @@ int uac_process_response(const char *response, size_t response_len) {
 
         case 486:  // Busy Here
             LOG_WARN("[UAC_RESPONSE] Target phone busy (486 Busy Here)");
+            // Extract To tag and send ACK to complete transaction
+            if (uac_extract_to_tag(response, g_uac_ctx.call.to_tag,
+                                   sizeof(g_uac_ctx.call.to_tag)) >= 0) {
+                uac_send_ack();
+            }
             LOG_DEBUG("[UAC_RESPONSE] Transitioning to IDLE state");
             g_uac_ctx.call.state = UAC_STATE_IDLE;
             break;
 
         case 487:  // Request Terminated
             LOG_WARN("[UAC_RESPONSE] Request terminated (487)");
+            // Extract To tag and send ACK to complete transaction
+            if (uac_extract_to_tag(response, g_uac_ctx.call.to_tag,
+                                   sizeof(g_uac_ctx.call.to_tag)) >= 0) {
+                uac_send_ack();
+            }
             LOG_DEBUG("[UAC_RESPONSE] Transitioning to IDLE state");
             g_uac_ctx.call.state = UAC_STATE_IDLE;
             break;
 
         default:
-            LOG_WARN("[UAC_RESPONSE] Unexpected response code: %d", status_code);
-            LOG_DEBUG("[UAC_RESPONSE] Resetting UAC to IDLE state after unexpected response");
+            // All error responses to INVITE require ACK (RFC 3261)
+            LOG_WARN("[UAC_RESPONSE] Error response code: %d", status_code);
+            // Extract To tag and send ACK to complete transaction
+            if (uac_extract_to_tag(response, g_uac_ctx.call.to_tag,
+                                   sizeof(g_uac_ctx.call.to_tag)) >= 0) {
+                LOG_DEBUG("[UAC_RESPONSE] Sending ACK for error response");
+                uac_send_ack();
+            }
+            LOG_DEBUG("[UAC_RESPONSE] Resetting UAC to IDLE state after error response");
             g_uac_ctx.call.state = UAC_STATE_IDLE;
             break;
     }
