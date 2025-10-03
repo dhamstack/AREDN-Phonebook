@@ -545,6 +545,28 @@ static void drain_rtp_packets(int rtp_sock, rtp_stats_t *stats) {
     }
 }
 
+// Helper: Create test phone IP from server IP (server_ip + 1)
+static int get_test_phone_ip(const char *server_ip, char *test_ip, size_t test_ip_len) {
+    struct in_addr addr;
+    if (inet_pton(AF_INET, server_ip, &addr) != 1) {
+        return -1;
+    }
+
+    // Increment IP by 1
+    uint32_t ip_int = ntohl(addr.s_addr);
+    ip_int++;
+    addr.s_addr = htonl(ip_int);
+
+    const char *result_ip = inet_ntoa(addr);
+    if (!result_ip) {
+        return -1;
+    }
+
+    strncpy(test_ip, result_ip, test_ip_len - 1);
+    test_ip[test_ip_len - 1] = '\0';
+    return 0;
+}
+
 // Internal core implementation
 static int test_phone_quality_internal(int external_sip_sock, const char *phone_number,
                                        const char *phone_ip, const char *server_ip,
@@ -573,16 +595,47 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     uint32_t lsr = 0;
     struct timeval sr_time;
 
-    // Use external SIP socket if provided, otherwise create new one
-    int local_sip_port = 5060;  // Default: try to bind to 5060
-    if (external_sip_sock >= 0) {
-        sip_sock = external_sip_sock;
-        sip_sock_created = 0;
-        // Get actual port from external socket
+    // Create a separate test phone socket (don't use server's socket)
+    // This simulates a real phone calling through the server
+    int local_sip_port = 0;  // Use ephemeral port for test phone
+
+    // Get test phone IP (server IP + 1)
+    char test_phone_ip[64];
+    if (server_ip && get_test_phone_ip(server_ip, test_phone_ip, sizeof(test_phone_ip)) == 0) {
+        // Create test phone socket bound to test IP
+        sip_sock = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sip_sock < 0) {
+            snprintf(result->status_reason, sizeof(result->status_reason), "SIP socket creation failed");
+            return -1;
+        }
+
+        // Bind to test phone IP with ephemeral port
+        struct sockaddr_in bind_addr;
+        memset(&bind_addr, 0, sizeof(bind_addr));
+        bind_addr.sin_family = AF_INET;
+        if (inet_pton(AF_INET, test_phone_ip, &bind_addr.sin_addr) != 1) {
+            close(sip_sock);
+            snprintf(result->status_reason, sizeof(result->status_reason), "Invalid test phone IP");
+            return -1;
+        }
+        bind_addr.sin_port = 0;  // Ephemeral port
+
+        if (bind(sip_sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
+            close(sip_sock);
+            snprintf(result->status_reason, sizeof(result->status_reason),
+                     "Failed to bind test phone to %s", test_phone_ip);
+            return -1;
+        }
+
+        // Get actual port assigned
         struct sockaddr_in local_addr;
         socklen_t addr_len = sizeof(local_addr);
-        if (getsockname(external_sip_sock, (struct sockaddr *)&local_addr, &addr_len) == 0) {
+        if (getsockname(sip_sock, (struct sockaddr *)&local_addr, &addr_len) == 0) {
             local_sip_port = ntohs(local_addr.sin_port);
+        }
+
+        if (getenv("SIP_DEBUG")) {
+            fprintf(stderr, "[DEBUG] Test phone socket: %s:%d\n", test_phone_ip, local_sip_port);
         }
     } else {
         sip_sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -658,11 +711,16 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
     const char *debug = getenv("SIP_DEBUG");
     int is_debug = (debug && strcmp(debug, "1") == 0);
 
-    if (server_ip && strlen(server_ip) > 0) {
-        // Use provided server IP (from integrated mode)
+    // For test phone mode, use test phone IP as local_ip
+    if (server_ip && get_test_phone_ip(server_ip, test_phone_ip, sizeof(test_phone_ip)) == 0) {
+        strncpy(local_ip, test_phone_ip, sizeof(local_ip) - 1);
+        local_ip[sizeof(local_ip) - 1] = '\0';
+        if (is_debug) fprintf(stderr, "[DEBUG] Using test phone IP: %s\n", local_ip);
+    } else if (server_ip && strlen(server_ip) > 0) {
+        // Fallback: use server IP
         strncpy(local_ip, server_ip, sizeof(local_ip) - 1);
         local_ip[sizeof(local_ip) - 1] = '\0';
-        if (is_debug) fprintf(stderr, "[DEBUG] Using provided server IP: %s\n", local_ip);
+        if (is_debug) fprintf(stderr, "[DEBUG] Using server IP: %s\n", local_ip);
     } else if (env_ip && strlen(env_ip) > 0) {
         // Use environment variable if set
         strncpy(local_ip, env_ip, sizeof(local_ip) - 1);
@@ -677,14 +735,23 @@ static int test_phone_quality_internal(int external_sip_sock, const char *phone_
         if (is_debug) fprintf(stderr, "[DEBUG] Auto-detected local IP: %s\n", local_ip);
     }
 
-    // Setup SIP address
+    // Setup SIP destination address
     memset(&sip_addr, 0, sizeof(sip_addr));
     sip_addr.sin_family = AF_INET;
     sip_addr.sin_port = htons(SIP_PORT);
-    sip_addr.sin_addr.s_addr = inet_addr(phone_ip);
 
-    if (is_debug) fprintf(stderr, "[DEBUG] Testing phone: %s @ %s (local: %s, RTP port: %d)\n",
-                          phone_number, phone_ip, local_ip, rtp_port);
+    // KEY CHANGE: Send INVITE to server (not directly to phone)
+    // This simulates a real phone making a call through the server
+    if (server_ip && strlen(server_ip) > 0) {
+        sip_addr.sin_addr.s_addr = inet_addr(server_ip);
+        if (is_debug) fprintf(stderr, "[DEBUG] Test phone mode: calling %s via server %s (test phone: %s:%d, RTP port: %d)\n",
+                              phone_number, server_ip, local_ip, local_sip_port, rtp_port);
+    } else {
+        // Standalone mode: send directly to phone (old behavior)
+        sip_addr.sin_addr.s_addr = inet_addr(phone_ip);
+        if (is_debug) fprintf(stderr, "[DEBUG] Standalone mode: calling %s @ %s directly (local: %s, RTP port: %d)\n",
+                              phone_number, phone_ip, local_ip, rtp_port);
+    }
 
     // Step 1: Send OPTIONS first to check if phone is ready
     char options_branch[64];
