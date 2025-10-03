@@ -311,8 +311,8 @@ int main(int argc, char *argv[]) {
         syslog(4, "[UAC_INIT] ✗ get_server_ip() failed - UAC not initialized");
     }
 
-    LOG_INFO("AREDN Phonebook SIP Server listening on UDP port %d", SIP_PORT);
-    LOG_INFO("Entering main SIP message processing loop.");
+    syslog(6, "[MAIN_LOOP] Server listening on UDP port %d", SIP_PORT);
+    syslog(6, "[MAIN_LOOP] Entering main loop (have_server_ip=%d, UAC port 5070)", have_server_ip);
 
     while (1) { // Changed from while(keep_running) to while(1)
         len = sizeof(cliaddr);
@@ -337,12 +337,11 @@ int main(int argc, char *argv[]) {
             break; // Exit on select error
         } else if (retval == 0) {
             // Timeout - check for UAC test request
-            if (uac_test_requested) {
-                syslog(7, "[UAC_TEST] Timeout occurred, uac_test_requested=%d, have_server_ip=%d", uac_test_requested, have_server_ip);
-            }
+            syslog(7, "[MAIN_LOOP] Select timeout (uac_test_requested=%d, have_server_ip=%d)", uac_test_requested, have_server_ip);
+
             if (uac_test_requested && have_server_ip) {
                 uac_test_requested = 0; // Reset flag
-                syslog(6, "[UAC_TEST] Processing UAC test request (have_server_ip=%d)", have_server_ip); // 6 = LOG_INFO
+                syslog(6, "[UAC_TEST] ✓ Both flags true, processing UAC test request");
 
                 // Read target number from file
                 FILE *f = fopen("/tmp/uac_test_target", "r");
