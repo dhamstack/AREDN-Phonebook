@@ -254,7 +254,184 @@ The system follows a modular C architecture with multi-threaded design:
 - File existence checking and validation
 - Cross-platform file operations
 
-### 2.9 Log Manager (`log_manager/`)
+### 2.9 VoIP Quality Monitoring (`phone_quality_monitor/`, `sip_quality_lib`)
+
+**Purpose**: Background VoIP quality testing for registered phones using short RTP/RTCP probe calls.
+
+**Architecture**:
+- **Response Queue**: Thread-safe circular buffer for SIP message routing
+- **Shared Socket**: Uses main SIP server socket (port 5060) for probe calls
+- **Message Routing**: Main server filters quality monitor responses by From header
+
+#### 2.9.1 Quality Monitor Thread (`phone_quality_monitor.c`)
+
+**Main Loop**:
+- Runs continuously with configurable test interval (default: 300s)
+- Tests all reachable phones (both CSV directory and dynamic registrations)
+- Uses DNS resolution (`{user_id}.local.mesh`) to verify phone is online
+- Delays between tests (default: 1s) to avoid network congestion
+
+**Data Structures**:
+- `phone_quality_record_t`: Stores test results per phone
+  - `phone_number[32]`: Phone extension
+  - `phone_ip[64]`: Resolved IP address
+  - `last_test_time`: Timestamp of last test
+  - `last_result`: VoIP probe result structure
+  - `valid`: Record validity flag
+
+- `response_queue_entry_t`: Circular buffer for SIP responses
+  - `buffer[4096]`: SIP message buffer
+  - `len`: Message length
+  - `valid`: Entry validity flag
+
+**Key Functions**:
+- `quality_monitor_init()`: Initializes monitor with server socket and IP
+- `quality_monitor_start()`: Spawns monitoring thread
+- `quality_monitor_stop()`: Gracefully stops monitoring
+- `quality_monitor_handle_response()`: Enqueues SIP responses from main server
+- `quality_monitor_dequeue_response()`: Dequeues responses with timeout
+- `quality_monitor_get_record()`: Retrieves quality data for a phone
+- `quality_monitor_get_all_records()`: Exports all quality records
+
+**Configuration**:
+- `enabled`: Enable/disable monitoring (default: 1)
+- `test_interval_sec`: Interval between test cycles (default: 300)
+- `cycle_delay_sec`: Delay between individual phone tests (default: 1)
+- `probe_config`: VoIP probe parameters (timeouts, RTP settings)
+
+**Output**:
+- JSON file: `/tmp/phone_quality.json` with test results
+- Format: Array of phone objects with metrics (RTT, jitter, loss, status)
+- Updated after each test cycle
+- Consumed by CGI endpoint `/www/cgi-bin/quality`
+
+#### 2.9.2 SIP Quality Library (`sip_quality_lib.c`)
+
+**Purpose**: Performs VoIP quality tests via short INVITE+RTP/RTCP probe calls.
+
+**Test Flow**:
+1. **OPTIONS Probe**: Verify phone responds (fast check)
+2. **INVITE**: Initiate test call with auto-answer hints
+3. **RTP Burst**: Send ~1.2s of RTP packets (PCMU, ptime=40ms)
+4. **RTCP Exchange**: Send SR, receive RR for metrics
+5. **BYE**: Terminate call and extract metrics
+
+**Probe Configuration** (`voip_probe_config_t`):
+- `invite_timeout_ms`: INVITE response timeout (default: 5000)
+- `burst_duration_ms`: RTP burst length (default: 1200)
+- `rtp_ptime_ms`: RTP packet interval (default: 40)
+- `rtcp_wait_ms`: Time to wait for RTCP RR (default: 500)
+
+**Probe Results** (`voip_probe_result_t`):
+- `status`: Test outcome (SUCCESS, BUSY, NO_RR, TIMEOUT, ERROR, NO_ANSWER)
+- `sip_rtt_ms`: SIP round-trip time (INVITE → 200 OK)
+- `icmp_rtt_ms`: Network RTT via ICMP ping
+- `media_rtt_ms`: Media RTT from RTCP (LSR + DLSR)
+- `jitter_ms`: Jitter from RTCP RR (converted from timestamp units)
+- `loss_fraction`: Packet loss percentage (from RTCP RR)
+- `packets_lost`: Lost packet count
+- `packets_sent`: Total packets sent
+- `status_reason[128]`: Human-readable status description
+
+**SIP Message Construction**:
+- From: `<sip:test@{server_ip}>` (unique signature for filtering)
+- To: `<sip:{phone_number}@{phone_ip}>`
+- Call-Info: `answer-after=0` (auto-answer hint)
+- Alert-Info: `alert-autoanswer` (Grandstream compatibility)
+- User-Agent: `AREDN-Phonebook-Monitor`
+
+**SDP Offer**:
+```
+v=0
+o=test {timestamp} 1 IN IP4 {server_ip}
+s=Quality Test
+c=IN IP4 {server_ip}
+t=0 0
+m=audio {rtp_port} RTP/AVP 0
+a=rtcp:{rtcp_port}
+a=rtpmap:0 PCMU/8000
+a=ptime:40
+a=maxptime:40
+a=sendrecv
+```
+
+**RTP/RTCP Processing**:
+- RTP: PCMU codec (payload type 0), 40ms ptime, 320 samples/packet
+- RTCP SR: Sent at t=0 and t≈1.0s with NTP timestamp for RTT calculation
+- RTCP RR: Parsed for jitter (timestamp units → ms), loss fraction, cumulative loss
+- Local jitter calculation: RFC 3550 interarrival jitter algorithm as fallback
+
+**Key Functions**:
+- `test_phone_quality()`: Standalone test (creates own socket)
+- `test_phone_quality_with_socket()`: Integrated test (uses server socket)
+- `recv_sip_response()`: Wrapper for socket/queue-based reception
+- `send_invite()`: Constructs and sends INVITE with SDP
+- `send_ack()`: Acknowledges 200 OK
+- `send_bye()`: Terminates call
+- `send_rtcp_sr()`: Sends RTCP Sender Report
+- `parse_rtcp_rr()`: Extracts metrics from Receiver Report
+- `get_default_config()`: Returns default probe configuration
+
+**Socket Management**:
+- Uses `use_response_queue` flag to switch between direct socket and response queue
+- When `external_sip_sock >= 0`: Uses response queue (shared socket mode)
+- When `external_sip_sock == -1`: Uses dedicated socket (standalone mode)
+- Weak symbol stub for standalone builds without queue support
+
+#### 2.9.3 Message Routing (`main.c`)
+
+**Purpose**: Routes SIP responses between main server and quality monitor.
+
+**Implementation**:
+```c
+// Check if this is a quality monitor response
+// Quality monitor uses "From: <sip:test@" signature
+if (strstr(buffer, "From: <sip:test@") != NULL ||
+    strstr(buffer, "f: <sip:test@") != NULL) {
+    quality_monitor_handle_response(buffer, n);
+} else {
+    process_incoming_sip_message(sockfd, buffer, n, &cliaddr, len);
+}
+```
+
+**Rationale**:
+- Prevents race condition: Both threads reading from same socket
+- Main server receives all messages on port 5060
+- Quality monitor responses identified by unique From header
+- Normal SIP traffic processed by existing server logic
+- Clean separation of concerns
+
+#### 2.9.4 Response Queue Mechanism
+
+**Circular Buffer**:
+- Size: 10 entries (MAX_RESPONSE_QUEUE)
+- Entry size: 4096 bytes (MAX_RESPONSE_SIZE)
+- Thread-safe with mutex and condition variable
+- Overflow handling: Drop oldest message (with warning)
+
+**Queue Operations**:
+- `quality_monitor_handle_response()`: Enqueue from main thread
+  - Validates buffer length
+  - Acquires mutex
+  - Checks for overflow
+  - Copies message to queue
+  - Signals waiting thread
+  - Releases mutex
+
+- `quality_monitor_dequeue_response()`: Dequeue from monitor thread
+  - Acquires mutex
+  - Waits on condition variable with timeout
+  - Copies message from queue
+  - Updates read pointer
+  - Releases mutex
+  - Returns bytes read or 0 (timeout) or -1 (error)
+
+**Synchronization**:
+- `g_response_queue_mutex`: Protects queue data structure
+- `g_response_queue_cond`: Signals new message availability
+- `pthread_cond_timedwait()`: Implements timeout for probe waits
+
+### 2.10 Log Manager (`log_manager/`)
 
 **Purpose**: Centralized logging system with multiple severity levels.
 
@@ -305,6 +482,45 @@ The system follows a modular C architecture with multi-threaded design:
 4. Server responds "200 OK" to BYE sender
 5. Call session terminated and resources freed
 
+### 3.5 VoIP Quality Monitoring Flow
+1. **Initialization**:
+   - Quality monitor initialized with server socket and IP
+   - Response queue and synchronization primitives created
+   - Monitor thread spawned
+
+2. **Test Cycle**:
+   - Monitor thread wakes up (interval or on demand)
+   - Iterates through all registered users
+   - DNS lookup for each user (`{user_id}.local.mesh`)
+   - Skip unreachable phones (DNS failure)
+
+3. **Individual Phone Test**:
+   - **Phase 1 - OPTIONS**: Send OPTIONS, wait for 200 OK (fast check)
+   - **Phase 2 - INVITE**: Send INVITE with auto-answer hints and SDP
+   - Main server receives response on port 5060
+   - Main server detects `From: <sip:test@` signature
+   - Response enqueued to quality monitor queue
+   - Monitor thread dequeues response (with timeout)
+   - **Phase 3 - Media**: On 200 OK, send ACK and start RTP burst
+   - Send RTP packets every 40ms for ~1.2s
+   - Send RTCP SR at t=0 and t≈1.0s
+   - Receive and parse RTCP RR from phone
+   - Extract jitter, loss, RTT metrics
+   - **Phase 4 - Termination**: Send BYE, receive 200 OK
+   - Store results in quality records table
+
+4. **Results Publication**:
+   - Write all quality records to `/tmp/phone_quality.json`
+   - JSON contains: phone number, IP, timestamp, status, metrics
+   - CGI endpoint `/www/cgi-bin/quality` reads JSON for web display
+
+5. **Error Handling**:
+   - BUSY/NO_ANSWER: Phone in use or doesn't support auto-answer
+   - TIMEOUT: No SIP response within configured timeout
+   - NO_RR: Phone doesn't send RTCP Receiver Reports
+   - SIP_ERROR: SIP error response (486, 603, etc.)
+   - All failures logged with status reason
+
 ## 4. Network Communication
 
 ### 4.1 SIP Protocol
@@ -325,6 +541,16 @@ The system follows a modular C architecture with multi-threaded design:
 - **Protocol**: Standard DNS A record lookups
 - **Fallback**: Error response if resolution fails
 
+### 4.4 RTP/RTCP (Quality Monitoring)
+- **RTP Protocol**: Real-time Transport Protocol for voice packets
+- **Codec**: PCMU (G.711 μ-law), payload type 0
+- **Packet Rate**: 40ms ptime (25 packets/second)
+- **Sample Rate**: 8000 Hz (320 samples per packet)
+- **RTCP Protocol**: RTP Control Protocol for statistics
+- **RTCP SR**: Sender Report with NTP timestamp
+- **RTCP RR**: Receiver Report with jitter, loss, RTT data
+- **Port Allocation**: Dynamic RTP/RTCP port pairs (RTP=even, RTCP=odd)
+
 ## 5. Configuration
 
 ### 5.1 File Paths
@@ -340,10 +566,15 @@ The system follows a modular C architecture with multi-threaded design:
 - **String Lengths**: Various `MAX_*_LEN` constants
 
 ### 5.3 Threading
-- **Main Thread**: SIP message processing
-- **Fetcher Thread**: Phonebook management
+- **Main Thread**: SIP message processing and response routing
+- **Fetcher Thread**: Phonebook management (CSV download, XML conversion)
 - **Updater Thread**: Status synchronization
-- **Synchronization**: Mutexes and condition variables
+- **Quality Monitor Thread**: VoIP quality testing for all phones
+- **Synchronization**:
+  - `registered_users_mutex`: Protects user database
+  - `phonebook_file_mutex`: Protects phonebook file access
+  - `updater_trigger_mutex` + `updater_trigger_cond`: Updater signaling
+  - `g_response_queue_mutex` + `g_response_queue_cond`: Quality monitor responses
 
 ## 6. Error Handling
 
