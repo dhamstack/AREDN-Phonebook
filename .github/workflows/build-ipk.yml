@@ -5,6 +5,10 @@ on:
   push:
     tags:
       - '*.*.*'
+    branches:
+      - 'development'
+      - 'UAC'
+      - 'dev-*'
   pull_request:
 
 permissions:
@@ -142,7 +146,15 @@ jobs:
           echo "Renamed to: $ARCH_IPK"
           ls -la "$ARCH_IPK"
 
-      # Upload IPK file to release
+      # Upload IPK as artifact for development builds
+      - name: Upload IPK as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sipserver-${{ matrix.target.arch }}-${{ github.ref_name }}
+          path: ${{ steps.find_ipk.outputs.ipk_path }}
+          retention-days: 30
+
+      # Upload IPK file to release (only for tags)
       - name: Upload IPK to Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
