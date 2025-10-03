@@ -265,6 +265,12 @@ static int test_phone_internal(int ext_sock, const char *phone_number, const cha
         fprintf(stderr, "[DEBUG] Testing %s @ %s (local: %s)\n", phone_number, phone_ip, local_ip);
     }
 
+    // First, ping the host for baseline network RTT
+    result->icmp_rtt_ms = ping_host(phone_ip, 1000);
+    if (is_debug && result->icmp_rtt_ms >= 0) {
+        fprintf(stderr, "[DEBUG] ICMP ping: %ld ms\n", result->icmp_rtt_ms);
+    }
+
     double t0 = now_monotonic();
 
     if (send_options(sock, &addr, phone_number, phone_ip, local_ip, callid, branch) < 0) {
