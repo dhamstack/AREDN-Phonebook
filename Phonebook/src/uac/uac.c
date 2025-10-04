@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <time.h>
 
 #define MODULE_NAME "UAC"
 
@@ -452,8 +451,9 @@ int uac_process_response(const char *response, size_t response_len) {
 
 // Check for call timeout and force reset if needed
 int uac_check_timeout(void) {
+    // No timeout check if UAC is idle
     if (g_uac_ctx.call.state == UAC_STATE_IDLE) {
-        return 0;  // No active call, nothing to timeout
+        return 0;
     }
 
     time_t now = time(NULL);
