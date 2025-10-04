@@ -33,7 +33,8 @@ static uac_context_t g_uac_ctx = {
         .from_tag = {0},
         .to_tag = {0},
         .target_number = {0},
-        .cseq = 0
+        .cseq = 0,
+        .state_timestamp = 0
     }
 };
 
