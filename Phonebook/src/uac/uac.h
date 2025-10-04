@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <time.h>
 
 // UAC Configuration
 #define UAC_SIP_PORT 5070
