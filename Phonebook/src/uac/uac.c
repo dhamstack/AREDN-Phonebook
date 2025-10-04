@@ -4,8 +4,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <time.h>
 
 #define MODULE_NAME "UAC"
+
+// Timeout constants (in seconds)
+#define UAC_CALL_TIMEOUT 30      // Max time for entire call (INVITE to cleanup)
+#define UAC_RINGING_TIMEOUT 10   // Max time in RINGING state
+#define UAC_RESPONSE_TIMEOUT 5   // Max time waiting for any response
 
 // Forward declarations for builder/parser functions
 extern int uac_build_invite(char *buffer, size_t buffer_size, uac_call_t *call,
@@ -116,6 +122,7 @@ void uac_reset_state(void) {
     g_uac_ctx.call.state = UAC_STATE_IDLE;
     memset(&g_uac_ctx.call, 0, sizeof(g_uac_ctx.call));
     g_uac_ctx.call.state = UAC_STATE_IDLE;
+    g_uac_ctx.call.state_timestamp = time(NULL);
 
     if (old_state != UAC_STATE_IDLE) {
         LOG_INFO("[UAC_RESET] Reset UAC from %s to IDLE state", uac_state_to_string(old_state));
@@ -134,8 +141,8 @@ int uac_make_call(const char *target_number, const char *server_ip) {
     }
 
     if (g_uac_ctx.call.state != UAC_STATE_IDLE) {
-        LOG_ERROR("[UAC_CALL] Call already in progress (state: %s)", uac_state_to_string(g_uac_ctx.call.state));
-        return -1;
+        LOG_WARN("[UAC_CALL] Call already in progress (state: %s), forcing reset", uac_state_to_string(g_uac_ctx.call.state));
+        uac_reset_state();
     }
 
     if (g_uac_ctx.sockfd < 0) {
@@ -195,6 +202,7 @@ int uac_make_call(const char *target_number, const char *server_ip) {
     LOG_DEBUG("[UAC_CALL] INVITE sent successfully (%zd bytes)", sent);
 
     g_uac_ctx.call.state = UAC_STATE_CALLING;
+    g_uac_ctx.call.state_timestamp = time(NULL);
     LOG_INFO("[UAC_CALL] ✓ INVITE sent to %s for %s (Call-ID: %s, state: %s)",
              server_ip, target_number, g_uac_ctx.call.call_id,
              uac_state_to_string(g_uac_ctx.call.state));
@@ -272,6 +280,7 @@ int uac_cancel_call(void) {
 
     LOG_INFO("[UAC_CANCEL] ✓ CANCEL sent successfully (%zd bytes)", sent);
     g_uac_ctx.call.state = UAC_STATE_TERMINATING;
+    g_uac_ctx.call.state_timestamp = time(NULL);
     return 0;
 }
 
@@ -307,6 +316,7 @@ int uac_hang_up(void) {
     }
 
     g_uac_ctx.call.state = UAC_STATE_TERMINATING;
+    g_uac_ctx.call.state_timestamp = time(NULL);
     LOG_INFO("[UAC_BYE] ✓ BYE sent successfully (%zd bytes, state: %s)",
              sent, uac_state_to_string(g_uac_ctx.call.state));
     return 0;
@@ -347,6 +357,7 @@ int uac_process_response(const char *response, size_t response_len) {
         case 180:  // Ringing
             if (g_uac_ctx.call.state == UAC_STATE_CALLING) {
                 g_uac_ctx.call.state = UAC_STATE_RINGING;
+                g_uac_ctx.call.state_timestamp = time(NULL);
                 LOG_INFO("[UAC_RESPONSE] ✓ Phone is ringing (180 Ringing, state: %s)",
                          uac_state_to_string(g_uac_ctx.call.state));
             } else {
@@ -376,17 +387,20 @@ int uac_process_response(const char *response, size_t response_len) {
                 }
 
                 g_uac_ctx.call.state = UAC_STATE_ESTABLISHED;
+                g_uac_ctx.call.state_timestamp = time(NULL);
                 LOG_INFO("[UAC_RESPONSE] ✓ Call established (200 OK received, ACK sent, state: %s)",
                          uac_state_to_string(g_uac_ctx.call.state));
 
             } else if (g_uac_ctx.call.state == UAC_STATE_TERMINATING) {
                 LOG_DEBUG("[UAC_RESPONSE] Processing 200 OK for BYE");
                 g_uac_ctx.call.state = UAC_STATE_TERMINATED;
+                g_uac_ctx.call.state_timestamp = time(NULL);
                 LOG_INFO("[UAC_RESPONSE] ✓ Call terminated successfully (200 OK for BYE)");
 
                 // Reset call context
                 LOG_DEBUG("[UAC_RESPONSE] Resetting call context to IDLE");
                 g_uac_ctx.call.state = UAC_STATE_IDLE;
+                g_uac_ctx.call.state_timestamp = time(NULL);
                 memset(&g_uac_ctx.call, 0, sizeof(g_uac_ctx.call));
             } else {
                 LOG_WARN("[UAC_RESPONSE] Unexpected 200 OK in state %s", uac_state_to_string(g_uac_ctx.call.state));
@@ -402,6 +416,7 @@ int uac_process_response(const char *response, size_t response_len) {
             }
             LOG_DEBUG("[UAC_RESPONSE] Transitioning to IDLE state");
             g_uac_ctx.call.state = UAC_STATE_IDLE;
+            g_uac_ctx.call.state_timestamp = time(NULL);
             break;
 
         case 487:  // Request Terminated
@@ -413,6 +428,7 @@ int uac_process_response(const char *response, size_t response_len) {
             }
             LOG_DEBUG("[UAC_RESPONSE] Transitioning to IDLE state");
             g_uac_ctx.call.state = UAC_STATE_IDLE;
+            g_uac_ctx.call.state_timestamp = time(NULL);
             break;
 
         default:
@@ -426,7 +442,70 @@ int uac_process_response(const char *response, size_t response_len) {
             }
             LOG_DEBUG("[UAC_RESPONSE] Resetting UAC to IDLE state after error response");
             g_uac_ctx.call.state = UAC_STATE_IDLE;
+            g_uac_ctx.call.state_timestamp = time(NULL);
             break;
+    }
+
+    return 0;
+}
+
+// Check for call timeout and force reset if needed
+int uac_check_timeout(void) {
+    if (g_uac_ctx.call.state == UAC_STATE_IDLE) {
+        return 0;  // No active call, nothing to timeout
+    }
+
+    time_t now = time(NULL);
+    time_t elapsed = now - g_uac_ctx.call.state_timestamp;
+
+    // Check state-specific timeouts
+    int should_reset = 0;
+    const char *reason = NULL;
+
+    switch (g_uac_ctx.call.state) {
+        case UAC_STATE_CALLING:
+            if (elapsed > UAC_RESPONSE_TIMEOUT) {
+                should_reset = 1;
+                reason = "no response to INVITE";
+            }
+            break;
+
+        case UAC_STATE_RINGING:
+            if (elapsed > UAC_RINGING_TIMEOUT) {
+                should_reset = 1;
+                reason = "phone ringing too long";
+            }
+            break;
+
+        case UAC_STATE_ESTABLISHED:
+            if (elapsed > UAC_CALL_TIMEOUT) {
+                should_reset = 1;
+                reason = "call established but not terminated";
+            }
+            break;
+
+        case UAC_STATE_TERMINATING:
+            if (elapsed > UAC_RESPONSE_TIMEOUT) {
+                should_reset = 1;
+                reason = "no response to BYE/CANCEL";
+            }
+            break;
+
+        case UAC_STATE_TERMINATED:
+            // Should already be reset, but just in case
+            should_reset = 1;
+            reason = "stuck in TERMINATED state";
+            break;
+
+        default:
+            break;
+    }
+
+    if (should_reset) {
+        LOG_WARN("[UAC_TIMEOUT] Call timeout after %ld seconds in state %s (%s)",
+                 elapsed, uac_state_to_string(g_uac_ctx.call.state), reason);
+        uac_reset_state();
+        return 1;
     }
 
     return 0;

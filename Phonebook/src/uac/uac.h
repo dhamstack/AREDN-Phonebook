@@ -30,6 +30,7 @@ typedef struct {
     char target_number[32];   // Called number (e.g., "441530")
     int cseq;                 // CSeq counter
     struct sockaddr_in server_addr;  // SIP server address (5060)
+    time_t state_timestamp;   // When current state was entered (for timeout detection)
 } uac_call_t;
 
 // UAC Context
@@ -106,5 +107,12 @@ const char* uac_state_to_string(uac_call_state_t state);
  * Useful for error recovery and bulk testing
  */
 void uac_reset_state(void);
+
+/**
+ * Check if UAC call has timed out and force reset if needed
+ * Should be called periodically from main loop
+ * @return 1 if timeout occurred and state was reset, 0 otherwise
+ */
+int uac_check_timeout(void);
 
 #endif // UAC_H

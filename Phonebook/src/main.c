@@ -415,6 +415,11 @@ int main(int argc, char *argv[]) {
                 LOG_ERROR("recvfrom failed on UAC socket.");
             }
         }
+
+        // Check UAC timeout periodically (every select cycle)
+        if (have_server_ip) {
+            uac_check_timeout();
+        }
     }
     // This code block will now only be reached if an unrecoverable error in the main loop occurs.
     LOG_WARN("Main SIP message processing loop unexpectedly terminated.");
